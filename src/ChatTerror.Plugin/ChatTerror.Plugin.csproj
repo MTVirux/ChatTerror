@@ -5,8 +5,9 @@
     <Authors>MTVirux</Authors>
     <Description>Relays FFXIV chat end-to-end encrypted to your phone.</Description>
     <Version>0.1.0.0</Version>
-    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <!-- QRCoder references System.Drawing.Common 6.0 while Dalamud ships 10.0 -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

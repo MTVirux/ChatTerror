@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace ChatTerror.Protocol.Tests;
 
@@ -118,5 +119,54 @@ public class JsonTests
         Assert.Equal(77, hello.SinceTs);
         Assert.Equal(3, hello.Seq);
         Assert.ThrowsAny<CryptographicException>(() => Payloads.OpenPayload(key, Direction.PluginToDevice, sealedText));
+    }
+
+    [Theory]
+    [InlineData("{\"type\":\"chat\",\"seq\":1}")]
+    [InlineData("{\"type\":\"chat\",\"seq\":1,\"item\":{\"id\":\"a\",\"ts\":1,\"channel\":\"say\",\"sender\":null,\"text\":\"x\",\"character\":\"c\",\"outgoing\":false}}")]
+    [InlineData("{\"type\":\"sendResult\",\"seq\":1,\"ok\":true}")]
+    public void Payload_Json_MissingOrNullRequiredField_Throws(string json)
+    {
+        Assert.Throws<JsonException>(() => ProtocolJson.Deserialize<Payload>(json));
+    }
+
+    [Fact]
+    public void RelayFrame_Json_MissingRequiredField_Throws()
+    {
+        Assert.Throws<JsonException>(() => ProtocolJson.Deserialize<RelayFrame>("{\"t\":\"send\"}"));
+    }
+
+    [Theory]
+    [InlineData("{\"seq\":1}")]
+    [InlineData("{\"type\":\"nope\",\"seq\":1}")]
+    public void Payload_Json_MissingOrUnknownDiscriminator_ThrowsJsonException(string json)
+    {
+        Assert.Throws<JsonException>(() => ProtocolJson.Deserialize<Payload>(json));
+    }
+
+    [Fact]
+    public void Payload_Json_OptionalFieldsMayBeMissing()
+    {
+        var result = ProtocolJson.Deserialize<Payload>("{\"type\":\"sendResult\",\"seq\":1,\"requestId\":\"r\",\"ok\":true}");
+        var chat = ProtocolJson.Deserialize<Payload>("{\"type\":\"chat\",\"seq\":1,\"item\":{\"id\":\"a\",\"ts\":1,\"channel\":\"say\",\"sender\":\"s\",\"text\":\"x\",\"character\":\"c\",\"outgoing\":false}}");
+        var settings = ProtocolJson.Deserialize<Payload>("{\"type\":\"settings\",\"seq\":1,\"relayChannels\":[],\"sendChannels\":[],\"maxLength\":500}");
+        var send = ProtocolJson.Deserialize<Payload>("{\"type\":\"sendChat\",\"seq\":1,\"requestId\":\"r\",\"channel\":\"say\",\"text\":\"x\"}");
+
+        Assert.Null(Assert.IsType<SendResultPayload>(result).Error);
+        Assert.Null(Assert.IsType<ChatPayload>(chat).Item.SenderWorld);
+        Assert.Null(Assert.IsType<SettingsPayload>(settings).Character);
+        Assert.Null(Assert.IsType<SendChatPayload>(send).Target);
+    }
+
+    [Theory]
+    [InlineData("{\"seq\":1}")]
+    [InlineData("null")]
+    [InlineData("not json")]
+    public void Payloads_OpenPayload_BadPlaintext_ThrowsJsonException(string plaintext)
+    {
+        var key = RandomNumberGenerator.GetBytes(32);
+        var envelope = Base64Url.Encode(E2eCrypto.Seal(key, Direction.PluginToDevice, System.Text.Encoding.UTF8.GetBytes(plaintext)));
+
+        Assert.Throws<JsonException>(() => Payloads.OpenPayload(key, Direction.PluginToDevice, envelope));
     }
 }

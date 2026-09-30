@@ -6,19 +6,10 @@ export default defineConfig({
   build: {
     outDir: "../src/ChatTerror.Server/wwwroot",
     emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        index: "index.html",
-        sw: "src/sw.ts",
-      },
-      output: {
-        entryFileNames: (chunk) => (chunk.name === "sw" ? "sw.js" : "assets/[name]-[hash].js"),
-      },
-    },
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     passWithNoTests: true,
   },
 });

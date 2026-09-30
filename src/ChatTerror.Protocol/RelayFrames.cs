@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
 
 namespace ChatTerror.Protocol;
@@ -22,7 +23,7 @@ public abstract record RelayFrame;
 public sealed record AuthFrame(string Token) : RelayFrame;
 
 // Plugin sends set To and Notify; device sends leave them out.
-public sealed record SendFrame(string? To, string Payload, bool Notify) : RelayFrame;
+public sealed record SendFrame([Optional, DefaultParameterValue(null)] string? To, string Payload, bool Notify = false) : RelayFrame;
 
 public sealed record PairDecisionFrame(string DeviceId, bool Approved) : RelayFrame;
 

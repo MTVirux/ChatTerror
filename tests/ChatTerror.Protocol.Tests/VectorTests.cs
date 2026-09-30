@@ -70,13 +70,10 @@ public class VectorTests
         Assert.Equal(plaintext, E2eCrypto.Open(expectedKey, Direction.PluginToDevice, envelope));
     }
 
-    // Regenerates the vector file with fresh keys. Run with CHATTERROR_WRITE_VECTORS=1.
-    [Fact]
+    // Regenerates the vector file with fresh keys. Remove Skip locally to run it once.
+    [Fact(Skip = "generator")]
     public void Vectors_Generate()
     {
-        if (Environment.GetEnvironmentVariable("CHATTERROR_WRITE_VECTORS") != "1")
-            return;
-
         using var plugin = P256.Generate();
         using var device = P256.Generate();
         var pluginPub = P256.PublicRaw(plugin);

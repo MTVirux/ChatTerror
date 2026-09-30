@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -21,17 +23,17 @@ public sealed record ChatPayload(ChatItem Item) : Payload;
 
 public sealed record BacklogPayload(IReadOnlyList<ChatItem> Items, bool Done) : Payload;
 
-public sealed record SendResultPayload(string RequestId, bool Ok, string? Error) : Payload;
+public sealed record SendResultPayload(string RequestId, bool Ok, string? Error = null) : Payload;
 
 public sealed record SettingsPayload(
-    string? Character,
+    [Optional, DefaultParameterValue(null)] string? Character,
     IReadOnlyList<ChatChannel> RelayChannels,
     IReadOnlyList<ChatChannel> SendChannels,
     int MaxLength) : Payload;
 
 public sealed record HelloPayload(long SinceTs) : Payload;
 
-public sealed record SendChatPayload(string RequestId, ChatChannel Channel, string? Target, string Text) : Payload;
+public sealed record SendChatPayload(string RequestId, ChatChannel Channel, [Optional, DefaultParameterValue(null)] string? Target, string Text) : Payload;
 
 public sealed record PrefsPayload(IReadOnlyList<ChatChannel> MutedChannels) : Payload;
 
@@ -64,17 +66,10 @@ public static class Payloads
         }
         catch (FormatException ex)
         {
-            throw new System.Security.Cryptography.CryptographicException("Envelope is not base64url.", ex);
+            throw new CryptographicException("Envelope is not base64url.", ex);
         }
 
         var json = Encoding.UTF8.GetString(E2eCrypto.Open(key, direction, bytes));
-        try
-        {
-            return ProtocolJson.Deserialize<Payload>(json) ?? throw new JsonException("Empty payload.");
-        }
-        catch (NotSupportedException ex)
-        {
-            throw new JsonException("Unknown payload type.", ex);
-        }
+        return ProtocolJson.Deserialize<Payload>(json) ?? throw new JsonException("Empty payload.");
     }
 }

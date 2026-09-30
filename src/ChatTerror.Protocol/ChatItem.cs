@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace ChatTerror.Protocol;
 
 public sealed record ChatItem(
@@ -5,7 +7,7 @@ public sealed record ChatItem(
     long Ts,
     ChatChannel Channel,
     string Sender,
-    string? SenderWorld,
+    [Optional, DefaultParameterValue(null)] string? SenderWorld,
     string Text,
     string Character,
     bool Outgoing);
