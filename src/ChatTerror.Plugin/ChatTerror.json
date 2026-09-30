@@ -1,0 +1,20 @@
+{
+  "Author": "MTVirux",
+  "Name": "ChatTerror",
+  "Punchline": "Read and send FFXIV chat from your phone, end-to-end encrypted.",
+  "Description": "Relays chat to paired phones through an end-to-end encrypted relay and lets you reply from the phone.\n\nDM @mtvirux on discord for assistance or bug reports.",
+  "Tags": [
+    "Terror",
+    "Chat",
+    "Phone",
+    "Relay"
+  ],
+  "LastUpdate": 1759276800,
+  "InternalName": "ChatTerror",
+  "AssemblyVersion": "0.1.0.0",
+  "RepoUrl": "https://github.com/MTVirux/ChatTerror",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "ImageUrls": null,
+  "IconUrl": null
+}

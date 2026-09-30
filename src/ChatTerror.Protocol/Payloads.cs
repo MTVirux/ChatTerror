@@ -1,0 +1,80 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace ChatTerror.Protocol;
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonDerivedType(typeof(ChatPayload), "chat")]
+[JsonDerivedType(typeof(BacklogPayload), "backlog")]
+[JsonDerivedType(typeof(SendResultPayload), "sendResult")]
+[JsonDerivedType(typeof(SettingsPayload), "settings")]
+[JsonDerivedType(typeof(HelloPayload), "hello")]
+[JsonDerivedType(typeof(SendChatPayload), "sendChat")]
+[JsonDerivedType(typeof(PrefsPayload), "prefs")]
+public abstract record Payload
+{
+    public long Seq { get; init; }
+}
+
+public sealed record ChatPayload(ChatItem Item) : Payload;
+
+public sealed record BacklogPayload(IReadOnlyList<ChatItem> Items, bool Done) : Payload;
+
+public sealed record SendResultPayload(string RequestId, bool Ok, string? Error) : Payload;
+
+public sealed record SettingsPayload(
+    string? Character,
+    IReadOnlyList<ChatChannel> RelayChannels,
+    IReadOnlyList<ChatChannel> SendChannels,
+    int MaxLength) : Payload;
+
+public sealed record HelloPayload(long SinceTs) : Payload;
+
+public sealed record SendChatPayload(string RequestId, ChatChannel Channel, string? Target, string Text) : Payload;
+
+public sealed record PrefsPayload(IReadOnlyList<ChatChannel> MutedChannels) : Payload;
+
+public static class SendErrors
+{
+    public const string ChannelNotAllowed = "channelNotAllowed";
+    public const string InvalidText = "invalidText";
+    public const string TooLong = "tooLong";
+    public const string InvalidTarget = "invalidTarget";
+    public const string NotLoggedIn = "notLoggedIn";
+    public const string Busy = "busy";
+    public const string Disabled = "disabled";
+}
+
+public static class Payloads
+{
+    public static string SealPayload(byte[] key, Direction direction, Payload payload)
+    {
+        var json = ProtocolJson.Serialize(payload);
+        return Base64Url.Encode(E2eCrypto.Seal(key, direction, Encoding.UTF8.GetBytes(json)));
+    }
+
+    // Throws CryptographicException when decryption fails and JsonException when the plaintext is not a payload.
+    public static Payload OpenPayload(byte[] key, Direction direction, string envelope)
+    {
+        byte[] bytes;
+        try
+        {
+            bytes = Base64Url.Decode(envelope);
+        }
+        catch (FormatException ex)
+        {
+            throw new System.Security.Cryptography.CryptographicException("Envelope is not base64url.", ex);
+        }
+
+        var json = Encoding.UTF8.GetString(E2eCrypto.Open(key, direction, bytes));
+        try
+        {
+            return ProtocolJson.Deserialize<Payload>(json) ?? throw new JsonException("Empty payload.");
+        }
+        catch (NotSupportedException ex)
+        {
+            throw new JsonException("Unknown payload type.", ex);
+        }
+    }
+}

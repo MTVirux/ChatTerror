@@ -1,0 +1,30 @@
+{
+  "plugin": {
+    "jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "D9ZM4PJyjD1szQ8nHPKeNotStRQbiqTEkvmNZ9AYULg",
+      "y": "Ga7OGtgjbBzZ5lNknCs_vpln3RJvjCn9iY1dWRsdyJg",
+      "d": "AcnCpLjOHrebci8yBZMH_n6xt9KTDLeymoNddKUtxbA"
+    },
+    "publicRaw": "BA_WTODycow9bM0PJxzynjaLUrUUG4qkxJL5jWfQGFC4Ga7OGtgjbBzZ5lNknCs_vpln3RJvjCn9iY1dWRsdyJg"
+  },
+  "device": {
+    "jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "wEnFWDGHeXq-gFbhNiMmDpx2TgHgRrA0zdXw9fl5Zu4",
+      "y": "Q410ad9gFkF80Ui3Nk7zqq7BEJiaHb3ZDoggM48dq-w",
+      "d": "9bzbXd9DBXn6_TAW3VnQ-_FcMCbm3S500rxzmkPQlMk"
+    },
+    "publicRaw": "BMBJxVgxh3l6voBW4TYjJg6cdk4B4EawNM3V8PX5eWbuQ410ad9gFkF80Ui3Nk7zqq7BEJiaHb3ZDoggM48dq-w"
+  },
+  "key": "-NpwA54zTSxqiUfu789Hax_cX8_ekzebl7hiOuArYfg",
+  "fingerprint": "413 462",
+  "seal": {
+    "direction": "p2d",
+    "nonce": "AAECAwQFBgcICQoL",
+    "plaintext": "{\"type\":\"chat\",\"item\":{\"id\":\"0123456789abcdef0123456789abcdef\",\"ts\":1700000000000,\"channel\":\"freeCompany\",\"sender\":\"Y'shtola Rhul\",\"senderWorld\":\"Twintania\",\"text\":\"hello <3\",\"character\":\"Alpha Beta\",\"outgoing\":false},\"seq\":1700000000000}",
+    "envelope": "AQABAgMEBQYHCAkKCzrq-3REcAzgLG0V4QUDzRjqBqCCddgW-ctgn64pHVt-MKETgsVepZpXczVSfglHjIX-K_5rSsnelIDnwTh6sW5sJnQYw4Tp6O_faSRj802dFi3DpcHJPIhQ3GmnbyAnytBrzG54LwTZFN0lM6wvOdVeN7Lg1Bk1JnBhHzgpSXIZOg1i-lO6kfIEtjk7tdrZl_Deso6AQKd50--ET2D3CPfGNB9WRzx_GNiuDcvAlVWV4kNbfUJVy_CtDgIwkijRLKEuf7UXl7an5asqi5va4UC_50DSoyZ-0WYXNSKoYj-gsUDdMkRQJqEoSIyrV1EzYUXLplxJl2R4TdjpGf7C"
+  }
+}
