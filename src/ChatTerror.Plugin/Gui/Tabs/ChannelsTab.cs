@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ChatTerror.Plugin.Core;
 using ChatTerror.Plugin.Logic;
 using ChatTerror.Protocol;
@@ -8,6 +9,10 @@ namespace ChatTerror.Plugin.Gui.Tabs;
 
 public sealed class ChannelsTab(Configuration config, Action changed) : ITab
 {
+    private const string DragType = "CHANNEL_ROW";
+
+    private ChatChannel? dragged;
+
     public string Title => "Channels";
 
     public void Draw()
@@ -31,9 +36,9 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
         ImGui.TableHeadersRow();
 
         var order = config.Settings.OrderedChannels();
-        for (var i = 0; i < order.Count; i++)
+        (ChatChannel From, ChatChannel To)? drop = null;
+        foreach (var channel in order)
         {
-            var channel = order[i];
             if (!config.Settings.Channels.TryGetValue(channel, out var setting))
             {
                 setting = new ChannelSetting();
@@ -43,17 +48,19 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
             ImGui.PushID((int)channel);
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
-            ImGui.Selectable(ChannelMap.DisplayName(channel));
-            if (ImGui.IsItemActive() && !ImGui.IsItemHovered())
+            ImGui.Selectable(ChannelMap.DisplayName(channel), dragged == channel);
+            if (ImGui.BeginDragDropSource())
             {
-                var next = i + (ImGui.GetMouseDragDelta(ImGuiMouseButton.Left).Y < 0 ? -1 : 1);
-                if (next >= 0 && next < order.Count)
-                {
-                    (order[i], order[next]) = (order[next], order[i]);
-                    config.Settings.ChannelOrder = order;
-                    ImGui.ResetMouseDragDelta();
-                    changed();
-                }
+                dragged = channel;
+                ImGui.SetDragDropPayload(DragType, ReadOnlySpan<byte>.Empty, ImGuiCond.None);
+                ImGui.TextUnformatted(ChannelMap.DisplayName(channel));
+                ImGui.EndDragDropSource();
+            }
+            if (ImGui.BeginDragDropTarget())
+            {
+                if (!ImGui.AcceptDragDropPayload(DragType).IsNull && dragged is { } from)
+                    drop = (from, channel);
+                ImGui.EndDragDropTarget();
             }
 
             ImGui.TableNextColumn();
@@ -84,5 +91,20 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
         }
 
         ImGui.EndTable();
+
+        if (drop is { } d && d.From != d.To)
+            Move(order, d.From, d.To);
+        if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            dragged = null;
+    }
+
+    private void Move(List<ChatChannel> order, ChatChannel from, ChatChannel to)
+    {
+        // The dragged channel takes the target's slot, shifting the target toward where it came from.
+        var target = order.IndexOf(to);
+        order.Remove(from);
+        order.Insert(target, from);
+        config.Settings.ChannelOrder = order;
+        changed();
     }
 }
