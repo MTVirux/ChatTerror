@@ -25,6 +25,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
     private readonly Dictionary<string, string> settings = new()
     {
         ["Relay:PairingRequestsPerMinute"] = "1000",
+        ["Relay:InstallsPerHour"] = "1000",
     };
 
     public RelayApp(Dictionary<string, string>? overrides = null)
@@ -37,6 +38,8 @@ public sealed class RelayApp : WebApplicationFactory<Program>
 
     public MutableTimeProvider Time { get; } = new();
 
+    public Action<IServiceCollection>? ExtraServices { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(directory);
@@ -48,6 +51,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
         {
             services.AddSingleton<IPushSender>(Push);
             services.AddSingleton<TimeProvider>(Time);
+            ExtraServices?.Invoke(services);
         });
     }
 

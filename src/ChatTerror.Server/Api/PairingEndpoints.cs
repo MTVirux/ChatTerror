@@ -15,7 +15,6 @@ public sealed record ClaimResponse(string DeviceId, string DeviceToken);
 
 public static class PairingEndpoints
 {
-    public const string RateLimitPolicy = "pairing";
     private const int MaxDeviceNameLength = 64;
 
     public static void MapPairingEndpoints(this IEndpointRouteBuilder app)
@@ -34,7 +33,7 @@ public static class PairingEndpoints
             if (PairingCodes.Normalize(code) is not { } normalized || store.FindPairing(normalized) is not { } pairing)
                 return AuthHelpers.NotFound();
             return Results.Ok(new PairingInfoResponse(pairing.InstallId, pairing.PluginPublicKey));
-        }).RequireRateLimiting(RateLimitPolicy);
+        }).RequireRateLimiting(RequestLimits.PairingPolicy);
 
         app.MapPost("/api/pairings/{code}/claim", (string code, ClaimRequest? body, RelayStore store, ConnectionRegistry registry) =>
         {
@@ -54,6 +53,6 @@ public static class PairingEndpoints
 
             registry.Plugin(device.InstallId)?.Send(new PairRequestFrame(device.Id, device.Name, device.PublicKey));
             return Results.Ok(new ClaimResponse(device.Id, token));
-        }).RequireRateLimiting(RateLimitPolicy);
+        }).RequireRateLimiting(RequestLimits.PairingPolicy);
     }
 }

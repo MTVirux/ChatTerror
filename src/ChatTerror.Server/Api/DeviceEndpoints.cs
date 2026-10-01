@@ -14,6 +14,9 @@ public sealed record PushRequest(string? Endpoint, PushKeys? Keys);
 
 public static class DeviceEndpoints
 {
+    private const int MaxEndpointLength = 2048;
+    private const int MaxKeyLength = 256;
+
     public static void MapDeviceEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/devices", (HttpContext context, RelayStore store) =>
@@ -62,10 +65,11 @@ public static class DeviceEndpoints
                 return AuthHelpers.Unauthorized();
 
             var isHttps = Uri.TryCreate(body?.Endpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
-            if (!isHttps || body?.Keys is not { P256dh: { Length: > 0 } p256dh, Auth: { Length: > 0 } auth })
+            if (!isHttps || body!.Endpoint!.Length > MaxEndpointLength
+                || body.Keys is not { P256dh: { Length: > 0 and <= MaxKeyLength } p256dh, Auth: { Length: > 0 and <= MaxKeyLength } auth })
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidSubscription");
 
-            store.SetPush(device.Id, new PushSubscriptionRecord(body.Endpoint!, p256dh, auth));
+            store.SetPush(device.Id, new PushSubscriptionRecord(body.Endpoint, p256dh, auth));
             return Results.NoContent();
         });
 

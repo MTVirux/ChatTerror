@@ -139,6 +139,10 @@ public sealed class RelayStore
     public int CountDevices(string installId) =>
         QuerySingle("SELECT COUNT(*) FROM devices WHERE install_id = $install", reader => reader.GetInt32(0), ("$install", installId));
 
+    public int CountActiveDevices(string installId) =>
+        QuerySingle("SELECT COUNT(*) FROM devices WHERE install_id = $install AND status = $active",
+            reader => reader.GetInt32(0), ("$install", installId), ("$active", DeviceStatus.Active));
+
     public (DeviceRecord Device, string Token) CreateDevice(string installId, string publicKey, string name)
     {
         var id = Tokens.NewId();
@@ -190,13 +194,20 @@ public sealed class RelayStore
     public void TouchLastSeen(string id) =>
         Execute("UPDATE devices SET last_seen = $now WHERE id = $id", ("$id", id), ("$now", Now));
 
-    public int DeleteExpired()
+    // Returns the pending devices that were removed, so their sockets and plugins can be told.
+    public List<(string DeviceId, string InstallId)> DeleteExpired()
     {
         var now = Now;
-        var pendingCutoff = now - (long)pendingDeviceTtl.TotalMilliseconds;
-        return Execute("DELETE FROM pairings WHERE expires <= $now", ("$now", now))
-            + Execute("DELETE FROM devices WHERE status = $pending AND created <= $cutoff",
-                ("$pending", DeviceStatus.Pending), ("$cutoff", pendingCutoff));
+        Execute("DELETE FROM pairings WHERE expires <= $now", ("$now", now));
+
+        var cutoff = now - (long)pendingDeviceTtl.TotalMilliseconds;
+        var candidates = Query("SELECT id, install_id FROM devices WHERE status = $pending AND created <= $cutoff",
+            reader => (DeviceId: reader.GetString(0), InstallId: reader.GetString(1)),
+            ("$pending", DeviceStatus.Pending), ("$cutoff", cutoff));
+        return candidates
+            .Where(device => Execute("DELETE FROM devices WHERE id = $id AND status = $pending",
+                ("$id", device.DeviceId), ("$pending", DeviceStatus.Pending)) == 1)
+            .ToList();
     }
 
     private static DeviceRecord ReadDevice(SqliteDataReader reader, int offset)

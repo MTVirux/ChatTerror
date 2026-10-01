@@ -20,7 +20,7 @@ public static class InstallEndpoints
 
             var (id, token) = store.CreateInstall(publicKey);
             return Results.Ok(new CreateInstallResponse(id, token));
-        });
+        }).RequireRateLimiting(RequestLimits.InstallPolicy);
 
         app.MapGet("/api/vapid", (VapidKeys keys) => Results.Ok(new VapidResponse(keys.PublicKey)));
     }

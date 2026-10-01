@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -16,7 +17,16 @@ public sealed class RelaySocketHandler(
     TimeProvider time,
     ILogger<RelaySocketHandler> log)
 {
+    public const int PreAuthMaxBytes = 4096;
+    public const int MaxPushBodyBytes = 4096;
+
+    // Leaves room for the msg wrapper, so a relayed frame never exceeds Limits.MaxFrameBytes.
+    public const int MaxPayloadLength = Limits.MaxFrameBytes - 256;
+
+    private const int MaxConcurrentPushes = 32;
     private static readonly TimeSpan PushTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly SemaphoreSlim pushSlots = new(MaxConcurrentPushes);
 
     private enum Kind
     {
@@ -58,60 +68,92 @@ public sealed class RelaySocketHandler(
     {
         var relay = options.Value;
         var bucket = new TokenBucket(relay.FramesPerSecond, relay.FrameBurst, time);
-        var buffer = new byte[Limits.MaxFrameBytes + 1];
         var authDeadline = Task.Delay(relay.AuthTimeout, time);
+        var preAuthBuffer = new byte[PreAuthMaxBytes + 1];
+        byte[]? frameBuffer = null;
 
-        while (true)
+        try
         {
-            var receive = ReceiveAsync(socket, buffer, conn.Aborted);
-            if (!conn.IsAuthenticated && !conn.IsClosing && await Task.WhenAny(receive, authDeadline) == authDeadline)
-                conn.Close(WebSocketCloseStatus.PolicyViolation, "Auth timeout");
+            while (true)
+            {
+                var receive = frameBuffer == null
+                    ? ReceiveAsync(socket, preAuthBuffer, PreAuthMaxBytes, conn.Aborted)
+                    : ReceiveAsync(socket, frameBuffer, Limits.MaxFrameBytes, conn.Aborted);
+                if (!conn.IsAuthenticated && !conn.IsClosing && await Task.WhenAny(receive, authDeadline) == authDeadline)
+                    conn.Close(WebSocketCloseStatus.PolicyViolation, "Auth timeout");
 
-            var message = await receive;
-            if (message.Kind == Kind.Closed)
-                return;
-            if (conn.IsClosing)
-                continue;
+                var message = await receive;
+                if (message.Kind == Kind.Closed)
+                    return;
+                if (conn.IsClosing)
+                    continue;
 
-            if (message.Kind == Kind.TooLarge)
-            {
-                conn.Send(new ErrorFrame(RelayErrors.TooLarge));
-                conn.Close(WebSocketCloseStatus.MessageTooBig, "Frame too large");
+                if (message.Kind == Kind.TooLarge)
+                {
+                    conn.Send(new ErrorFrame(RelayErrors.TooLarge));
+                    conn.Close(WebSocketCloseStatus.MessageTooBig, "Frame too large");
+                }
+                else if (!conn.IsAuthenticated)
+                {
+                    Authenticate(conn, message);
+                    if (conn.IsAuthenticated)
+                        frameBuffer = ArrayPool<byte>.Shared.Rent(Limits.MaxFrameBytes + 1);
+                }
+                else
+                {
+                    HandleFrame(conn, bucket, message);
+                }
             }
-            else if (!conn.IsAuthenticated)
-            {
-                Authenticate(conn, message);
-            }
-            else if (!bucket.TryTake())
-            {
-                conn.Send(new ErrorFrame(RelayErrors.RateLimited));
-            }
-            else if (Parse(message) is not { } frame)
-            {
-                conn.Send(new ErrorFrame(RelayErrors.BadFrame));
-            }
-            else if (conn.Role == RelayRoles.Plugin)
-            {
-                HandlePluginFrame(conn, frame);
-            }
-            else
-            {
-                HandleDeviceFrame(conn, frame);
-            }
+        }
+        finally
+        {
+            if (frameBuffer != null)
+                ArrayPool<byte>.Shared.Return(frameBuffer);
         }
     }
 
-    private static async Task<Incoming> ReceiveAsync(WebSocket socket, byte[] buffer, CancellationToken ct)
+    private void HandleFrame(Conn conn, TokenBucket bucket, Incoming message)
+    {
+        if (conn.Role == RelayRoles.Plugin && conn.BudgetStale)
+        {
+            conn.BudgetStale = false;
+            bucket.SetScale(Math.Max(1, store.CountActiveDevices(conn.InstallId)));
+        }
+
+        if (!bucket.TryTake())
+        {
+            conn.Send(new ErrorFrame(RelayErrors.RateLimited));
+        }
+        else if (Parse(message) is not { } frame)
+        {
+            conn.Send(new ErrorFrame(RelayErrors.BadFrame));
+        }
+        else if (frame is SendFrame { Payload.Length: > MaxPayloadLength })
+        {
+            conn.Send(new ErrorFrame(RelayErrors.TooLarge));
+        }
+        else if (conn.Role == RelayRoles.Plugin)
+        {
+            HandlePluginFrame(conn, frame);
+        }
+        else
+        {
+            HandleDeviceFrame(conn, frame);
+        }
+    }
+
+    // The buffer must hold maxBytes + 1 so an oversize frame is detected without reading it all.
+    private static async Task<Incoming> ReceiveAsync(WebSocket socket, byte[] buffer, int maxBytes, CancellationToken ct)
     {
         var length = 0;
         while (true)
         {
-            var result = await socket.ReceiveAsync(buffer.AsMemory(length), ct);
+            var result = await socket.ReceiveAsync(buffer.AsMemory(length, maxBytes + 1 - length), ct);
             if (result.MessageType == WebSocketMessageType.Close)
                 return new Incoming(Kind.Closed);
 
             length += result.Count;
-            if (length > Limits.MaxFrameBytes)
+            if (length > maxBytes)
                 return new Incoming(Kind.TooLarge);
             if (result.EndOfMessage)
             {
@@ -225,6 +267,7 @@ public sealed class RelaySocketHandler(
                 else if (decision.Approved)
                 {
                     store.SetDeviceStatus(device.Id, DeviceStatus.Active);
+                    plugin.BudgetStale = true;
                     if (registry.Device(device.Id) is { } online)
                     {
                         online.Send(new PairedFrame());
@@ -273,16 +316,31 @@ public sealed class RelaySocketHandler(
 
     private async Task PushAsync(string deviceId, PushSubscriptionRecord subscription, string payload)
     {
+        var body = JsonSerializer.Serialize(new { p = payload });
+        if (body.Length > MaxPushBodyBytes)
+        {
+            log.LogWarning("Skipped push to device {DeviceId}: body is {Length} bytes", deviceId, body.Length);
+            return;
+        }
+        if (!pushSlots.Wait(0))
+        {
+            log.LogWarning("Skipped push to device {DeviceId}: too many pushes in flight", deviceId);
+            return;
+        }
+
         try
         {
             using var timeout = new CancellationTokenSource(PushTimeout);
-            var body = JsonSerializer.Serialize(new { p = payload });
             if (await push.SendAsync(subscription, body, timeout.Token) == PushResult.Gone)
                 store.ClearPush(deviceId, subscription.Endpoint);
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "Push to device {DeviceId} failed", deviceId);
+        }
+        finally
+        {
+            pushSlots.Release();
         }
     }
 }

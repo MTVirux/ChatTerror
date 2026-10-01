@@ -8,13 +8,15 @@ namespace ChatTerror.Server.Relay;
 
 public sealed class Conn
 {
+    public const long MaxQueuedBytes = 1024 * 1024;
     private static readonly TimeSpan CloseGrace = TimeSpan.FromSeconds(5);
 
     private readonly WebSocket socket;
-    private readonly Channel<string> outbox = Channel.CreateBounded<string>(new BoundedChannelOptions(1024) { SingleReader = true });
+    private readonly Channel<byte[]> outbox = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
     private readonly CancellationTokenSource aborted = new();
     private readonly Lock closeLock = new();
     private (WebSocketCloseStatus Status, string Reason)? close;
+    private long queuedBytes;
 
     public Conn(WebSocket socket)
     {
@@ -32,6 +34,9 @@ public sealed class Conn
 
     public bool IsClosing => close != null;
 
+    // Set when the install's active device count may have changed, so the plugin frame budget is recomputed.
+    public volatile bool BudgetStale = true;
+
     public Task Writer { get; }
 
     // Cancelled when the socket is dead or the peer ignored our close for too long.
@@ -39,8 +44,14 @@ public sealed class Conn
 
     public void Send(RelayFrame frame)
     {
-        if (!outbox.Writer.TryWrite(ProtocolJson.Serialize(frame)))
+        var bytes = Encoding.UTF8.GetBytes(ProtocolJson.Serialize(frame));
+        if (Interlocked.Add(ref queuedBytes, bytes.Length) > MaxQueuedBytes)
+        {
             Close(WebSocketCloseStatus.PolicyViolation, "Too slow");
+            return;
+        }
+        if (!outbox.Writer.TryWrite(bytes))
+            Interlocked.Add(ref queuedBytes, -bytes.Length);
     }
 
     // Queued frames are still delivered before the close frame.
@@ -60,8 +71,11 @@ public sealed class Conn
     {
         try
         {
-            await foreach (var text in outbox.Reader.ReadAllAsync(aborted.Token))
-                await socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, aborted.Token);
+            await foreach (var bytes in outbox.Reader.ReadAllAsync(aborted.Token))
+            {
+                await socket.SendAsync(bytes, WebSocketMessageType.Text, true, aborted.Token);
+                Interlocked.Add(ref queuedBytes, -bytes.Length);
+            }
 
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
                 await socket.CloseOutputAsync(close!.Value.Status, close.Value.Reason, aborted.Token);
@@ -105,8 +119,12 @@ public sealed class ConnectionRegistry
             device.Send(new RevokedFrame());
             device.Close(WebSocketCloseStatus.NormalClosure, "Revoked");
         }
-        if (notifyPlugin)
-            Plugin(installId)?.Send(new DeviceRevokedFrame(deviceId));
+        if (Plugin(installId) is { } plugin)
+        {
+            plugin.BudgetStale = true;
+            if (notifyPlugin)
+                plugin.Send(new DeviceRevokedFrame(deviceId));
+        }
     }
 
     private ConcurrentDictionary<string, Conn> MapFor(Conn conn) => conn.Role == RelayRoles.Plugin ? plugins : devices;

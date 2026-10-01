@@ -12,8 +12,11 @@ public sealed class RelayOptions
 
     public string VapidSubject { get; set; } = "mailto:admin@localhost";
 
-    // Comma separated, so it fits in a single environment variable.
+    // Lists are comma separated, so each fits in a single environment variable.
     public string AllowedOrigins { get; set; } = "";
+
+    // IPs or CIDRs whose X-Forwarded-* headers are trusted. Empty disables forwarded headers.
+    public string TrustedProxies { get; set; } = "";
 
     public double FramesPerSecond { get; set; } = 20;
 
@@ -23,10 +26,20 @@ public sealed class RelayOptions
 
     public int PairingRequestsPerMinute { get; set; } = 10;
 
+    public int InstallsPerHour { get; set; } = 5;
+
     public TimeSpan PendingDeviceTtl { get; set; } = TimeSpan.FromHours(1);
 
-    public string[] GetAllowedOrigins() =>
-        AllowedOrigins.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(origin => origin.TrimEnd('/'))
-            .ToArray();
+    public long MaxConcurrentConnections { get; set; } = 10000;
+
+    public long MaxConcurrentUpgradedConnections { get; set; } = 5000;
+
+    public long MaxRequestBodyBytes { get; set; } = 16 * 1024;
+
+    public string[] GetAllowedOrigins() => SplitList(AllowedOrigins).Select(origin => origin.TrimEnd('/')).ToArray();
+
+    public string[] GetTrustedProxies() => SplitList(TrustedProxies);
+
+    private static string[] SplitList(string value) =>
+        value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
