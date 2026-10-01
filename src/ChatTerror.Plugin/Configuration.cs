@@ -33,4 +33,6 @@ public sealed class PairedDevice
     public List<ChatChannel> MutedChannels { get; set; } = new();
 
     public long PairedAt { get; set; }
+
+    public long LastSeenSeq { get; set; }
 }

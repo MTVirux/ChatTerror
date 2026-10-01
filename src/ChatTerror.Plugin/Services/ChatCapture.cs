@@ -36,7 +36,7 @@ public sealed class ChatCapture : IDisposable
         if (!config.Enabled || config.Devices.Count == 0)
             return;
 
-        var type = (XivChatType)((int)message.LogKind & 0x7F);
+        var type = message.LogKind;
         if (ChannelMap.FromXivChatType(type) is not { } channel)
             return;
 
@@ -47,7 +47,7 @@ public sealed class ChatCapture : IDisposable
         var sender = player?.PlayerName ?? StripGlyphs(message.Sender.TextValue);
         var outgoing = ChannelMap.IsOutgoing(type)
             || message.SourceKind == XivChatRelationKind.LocalPlayer
-            || (type != XivChatType.TellIncoming && me != null && string.Equals(sender, me, StringComparison.OrdinalIgnoreCase));
+            || (type != XivChatType.TellIncoming && me != null && string.Equals(sender, me, StringComparison.OrdinalIgnoreCase) && IsHomeWorld(player));
 
         // Players on the local world often carry no world in the payload, and own lines carry no payload at all.
         var world = WorldName(player?.World)
@@ -73,6 +73,15 @@ public sealed class ChatCapture : IDisposable
             Character: me ?? "",
             Outgoing: outgoing);
         hub.Publish(item, result.Notify);
+    }
+
+    // Own lines carry no player payload; anyone else with the same name is from another world.
+    private bool IsHomeWorld(PlayerPayload? player)
+    {
+        if (player == null)
+            return true;
+        var world = player.World.RowId != 0 ? player.World.RowId : playerState.CurrentWorld.RowId;
+        return world == playerState.HomeWorld.RowId;
     }
 
     private static string? WorldName(RowRef<World>? world)

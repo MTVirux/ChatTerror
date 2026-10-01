@@ -39,6 +39,7 @@ public sealed class DevicesTab : ITab, IDisposable
         this.hub = hub;
         this.framework = framework;
         hub.PairRequested += OnPairRequested;
+        hub.Connected += OnConnected;
     }
 
     public string Title => "Devices";
@@ -47,6 +48,7 @@ public sealed class DevicesTab : ITab, IDisposable
     {
         disposed = true;
         hub.PairRequested -= OnPairRequested;
+        hub.Connected -= OnConnected;
     }
 
     public void Draw()
@@ -198,20 +200,43 @@ public sealed class DevicesTab : ITab, IDisposable
 
     private void OnPairRequested(PendingPair pair) => pairing = null;
 
-    // Devices the relay no longer lists were deleted there, so drop them here too.
-    private void Refresh() =>
-        Run(async token =>
+    private void Refresh() => Run(Reconcile);
+
+    // Not gated on busy, so a reconnect always catches devices removed while the plugin was offline.
+    private void OnConnected()
+    {
+        if (disposed || config.InstallToken is not { } token)
+            return;
+
+        Task.Run(async () =>
         {
-            var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var remote = (await api.ListDevices(token)).ToDictionary(d => d.DeviceId);
-            remoteDevices = remote;
-            await OnFramework(() =>
+            try
             {
-                var gone = config.Devices.Where(d => d.PairedAt < startedAt && !remote.ContainsKey(d.DeviceId)).ToList();
-                foreach (var device in gone)
-                    hub.RemoveDevice(device.DeviceId);
-            });
+                await Reconcile(token);
+            }
+            catch (Exception ex) when (!disposed)
+            {
+                error = ex.Message;
+            }
+            catch (Exception)
+            {
+            }
         });
+    }
+
+    // Devices the relay no longer lists were deleted there, so drop them here too.
+    private async Task Reconcile(string token)
+    {
+        var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var remote = (await api.ListDevices(token)).ToDictionary(d => d.DeviceId);
+        remoteDevices = remote;
+        await OnFramework(() =>
+        {
+            var gone = config.Devices.Where(d => d.PairedAt < startedAt && !remote.ContainsKey(d.DeviceId)).ToList();
+            foreach (var device in gone)
+                hub.RemoveDevice(device.DeviceId);
+        });
+    }
 
     private void Revoke(string deviceId) =>
         Run(async token =>

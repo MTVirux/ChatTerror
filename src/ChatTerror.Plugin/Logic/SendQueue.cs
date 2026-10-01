@@ -58,12 +58,17 @@ public sealed class SendQueue
             {
                 var req = head.Req;
                 var error = SendValidator.Validate(req.Payload, s);
-                if (error is null && s.RequireLoggedIn && !gate.IsLoggedIn)
+                var expired = now - head.EnqueuedAt >= BusyTimeoutMs;
+                if (error is null && !gate.IsLoggedIn)
+                {
+                    if (!s.RequireLoggedIn && !expired)
+                        break;
                     error = SendErrors.NotLoggedIn;
+                }
 
                 if (error is null && gate.IsBusy)
                 {
-                    if (now - head.EnqueuedAt < BusyTimeoutMs)
+                    if (!expired)
                         break;
                     error = SendErrors.Busy;
                 }

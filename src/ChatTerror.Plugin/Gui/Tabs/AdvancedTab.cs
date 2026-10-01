@@ -39,11 +39,14 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         }
 
         var loggedIn = settings.RequireLoggedIn;
-        if (ImGui.Checkbox("Only send while logged in", ref loggedIn))
+        if (ImGui.Checkbox("Fail sends right away while logged out", ref loggedIn))
         {
             settings.RequireLoggedIn = loggedIn;
             changed();
         }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("When off, messages sent while logged out wait up to 10 seconds for you to log in before failing.");
     }
 
     // Typed values are kept here while the field is active and applied once it is released.
