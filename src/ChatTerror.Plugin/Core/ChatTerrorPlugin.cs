@@ -45,6 +45,9 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         this.playerState = playerState;
 
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        var tokenReadable = config.LoadInstallToken();
+        if (!tokenReadable)
+            log.Error("The saved install token could not be decrypted, it may belong to another Windows user or machine. Registering a new install.");
         foreach (var (channel, setting) in RelaySettings.Defaults())
             config.Settings.Channels.TryAdd(channel, setting);
         SaveConfig();
@@ -78,7 +81,12 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         commandManager.AddHandler(ConfigStatic.CommandName, command);
         commandManager.AddHandler(ConfigStatic.CommandAlias, command);
 
-        if (keys.Replaced && config.InstallToken != null)
+        if (!tokenReadable)
+        {
+            connection.Notice = "The saved install token could not be decrypted. Paired devices were removed; pair them again.";
+            connection.Reregister();
+        }
+        else if (keys.Replaced && config.InstallToken != null)
         {
             connection.Notice = "The identity key was unreadable and has been replaced. Paired devices were removed; pair them again.";
             connection.Reregister();
