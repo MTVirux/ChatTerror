@@ -1,0 +1,11 @@
+terraform.tfvars
+*.auto.tfvars
+.envrc
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Saved plans embed every variable value, including the API token
+tfplan
+*.tfplan
