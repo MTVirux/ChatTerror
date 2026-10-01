@@ -25,6 +25,10 @@ describe("defaultSendAccount", () => {
   it("keeps the current choice while it is online", () => {
     expect(defaultSendAccount([], accounts, "b")).toBe("b");
   });
+  it("keeps a manual choice in a tell tab when no partner is passed", () => {
+    const items = [it_("b", "1", 1, { channel: "tell", sender: "X Y@W" })];
+    expect(defaultSendAccount(items, accounts, "a")).toBe("a");
+  });
   it("falls back to the first online account", () => {
     expect(defaultSendAccount([], [acct("a", "gameOffline"), acct("b", "online")], undefined)).toBe("b");
     expect(defaultSendAccount([], [acct("a", "gameOffline")], undefined)).toBe("a");

@@ -76,8 +76,13 @@ export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAcc
     };
   }, [manager, accountId, epoch]);
 
+  // Preselect by tell partner only when the tab changes, so account updates don't undo a manual pick.
+  const pickedForTab = useRef<string | undefined>(undefined);
   useEffect(() => {
-    setSendAccount((c) => defaultSendAccount(items, accounts, c, tab.kind === "tell" ? tab.partner : undefined));
+    const key = tabKey(tab);
+    const partner = key !== pickedForTab.current && tab.kind === "tell" ? tab.partner : undefined;
+    pickedForTab.current = key;
+    setSendAccount((c) => defaultSendAccount(items, accounts, c, partner));
   }, [tab, accounts]);
 
   // With no active account in the merged view, the first account's state shows why sending is blocked.
