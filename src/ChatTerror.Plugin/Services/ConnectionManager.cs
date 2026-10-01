@@ -33,6 +33,7 @@ public sealed class ConnectionManager : IDisposable
         this.hub = hub;
         this.framework = framework;
         this.log = log;
+        relay.StateChanged += OnStateChanged;
     }
 
     public bool Registering => registration != null;
@@ -93,9 +94,26 @@ public sealed class ConnectionManager : IDisposable
 
     public void Dispose()
     {
+        relay.StateChanged -= OnStateChanged;
         lifetime.Cancel();
         CancelRegistration();
         lifetime.Dispose();
+    }
+
+    // The relay deletes long-unused installs without devices, so with nothing paired registering again loses nothing.
+    private void OnStateChanged(RelayState state)
+    {
+        if (state != RelayState.AuthFailed)
+            return;
+
+        var rejectedToken = config.InstallToken;
+        framework.RunOnFrameworkThread(() =>
+        {
+            if (lifetime.IsCancellationRequested || !config.Enabled || config.Devices.Count > 0 || config.InstallToken != rejectedToken)
+                return;
+            log.Information("Relay rejected the install and no devices are paired, registering again.");
+            Reregister();
+        });
     }
 
     private void RevokeOnRelay(string relayUrl, string? token, IReadOnlyList<string> deviceIds)

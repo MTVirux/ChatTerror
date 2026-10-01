@@ -49,8 +49,15 @@ public sealed class KeyStore : IDisposable
         {
             key?.Dispose();
             var backup = $"{path}.bad-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-            log.Error(ex, $"identity.key is unreadable, moved it to {Path.GetFileName(backup)} and generated a new key.");
-            File.Move(path, backup, true);
+            try
+            {
+                File.Move(path, backup, true);
+                log.Error(ex, $"identity.key is unreadable, moved it to {Path.GetFileName(backup)} and generated a new key.");
+            }
+            catch (Exception moveError) when (moveError is IOException or UnauthorizedAccessException)
+            {
+                log.Error(ex, $"identity.key is unreadable and could not be backed up ({moveError.Message}), overwriting it with a new key.");
+            }
             Replaced = true;
             return null;
         }
