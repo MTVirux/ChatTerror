@@ -46,9 +46,8 @@ public static class ChatFilter
         if (string.IsNullOrWhiteSpace(localName))
             return false;
 
-        var fullName = localName.Trim();
-        var firstName = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
-        return ContainsWord(text, firstName) || ContainsWord(text, fullName);
+        var firstName = localName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        return ContainsWord(text, firstName);
     }
 
     private static bool ContainsWord(string text, string word) =>

@@ -52,10 +52,8 @@ public sealed class DeviceSession
             yield break;
         }
 
-        for (var start = 0; start < items.Count; start += Limits.BacklogChunk)
-        {
-            var chunk = items.Skip(start).Take(Limits.BacklogChunk).ToList();
-            yield return new BacklogPayload(chunk, start + Limits.BacklogChunk >= items.Count);
-        }
+        var chunks = items.Chunk(Limits.BacklogChunk).ToList();
+        for (var i = 0; i < chunks.Count; i++)
+            yield return new BacklogPayload(chunks[i], i == chunks.Count - 1);
     }
 }

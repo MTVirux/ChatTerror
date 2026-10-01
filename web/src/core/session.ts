@@ -124,6 +124,9 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
   let guard = new SeqGuard();
   let counter = new SeqCounter();
   let syncTs = 0;
+  // Live chat can arrive before the backlog finishes; its ts must not move the sync point past missing backlog items.
+  let backlogPending = false;
+  let deferredTs = 0;
   let cacheLimit = DEFAULT_CACHE_LIMIT;
 
   function setState(patch: Partial<SessionState>) {
@@ -224,6 +227,8 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
   }
 
   async function sendHello() {
+    backlogPending = true;
+    deferredTs = 0;
     await sendPayload({ type: "hello", sinceTs: syncTs });
     await sendPayload({ type: "prefs", mutedChannels: state.mutedChannels });
   }
@@ -233,7 +238,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     approved = true;
     await setMeta("approved", true);
     refreshStatus();
-    await sendHello();
+    if (pluginOnline) await sendHello();
   }
 
   async function handleFrame(frame: ServerFrame) {
@@ -242,17 +247,17 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
         authed = true;
         dropped = false;
         refreshStatus();
-        if (approved) await sendHello();
-        else if (pairing) {
+        if (!approved && pairing) {
           const me = await guarded(deps.api.getMe(pairing.token));
-          if (me.status !== "pending") await markApproved();
+          if (me.status === "active") await markApproved();
         }
         return;
       case "authFail":
         if (pairing) await guarded(deps.api.getMe(pairing.token));
         return;
       case "pluginStatus": {
-        const cameBack = pluginOnline === false && frame.online;
+        // The relay sends this right after authOk, so it is also what triggers the first hello.
+        const cameBack = pluginOnline !== true && frame.online;
         pluginOnline = frame.online;
         refreshStatus();
         if (cameBack && authed && approved) await sendHello();
@@ -274,6 +279,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     authed = false;
     dropped = true;
     pluginOnline = undefined;
+    backlogPending = false;
     refreshStatus();
   }
 
@@ -294,10 +300,14 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
 
     switch (payload.type) {
       case "chat":
-        await receiveItems([payload.item]);
+        await receiveItems([payload.item], !backlogPending);
         return;
       case "backlog":
-        await receiveItems(payload.items);
+        await receiveItems(payload.items, true);
+        if (payload.done && backlogPending) {
+          backlogPending = false;
+          await advanceSync(deferredTs);
+        }
         return;
       case "sendResult":
         pendingSends.get(payload.requestId)?.({ ok: payload.ok, ...(payload.error ? { error: payload.error } : {}) });
@@ -314,15 +324,19 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     }
   }
 
-  async function receiveItems(items: ChatItem[]) {
+  async function advanceSync(ts: number) {
+    if (ts <= syncTs) return;
+    syncTs = ts;
+    await setMeta("syncTs", ts);
+  }
+
+  async function receiveItems(items: ChatItem[], moveSync: boolean) {
     if (items.length === 0) return;
     const sorted = [...items].sort((a, b) => a.ts - b.ts);
     await addMessages(sorted, cacheLimit);
     const newest = sorted[sorted.length - 1].ts;
-    if (newest > syncTs) {
-      syncTs = newest;
-      await setMeta("syncTs", newest);
-    }
+    if (moveSync) await advanceSync(newest);
+    else deferredTs = Math.max(deferredTs, newest);
     const fresh: ChatItem[] = [];
     for (const item of sorted) {
       if (shownIds.has(item.id)) continue;

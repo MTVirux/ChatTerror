@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ChatItem } from "./protocol";
-import { addMessages, clearMessages, getMeta, getPairing, loadMessages, newestTs, setMeta, setPairing, trimMessages, wipeAll } from "./storage";
+import { addMessages, clearMessages, getMeta, getPairing, loadMessages, setMeta, setPairing, trimMessages, wipeAll } from "./storage";
 
 function item(id: string, ts: number): ChatItem {
   return { id, ts, channel: "say", sender: "A B", text: id, character: "C D", outgoing: false };
@@ -28,14 +28,12 @@ describe("storage", () => {
   it("loads the newest messages oldest first", async () => {
     await addMessages([item("c", 3), item("a", 1), item("b", 2)], 10);
     expect((await loadMessages(2)).map((m) => m.id)).toEqual(["b", "c"]);
-    expect(await newestTs()).toBe(3);
   });
 
   it("clears messages", async () => {
     await addMessages([item("a", 1)], 10);
     await clearMessages();
     expect(await loadMessages(10)).toEqual([]);
-    expect(await newestTs()).toBe(0);
   });
 
   it("round trips meta with defaults", async () => {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using ChatTerror.Protocol;
@@ -17,7 +18,7 @@ public static class SendValidator
             return SendErrors.ChannelNotAllowed;
 
         var text = p.Text.Trim();
-        if (text.Length == 0 || text.Contains('\r') || text.Contains('\n') || text.StartsWith('/'))
+        if (text.Length == 0 || text.StartsWith('/') || text.Any(IsLineBreakOrControl))
             return SendErrors.InvalidText;
 
         var maxBytes = Math.Min(s.MaxLengthBytes, Limits.MaxTextBytes);
@@ -29,6 +30,8 @@ public static class SendValidator
 
         return null;
     }
+
+    private static bool IsLineBreakOrControl(char c) => char.IsControl(c) || c is '\u2028' or '\u2029';
 
     public static string BuildLine(SendChatPayload p) => Prefix(p) + p.Text.Trim();
 

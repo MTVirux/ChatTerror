@@ -13,12 +13,17 @@ public sealed class WebPushSender : IPushSender, IDisposable
     private readonly ILogger<WebPushSender> log;
 
     public WebPushSender(VapidKeys keys, ILogger<WebPushSender> log)
+        : this(keys, log, new HttpClient())
+    {
+    }
+
+    internal WebPushSender(VapidKeys keys, ILogger<WebPushSender> log, HttpClient http)
     {
         this.log = log;
         authentication = new VapidAuthentication(keys.PublicKey, keys.PrivateKey);
         if (keys.Subject != "")
             authentication.Subject = keys.Subject;
-        client = new PushServiceClient { DefaultAuthentication = authentication };
+        client = new PushServiceClient(http) { DefaultAuthentication = authentication };
     }
 
     public async Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, CancellationToken ct)

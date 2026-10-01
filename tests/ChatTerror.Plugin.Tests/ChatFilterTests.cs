@@ -191,6 +191,15 @@ public class QuietHoursTests
     }
 
     [Fact]
+    public void OutOfRangeMinutes_AreNormalized()
+    {
+        var s = new RelaySettings { QuietHoursEnabled = true, QuietStartMinutes = 1440 + 9 * 60, QuietEndMinutes = -7 * 60 };
+
+        Assert.True(QuietHours.IsQuiet(s, new TimeOnly(12, 0)));
+        Assert.False(QuietHours.IsQuiet(s, new TimeOnly(18, 0)));
+    }
+
+    [Fact]
     public void Disabled_NeverQuiet()
     {
         Assert.False(QuietHours.IsQuiet(new RelaySettings(), new TimeOnly(2, 0)));

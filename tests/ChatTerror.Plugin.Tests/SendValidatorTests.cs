@@ -27,6 +27,12 @@ public class SendValidatorTests
     [InlineData("hi\rthere")]
     [InlineData("/logout")]
     [InlineData("  /logout")]
+    [InlineData("hi\u0002there")]
+    [InlineData("hi\u0007there")]
+    [InlineData("hi\u0085there")]
+    [InlineData("hi\u2028there")]
+    [InlineData("hi\u2029there")]
+    [InlineData("hi\tthere")]
     public void BadText_InvalidText(string text)
     {
         Assert.Equal(SendErrors.InvalidText, SendValidator.Validate(Send(ChatChannel.Party, text), new RelaySettings()));

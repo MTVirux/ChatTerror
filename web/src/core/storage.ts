@@ -153,11 +153,6 @@ export function loadMessages(limit: number): Promise<ChatItem[]> {
   });
 }
 
-export async function newestTs(): Promise<number> {
-  const [newest] = await loadMessages(1);
-  return newest?.ts ?? 0;
-}
-
 export function clearMessages(): Promise<void> {
   return run("messages", "readwrite", async (tx) => {
     await result(tx.objectStore("messages").clear());

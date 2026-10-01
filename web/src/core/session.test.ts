@@ -94,20 +94,64 @@ describe("session", () => {
     expect(relay.connects).toBe(0);
   });
 
-  it("sends hello after authOk and follows plugin status", async () => {
+  it("sends hello once the plugin is online and follows plugin status", async () => {
     const { session, relay } = await setup();
     expect(session.getState().status).toBe("connecting");
     expect(relay.sent).toEqual([]);
 
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
-    await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello", sinceTs: 0 }));
-    expect(session.getState().status).toBe("gameOffline");
+    await vi.waitFor(() => expect(session.getState().status).toBe("gameOffline"));
+    expect(relay.sent).toEqual([]);
 
     relay.deliver({ t: "pluginStatus", online: true });
     await vi.waitFor(() => expect(session.getState().status).toBe("online"));
+    await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello", sinceTs: 0 }));
+
+    relay.deliver({ t: "pluginStatus", online: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await relay.payloads()).filter((p) => p.type === "hello")).toHaveLength(1);
 
     relay.drop();
     await vi.waitFor(() => expect(session.getState().status).toBe("relayOffline"));
+  });
+
+  it("resends hello when the plugin comes back", async () => {
+    const { relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    relay.deliver({ t: "pluginStatus", online: false });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () => expect((await relay.payloads()).filter((p) => p.type === "hello")).toHaveLength(2));
+  });
+
+  it("does not move the sync point past live chat until the backlog is done", async () => {
+    const { relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    const seq = Date.now();
+    await relay.fromPlugin({ type: "backlog", seq, items: [item("a", 100)], done: false });
+    await relay.fromPlugin({ type: "chat", seq: seq + 1, item: item("live", 900) });
+    await vi.waitFor(async () => expect(await loadMessages(10)).toHaveLength(2));
+    expect(await getMeta("syncTs")).toBe(100);
+
+    await relay.fromPlugin({ type: "backlog", seq: seq + 2, items: [item("b", 200)], done: true });
+    await vi.waitFor(async () => expect(await getMeta("syncTs")).toBe(900));
+  });
+
+  it("drops the deferred sync point when the socket closes mid backlog", async () => {
+    const { relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    const seq = Date.now();
+    await relay.fromPlugin({ type: "backlog", seq, items: [item("a", 100)], done: false });
+    await relay.fromPlugin({ type: "chat", seq: seq + 1, item: item("live", 900) });
+    await vi.waitFor(async () => expect(await loadMessages(10)).toHaveLength(2));
+
+    relay.sent.length = 0;
+    relay.drop();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello", sinceTs: 100 }));
   });
 
   it("asks for messages newer than the last one received over the socket", async () => {
@@ -120,6 +164,7 @@ describe("session", () => {
     relay.sent.length = 0;
     relay.drop();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
     await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello", sinceTs: 500 }));
   });
 
@@ -142,7 +187,17 @@ describe("session", () => {
     const { session, relay } = await setup({ approved: false });
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
     await vi.waitFor(() => expect(session.getState().status).toBe("gameOffline"));
+    relay.deliver({ t: "pluginStatus", online: true });
     await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello" }));
+  });
+
+  it("stays pending unless getMe reports the device active", async () => {
+    const { session, relay } = await setup({ approved: false, api: { getMe: async () => ({ deviceId: "dev", status: "expired" }) } });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(session.getState().status).toBe("pending");
+    expect(await getMeta("approved")).toBe(false);
   });
 
   it("dedups chat by id and emits backlog oldest first", async () => {

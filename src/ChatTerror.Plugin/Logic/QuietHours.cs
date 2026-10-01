@@ -10,8 +10,8 @@ public static class QuietHours
             return false;
 
         var minutes = now.Hour * 60 + now.Minute;
-        var start = s.QuietStartMinutes;
-        var end = s.QuietEndMinutes;
+        var start = Normalize(s.QuietStartMinutes);
+        var end = Normalize(s.QuietEndMinutes);
 
         if (start == end)
             return false;
@@ -19,4 +19,6 @@ public static class QuietHours
             return minutes >= start && minutes < end;
         return minutes >= start || minutes < end;
     }
+
+    private static int Normalize(int minutes) => (minutes % 1440 + 1440) % 1440;
 }

@@ -28,7 +28,8 @@ self.addEventListener("activate", (event) => {
 async function networkFirst(request: Request): Promise<Response> {
   try {
     const response = await fetch(request);
-    if (response.ok) await (await caches.open(SHELL_CACHE)).put("/index.html", response.clone());
+    const path = new URL(request.url).pathname;
+    if (response.ok && (path === "/" || path === "/index.html")) await (await caches.open(SHELL_CACHE)).put("/index.html", response.clone());
     return response;
   } catch {
     return (await caches.match("/index.html")) ?? Response.error();
