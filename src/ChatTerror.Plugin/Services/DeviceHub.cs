@@ -381,11 +381,12 @@ public sealed class DeviceHub : IDisposable
 
     private SettingsPayload BuildSettings()
     {
-        var channels = config.Settings.Channels;
+        var settings = config.Settings;
+        var order = settings.OrderedChannels();
         return new SettingsPayload(
             Character: characterName(),
-            RelayChannels: channels.Where(c => c.Value.Relay).Select(c => c.Key).Order().ToList(),
-            SendChannels: channels.Where(c => c.Value.Send).Select(c => c.Key).Order().ToList(),
+            RelayChannels: order.Where(c => settings.Channels.TryGetValue(c, out var s) && s.Relay).ToList(),
+            SendChannels: order.Where(c => settings.Channels.TryGetValue(c, out var s) && s.Send).ToList(),
             MaxLength: Math.Min(config.Settings.MaxLengthBytes, Limits.MaxTextBytes));
     }
 
