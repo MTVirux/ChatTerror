@@ -122,4 +122,24 @@ public class MessageHistoryTests
 
         Assert.True(v0 < v1 && v1 < v2 && v2 < h.Version);
     }
+
+    [Fact]
+    public void Characters_AreSortedAndDistinct()
+    {
+        var h = new MessageHistory(10);
+        h.Add(Item(1, "Sam Roe"));
+        h.Add(Item(2, "Alex Doe"));
+        h.Add(Item(3, "Sam Roe"));
+
+        Assert.Equal(["Alex Doe", "Sam Roe"], h.Characters);
+    }
+
+    [Fact]
+    public void For_ReturnsOnlyThatCharacter_OldestFirst()
+    {
+        var h = new MessageHistory(10, [Item(3, "Alex Doe"), Item(2, "Sam Roe"), Item(1, "Alex Doe")]);
+
+        Assert.Equal([1L, 3L], h.For("Alex Doe").Select(i => i.Ts));
+        Assert.Empty(h.For("Nobody"));
+    }
 }
