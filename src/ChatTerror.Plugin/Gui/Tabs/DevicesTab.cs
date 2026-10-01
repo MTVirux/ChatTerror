@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using ChatTerror.Plugin.Services;
+using ChatTerror.Protocol;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -13,6 +14,9 @@ namespace ChatTerror.Plugin.Gui.Tabs;
 
 public sealed class DevicesTab : ITab, IDisposable
 {
+    // Code is the full code shown to the user: the relay code followed by the local secret.
+    private sealed record ActivePairing(string Code, long ExpiresAt);
+
     private static readonly Vector4 Green = new(0.4f, 1f, 0.4f, 1f);
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
 
@@ -24,7 +28,7 @@ public sealed class DevicesTab : ITab, IDisposable
 
     // Written by background tasks; each is replaced as a whole so the UI never sees partial state.
     private volatile IReadOnlyDictionary<string, DeviceInfo> remoteDevices = new Dictionary<string, DeviceInfo>();
-    private volatile PairingResponse? pairing;
+    private volatile ActivePairing? pairing;
     private volatile string? error;
     private volatile bool busy;
     private volatile bool disposed;
@@ -74,10 +78,20 @@ public sealed class DevicesTab : ITab, IDisposable
         foreach (var pair in hub.PendingPairs.ToList())
         {
             ImGui.PushID(pair.DeviceId);
-            ImGui.BulletText($"{pair.DeviceName}   code {pair.Fingerprint}");
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Approve"))
-                error = hub.Approve(pair) ? null : "Not connected to the relay.";
+            if (pair.Verified)
+            {
+                ImGui.BulletText($"{pair.DeviceName}   code {pair.Fingerprint}");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Approve"))
+                    error = hub.Approve(pair) ? null : "Not connected to the relay.";
+            }
+            else
+            {
+                ImGui.BulletText($"{pair.DeviceName}   unverified");
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("This request did not come from the pairing code shown here, so it can't be approved. Reject it and pair again.");
+            }
+
             ImGui.SameLine();
             if (ImGui.SmallButton("Reject"))
                 error = hub.Reject(pair) ? null : "Not connected to the relay.";
@@ -99,7 +113,7 @@ public sealed class DevicesTab : ITab, IDisposable
             using (ImRaii.Disabled(busy || config.InstallToken == null))
             {
                 if (ImGui.Button("Pair new device"))
-                    Run(async token => pairing = await api.CreatePairing(token));
+                    Run(StartPairing);
             }
 
             ImGui.Separator();
@@ -114,7 +128,10 @@ public sealed class DevicesTab : ITab, IDisposable
             ImGui.SetClipboardText(url);
         ImGui.SameLine();
         if (ImGui.SmallButton("Cancel"))
+        {
             pairing = null;
+            hub.CancelPairing();
+        }
 
         qr.Draw(url, 4f * ImGuiHelpers.GlobalScale);
         ImGui.Separator();
@@ -196,7 +213,20 @@ public sealed class DevicesTab : ITab, IDisposable
         return DateTimeOffset.FromUnixTimeMilliseconds(lastSeen).ToLocalTime().ToString("g");
     }
 
-    private void OnPairRequested(PendingPair pair) => pairing = null;
+    private void OnPairRequested(PendingPair pair)
+    {
+        if (pair.Verified)
+            pairing = null;
+    }
+
+    // The secret never goes to the relay; it only appears in the code and QR shown here.
+    private async Task StartPairing(string token)
+    {
+        var response = await api.CreatePairing(token);
+        var secret = PairingSecret.Generate();
+        await OnFramework(() => hub.StartPairing(secret, response.ExpiresAt));
+        pairing = new ActivePairing($"{response.Code}-{PairingSecret.Format(secret)}", response.ExpiresAt);
+    }
 
     // Devices the relay no longer lists were deleted there, so drop them here too.
     private void Refresh() =>

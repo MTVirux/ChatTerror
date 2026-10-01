@@ -67,7 +67,8 @@ public class EndToEndTests
         Assert.Equal(claim.DeviceId, request.DeviceId);
         var requestPub = Base64Url.Decode(request.DevicePublicKey);
         var pluginShared = E2eCrypto.DeriveKey(pluginKey, requestPub, pluginPub, requestPub);
-        Assert.Equal(Fingerprint.Compute(Base64Url.Decode(info.PluginPublicKey), devicePub), Fingerprint.Compute(pluginPub, requestPub));
+        var secret = PairingSecret.Generate();
+        Assert.Equal(Fingerprint.Compute(secret, Base64Url.Decode(info.PluginPublicKey), devicePub), Fingerprint.Compute(secret, pluginPub, requestPub));
 
         var session = new DeviceSession(claim.DeviceId, pluginShared, []);
         var phone = new Phone(phoneShared);

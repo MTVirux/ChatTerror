@@ -22,7 +22,16 @@ describe("crypto", () => {
   });
 
   it("computes the vector fingerprint", async () => {
-    expect(await fingerprint(decode(vector.plugin.publicRaw), decode(vector.device.publicRaw))).toBe(vector.fingerprint);
+    expect(await fingerprint(vector.secret, decode(vector.plugin.publicRaw), decode(vector.device.publicRaw))).toBe(vector.fingerprint);
+  });
+
+  it("fingerprint depends on the secret and normalizes it", async () => {
+    const plugin = decode(vector.plugin.publicRaw);
+    const device = decode(vector.device.publicRaw);
+    const base = await fingerprint("ABCD2345", plugin, device);
+    expect(await fingerprint("abcd-2345", plugin, device)).toBe(base);
+    expect(await fingerprint("ABCD2346", plugin, device)).not.toBe(base);
+    await expect(fingerprint("ABCD234", plugin, device)).rejects.toThrow();
   });
 
   it("opens the vector envelope", async () => {

@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { pair, parsePairCode } from "../core/session";
+import { formatPairCode, pair, parsePairCode } from "../core/session";
 import { defaultDeviceName } from "./format";
 
+const MISSING_SECRET = "This code is missing its second half. Enter all 16 characters shown in the plugin, like ABCD-EFGH-JKMN-PQRS.";
+
 function formatCodeInput(value: string): string {
-  const raw = value.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 8);
-  return raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
+  const raw = value.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 16);
+  return raw.match(/.{1,4}/g)?.join("-") ?? "";
+}
+
+// Old-style or truncated codes have only the relay half.
+function codeError(input: string): string {
+  const fromUrl = input.match(/[#?&]pair=([^&\s]+)/i);
+  const raw = (fromUrl ? decodeURIComponent(fromUrl[1]) : input).replace(/[^0-9A-Za-z]/g, "");
+  return raw.length === 8 ? MISSING_SECRET : "Enter the 16-character code shown in the plugin, like ABCD-EFGH-JKMN-PQRS.";
 }
 
 function pairErrorText(error: unknown): string {
@@ -37,24 +46,23 @@ export function PairScreen({ revoked }: { revoked: boolean }) {
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
-    const fromLink = location.hash.startsWith("#pair=") ? parsePairCode(location.href) : null;
-    if (fromLink) {
-      setCode(fromLink);
-      history.replaceState(null, "", location.pathname + location.search);
-    }
+    if (!location.hash.startsWith("#pair=")) return;
+    const fromLink = parsePairCode(location.href);
+    if (fromLink) setCode(formatPairCode(fromLink));
+    else setError(codeError(location.href));
+    history.replaceState(null, "", location.pathname + location.search);
   }, []);
 
   async function submit(event: Event) {
     event.preventDefault();
-    const normalized = parsePairCode(code);
-    if (!normalized) {
-      setError("Enter the 8-character code shown in the plugin, like ABCD-EFGH.");
+    if (!parsePairCode(code)) {
+      setError(codeError(code));
       return;
     }
     setBusy(true);
     setError("");
     try {
-      await pair(normalized, name.trim() || defaultDeviceName());
+      await pair(code, name.trim() || defaultDeviceName());
     } catch (e) {
       setError(pairErrorText(e));
       setBusy(false);
@@ -63,10 +71,12 @@ export function PairScreen({ revoked }: { revoked: boolean }) {
 
   function onScanned(text: string) {
     setScanning(false);
-    const normalized = parsePairCode(text);
-    if (normalized) {
-      setCode(normalized);
+    const parsed = parsePairCode(text);
+    if (parsed) {
+      setCode(formatPairCode(parsed));
       setError("");
+    } else if (/[#?&]pair=/i.test(text)) {
+      setError(codeError(text));
     } else {
       setError("That QR code isn't a ChatTerror pairing code.");
     }
@@ -102,12 +112,12 @@ export function PairScreen({ revoked }: { revoked: boolean }) {
             class="code-input"
             value={code}
             onInput={(e) => setCode(formatCodeInput(e.currentTarget.value))}
-            placeholder="ABCD-EFGH"
+            placeholder="ABCD-EFGH-JKMN-PQRS"
             autocomplete="one-time-code"
             autocapitalize="characters"
             spellcheck={false}
             inputMode="text"
-            maxLength={9}
+            maxLength={19}
           />
         </label>
 

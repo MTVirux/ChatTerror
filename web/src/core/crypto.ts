@@ -88,8 +88,16 @@ export async function openPayload(key: CryptoKey, direction: Direction, envelope
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-export async function fingerprint(pluginPubRaw: Uint8Array<ArrayBuffer>, devicePubRaw: Uint8Array<ArrayBuffer>): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", concat(pluginPubRaw, devicePubRaw));
+export function normalizeSecret(input: string): string | null {
+  const raw = input.replace(/[\s-]/g, "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1");
+  return /^[0-9A-HJKMNP-TV-Z]{8}$/.test(raw) ? raw : null;
+}
+
+// Mixing in the pairing secret, which the relay never sees, stops a relay from grinding keys to match the number.
+export async function fingerprint(secret: string, pluginPubRaw: Uint8Array<ArrayBuffer>, devicePubRaw: Uint8Array<ArrayBuffer>): Promise<string> {
+  const normalized = normalizeSecret(secret);
+  if (!normalized) throw new Error("Invalid pairing secret");
+  const hash = await crypto.subtle.digest("SHA-256", concat(utf8.encode(normalized), concat(pluginPubRaw, devicePubRaw)));
   const digits = String(new DataView(hash).getUint32(0) % 1_000_000).padStart(6, "0");
   return `${digits.slice(0, 3)} ${digits.slice(3)}`;
 }
