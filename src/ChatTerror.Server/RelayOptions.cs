@@ -30,6 +30,12 @@ public sealed class RelayOptions
 
     public TimeSpan PendingDeviceTtl { get; set; } = TimeSpan.FromHours(1);
 
+    public int MaxConcurrentPushes { get; set; } = 32;
+
+    public int MaxPushesPerInstall { get; set; } = 4;
+
+    public TimeSpan PushTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
     public long MaxConcurrentConnections { get; set; } = 10000;
 
     public long MaxConcurrentUpgradedConnections { get; set; } = 5000;

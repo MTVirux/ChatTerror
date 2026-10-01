@@ -20,13 +20,7 @@ public sealed class RelaySocketHandler(
     public const int PreAuthMaxBytes = 4096;
     public const int MaxPushBodyBytes = 4096;
 
-    // Leaves room for the msg wrapper, so a relayed frame never exceeds Limits.MaxFrameBytes.
-    public const int MaxPayloadLength = Limits.MaxFrameBytes - 256;
-
-    private const int MaxConcurrentPushes = 32;
-    private static readonly TimeSpan PushTimeout = TimeSpan.FromSeconds(30);
-
-    private readonly SemaphoreSlim pushSlots = new(MaxConcurrentPushes);
+    private readonly PushLimiter pushLimiter = new(options.Value.MaxConcurrentPushes, options.Value.MaxPushesPerInstall);
 
     private enum Kind
     {
@@ -69,46 +63,34 @@ public sealed class RelaySocketHandler(
         var relay = options.Value;
         var bucket = new TokenBucket(relay.FramesPerSecond, relay.FrameBurst, time);
         var authDeadline = Task.Delay(relay.AuthTimeout, time);
-        var preAuthBuffer = new byte[PreAuthMaxBytes + 1];
-        byte[]? frameBuffer = null;
+        var smallBuffer = new byte[PreAuthMaxBytes + 1];
 
-        try
+        while (true)
         {
-            while (true)
+            var maxBytes = conn.IsAuthenticated ? Limits.MaxFrameBytes : PreAuthMaxBytes;
+            var receive = ReceiveAsync(socket, smallBuffer, maxBytes, conn.Aborted);
+            if (!conn.IsAuthenticated && !conn.IsClosing && await Task.WhenAny(receive, authDeadline) == authDeadline)
+                conn.Close(WebSocketCloseStatus.PolicyViolation, "Auth timeout");
+
+            var message = await receive;
+            if (message.Kind == Kind.Closed)
+                return;
+            if (conn.IsClosing)
+                continue;
+
+            if (message.Kind == Kind.TooLarge)
             {
-                var receive = frameBuffer == null
-                    ? ReceiveAsync(socket, preAuthBuffer, PreAuthMaxBytes, conn.Aborted)
-                    : ReceiveAsync(socket, frameBuffer, Limits.MaxFrameBytes, conn.Aborted);
-                if (!conn.IsAuthenticated && !conn.IsClosing && await Task.WhenAny(receive, authDeadline) == authDeadline)
-                    conn.Close(WebSocketCloseStatus.PolicyViolation, "Auth timeout");
-
-                var message = await receive;
-                if (message.Kind == Kind.Closed)
-                    return;
-                if (conn.IsClosing)
-                    continue;
-
-                if (message.Kind == Kind.TooLarge)
-                {
-                    conn.Send(new ErrorFrame(RelayErrors.TooLarge));
-                    conn.Close(WebSocketCloseStatus.MessageTooBig, "Frame too large");
-                }
-                else if (!conn.IsAuthenticated)
-                {
-                    Authenticate(conn, message);
-                    if (conn.IsAuthenticated)
-                        frameBuffer = ArrayPool<byte>.Shared.Rent(Limits.MaxFrameBytes + 1);
-                }
-                else
-                {
-                    HandleFrame(conn, bucket, message);
-                }
+                conn.Send(new ErrorFrame(RelayErrors.TooLarge));
+                conn.Close(WebSocketCloseStatus.MessageTooBig, "Frame too large");
             }
-        }
-        finally
-        {
-            if (frameBuffer != null)
-                ArrayPool<byte>.Shared.Return(frameBuffer);
+            else if (!conn.IsAuthenticated)
+            {
+                Authenticate(conn, message);
+            }
+            else
+            {
+                HandleFrame(conn, bucket, message);
+            }
         }
     }
 
@@ -128,10 +110,6 @@ public sealed class RelaySocketHandler(
         {
             conn.Send(new ErrorFrame(RelayErrors.BadFrame));
         }
-        else if (frame is SendFrame { Payload.Length: > MaxPayloadLength })
-        {
-            conn.Send(new ErrorFrame(RelayErrors.TooLarge));
-        }
         else if (conn.Role == RelayRoles.Plugin)
         {
             HandlePluginFrame(conn, frame);
@@ -142,25 +120,44 @@ public sealed class RelaySocketHandler(
         }
     }
 
-    // The buffer must hold maxBytes + 1 so an oversize frame is detected without reading it all.
-    private static async Task<Incoming> ReceiveAsync(WebSocket socket, byte[] buffer, int maxBytes, CancellationToken ct)
+    // Reads into the small buffer and only rents a full-size one for messages that outgrow it.
+    // Reading up to maxBytes + 1 detects an oversize frame without reading it all.
+    private static async Task<Incoming> ReceiveAsync(WebSocket socket, byte[] smallBuffer, int maxBytes, CancellationToken ct)
     {
+        var buffer = smallBuffer;
+        byte[]? rented = null;
         var length = 0;
-        while (true)
+        try
         {
-            var result = await socket.ReceiveAsync(buffer.AsMemory(length, maxBytes + 1 - length), ct);
-            if (result.MessageType == WebSocketMessageType.Close)
-                return new Incoming(Kind.Closed);
-
-            length += result.Count;
-            if (length > maxBytes)
-                return new Incoming(Kind.TooLarge);
-            if (result.EndOfMessage)
+            while (true)
             {
-                return result.MessageType == WebSocketMessageType.Text
-                    ? new Incoming(Kind.Text, Encoding.UTF8.GetString(buffer, 0, length))
-                    : new Incoming(Kind.Binary);
+                if (length == buffer.Length)
+                {
+                    rented = ArrayPool<byte>.Shared.Rent(maxBytes + 1);
+                    smallBuffer.CopyTo(rented, 0);
+                    buffer = rented;
+                }
+
+                var limit = Math.Min(buffer.Length, maxBytes + 1);
+                var result = await socket.ReceiveAsync(buffer.AsMemory(length, limit - length), ct);
+                if (result.MessageType == WebSocketMessageType.Close)
+                    return new Incoming(Kind.Closed);
+
+                length += result.Count;
+                if (length > maxBytes)
+                    return new Incoming(Kind.TooLarge);
+                if (result.EndOfMessage)
+                {
+                    return result.MessageType == WebSocketMessageType.Text
+                        ? new Incoming(Kind.Text, Encoding.UTF8.GetString(buffer, 0, length))
+                        : new Incoming(Kind.Binary);
+                }
             }
+        }
+        finally
+        {
+            if (rented != null)
+                ArrayPool<byte>.Shared.Return(rented);
         }
     }
 
@@ -252,10 +249,12 @@ public sealed class RelaySocketHandler(
                     plugin.Send(new ErrorFrame(RelayErrors.UnknownDevice));
                 else if (target.Status != DeviceStatus.Active)
                     plugin.Send(new ErrorFrame(RelayErrors.NotApproved));
+                else if (Encode(new MsgFrame(RelayRoles.Plugin, send.Payload)) is not { } msg)
+                    plugin.Send(new ErrorFrame(RelayErrors.TooLarge));
                 else if (registry.Device(to) is { } online)
-                    online.Send(new MsgFrame(RelayRoles.Plugin, send.Payload));
+                    online.SendEncoded(msg);
                 else if (send.Notify && target.Push is { } subscription)
-                    _ = PushAsync(target.Id, subscription, send.Payload);
+                    _ = PushAsync(target, subscription, send.Payload);
                 break;
 
             case PairDecisionFrame decision:
@@ -305,42 +304,54 @@ public sealed class RelaySocketHandler(
         {
             conn.Send(new ErrorFrame(RelayErrors.NotApproved));
         }
+        else if (Encode(new MsgFrame(conn.Id, send.Payload)) is not { } msg)
+        {
+            conn.Send(new ErrorFrame(RelayErrors.TooLarge));
+        }
         else
         {
-            registry.Plugin(conn.InstallId)?.Send(new MsgFrame(conn.Id, send.Payload));
+            registry.Plugin(conn.InstallId)?.SendEncoded(msg);
         }
+    }
+
+    // Escaping can make the relayed frame larger than the one received, so the cap is checked on the output.
+    private static byte[]? Encode(RelayFrame frame)
+    {
+        var bytes = Conn.Encode(frame);
+        return bytes.Length <= Limits.MaxFrameBytes ? bytes : null;
     }
 
     private DeviceRecord? OwnDevice(Conn plugin, string deviceId) =>
         store.FindDevice(deviceId) is { } device && device.InstallId == plugin.InstallId ? device : null;
 
-    private async Task PushAsync(string deviceId, PushSubscriptionRecord subscription, string payload)
+    private async Task PushAsync(DeviceRecord device, PushSubscriptionRecord subscription, string payload)
     {
         var body = JsonSerializer.Serialize(new { p = payload });
-        if (body.Length > MaxPushBodyBytes)
+        var bodyBytes = Encoding.UTF8.GetByteCount(body);
+        if (bodyBytes > MaxPushBodyBytes)
         {
-            log.LogWarning("Skipped push to device {DeviceId}: body is {Length} bytes", deviceId, body.Length);
+            log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: body is {Length} bytes", device.Id, device.InstallId, bodyBytes);
             return;
         }
-        if (!pushSlots.Wait(0))
+        if (!pushLimiter.TryAcquire(device.InstallId))
         {
-            log.LogWarning("Skipped push to device {DeviceId}: too many pushes in flight", deviceId);
+            log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: too many pushes in flight", device.Id, device.InstallId);
             return;
         }
 
         try
         {
-            using var timeout = new CancellationTokenSource(PushTimeout);
+            using var timeout = new CancellationTokenSource(options.Value.PushTimeout);
             if (await push.SendAsync(subscription, body, timeout.Token) == PushResult.Gone)
-                store.ClearPush(deviceId, subscription.Endpoint);
+                store.ClearPush(device.Id, subscription.Endpoint);
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "Push to device {DeviceId} failed", deviceId);
+            log.LogWarning(ex, "Push to device {DeviceId} of install {InstallId} failed", device.Id, device.InstallId);
         }
         finally
         {
-            pushSlots.Release();
+            pushLimiter.Release(device.InstallId);
         }
     }
 }

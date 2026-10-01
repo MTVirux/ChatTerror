@@ -48,7 +48,7 @@ if (trustedProxies.Length > 0)
 {
     var forwarded = new ForwardedHeadersOptions
     {
-        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost,
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
     };
     forwarded.KnownProxies.Clear();
     forwarded.KnownIPNetworks.Clear();

@@ -42,9 +42,12 @@ public sealed class Conn
     // Cancelled when the socket is dead or the peer ignored our close for too long.
     public CancellationToken Aborted => aborted.Token;
 
-    public void Send(RelayFrame frame)
+    public static byte[] Encode(RelayFrame frame) => Encoding.UTF8.GetBytes(ProtocolJson.Serialize(frame));
+
+    public void Send(RelayFrame frame) => SendEncoded(Encode(frame));
+
+    public void SendEncoded(byte[] bytes)
     {
-        var bytes = Encoding.UTF8.GetBytes(ProtocolJson.Serialize(frame));
         if (Interlocked.Add(ref queuedBytes, bytes.Length) > MaxQueuedBytes)
         {
             Close(WebSocketCloseStatus.PolicyViolation, "Too slow");

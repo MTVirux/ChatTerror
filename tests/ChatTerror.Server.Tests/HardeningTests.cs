@@ -5,6 +5,7 @@ using System.Text;
 using ChatTerror.Protocol;
 using ChatTerror.Server.Api;
 using ChatTerror.Server.Data;
+using ChatTerror.Server.Push;
 using ChatTerror.Server.Relay;
 using ChatTerror.Server.Tests.Support;
 using Microsoft.AspNetCore.Builder;
@@ -69,23 +70,42 @@ public class HardeningTests
     }
 
     [Fact]
-    public async Task OversizePayload_TooLarge_ConnectionStaysOpen()
+    public async Task RelayedFrameOver64KiB_TooLarge_ConnectionStaysOpen()
     {
         using var app = new RelayApp();
         var install = await app.RegisterInstallAsync();
         await using var plugin = await app.ConnectAsync(install.InstallToken);
         var device = await app.PairDeviceAsync(install, plugin);
         await using var phone = await app.ConnectAsync(device.DeviceToken);
-        var tooBig = new string('a', RelaySocketHandler.MaxPayloadLength + 1);
-        var largest = new string('b', RelaySocketHandler.MaxPayloadLength);
+        var msgOverhead = Conn.Encode(new MsgFrame(device.DeviceId, "")).Length;
+        var largest = new string('b', Limits.MaxFrameBytes - msgOverhead);
 
-        await phone.SendAsync(new SendFrame(Payload: tooBig));
+        // The incoming send frame fits, but the msg frame it becomes is one byte over.
+        await phone.SendAsync(new SendFrame(Payload: largest + "b"));
         Assert.Equal(RelayErrors.TooLarge, (await phone.ReceiveAsync<ErrorFrame>()).Code);
-        await plugin.SendAsync(new SendFrame(device.DeviceId, tooBig));
-        Assert.Equal(RelayErrors.TooLarge, (await plugin.ReceiveAsync<ErrorFrame>()).Code);
 
         await phone.SendAsync(new SendFrame(Payload: largest));
         Assert.Equal(largest, (await plugin.ReceiveAsync<MsgFrame>()).Payload);
+    }
+
+    [Fact]
+    public async Task EmojiPayload_EscapedFrameOver64KiB_TooLarge()
+    {
+        using var app = new RelayApp();
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        await using var phone = await app.ConnectAsync(device.DeviceToken);
+        var emoji = string.Concat(Enumerable.Repeat("\U0001F600", 6000));
+
+        // Sent raw, these are 4 bytes each; escaped on the way out they become 12.
+        await phone.SendRawAsync($"{{\"t\":\"send\",\"payload\":\"{emoji}\"}}");
+        Assert.Equal(RelayErrors.TooLarge, (await phone.ReceiveAsync<ErrorFrame>()).Code);
+        await plugin.SendRawAsync($"{{\"t\":\"send\",\"to\":\"{device.DeviceId}\",\"payload\":\"{emoji}\"}}");
+        Assert.Equal(RelayErrors.TooLarge, (await plugin.ReceiveAsync<ErrorFrame>()).Code);
+
+        Assert.DoesNotContain(await plugin.BarrierAsync(), f => f is MsgFrame);
+        Assert.DoesNotContain(await phone.BarrierAsync(), f => f is MsgFrame);
     }
 
     [Fact]
@@ -191,9 +211,69 @@ public class HardeningTests
             new { endpoint = "https://push.example/sub", keys = new { p256dh = "p", auth = "a" } });
 
         await plugin.SendAsync(new SendFrame(device.DeviceId, new string('a', RelaySocketHandler.MaxPushBodyBytes), Notify: true));
+        await plugin.SendAsync(new SendFrame(device.DeviceId, string.Concat(Enumerable.Repeat("\u00e9", 2100)), Notify: true));
         await plugin.BarrierAsync();
 
         Assert.Empty(app.Push.Calls);
+    }
+
+    [Fact]
+    public void PushLimiter_CapsPerInstallAndTotal()
+    {
+        var limiter = new PushLimiter(maxTotal: 3, maxPerInstall: 2);
+
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.False(limiter.TryAcquire("a"));
+        Assert.True(limiter.TryAcquire("b"));
+        Assert.False(limiter.TryAcquire("c"));
+
+        limiter.Release("a");
+        Assert.True(limiter.TryAcquire("c"));
+    }
+
+    [Fact]
+    public async Task SaturatedInstall_DoesNotBlockOtherInstallsPush()
+    {
+        using var app = new RelayApp();
+        var stuck = new TaskCompletionSource();
+        app.Push.Hold = sub => sub.Endpoint.EndsWith("/a") ? stuck.Task : Task.CompletedTask;
+
+        async Task<(TestSocket Plugin, Support.ClaimResponse Device)> Setup(string endpoint)
+        {
+            var install = await app.RegisterInstallAsync();
+            var plugin = await app.ConnectAsync(install.InstallToken);
+            var device = await app.PairDeviceAsync(install, plugin);
+            await app.Client(device.DeviceToken).PutAsJsonAsync("/api/devices/me/push",
+                new { endpoint, keys = new { p256dh = "p", auth = "a" } });
+            return (plugin, device);
+        }
+
+        var (pluginA, deviceA) = await Setup("https://push.example/a");
+        var (pluginB, deviceB) = await Setup("https://push.example/b");
+        await using var _a = pluginA;
+        await using var _b = pluginB;
+
+        for (var i = 0; i < 6; i++)
+            await pluginA.SendAsync(new SendFrame(deviceA.DeviceId, "a", Notify: true));
+        await pluginA.BarrierAsync();
+        Assert.Equal(4, app.Push.Calls.Count);
+
+        await pluginB.SendAsync(new SendFrame(deviceB.DeviceId, "b", Notify: true));
+        await pluginB.BarrierAsync();
+        Assert.Contains(app.Push.Calls, call => call.Subscription.Endpoint.EndsWith("/b"));
+
+        stuck.SetResult();
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            await pluginA.SendAsync(new SendFrame(deviceA.DeviceId, "a", Notify: true));
+            await pluginA.BarrierAsync();
+            if (app.Push.Calls.Count(call => call.Subscription.Endpoint.EndsWith("/a")) > 4)
+                return;
+            await Task.Delay(20);
+        }
+        Assert.Fail("Install A never got its push slots back.");
     }
 
     [Fact]

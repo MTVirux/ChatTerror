@@ -11,11 +11,15 @@ public sealed class FakePushSender : IPushSender
 
     public PushResult Result { get; set; } = PushResult.Ok;
 
-    public Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, CancellationToken ct)
+    // Lets a test keep chosen pushes in flight.
+    public Func<PushSubscriptionRecord, Task> Hold { get; set; } = _ => Task.CompletedTask;
+
+    public async Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, CancellationToken ct)
     {
         Calls.Enqueue((sub, body));
         signal.Release();
-        return Task.FromResult(Result);
+        await Hold(sub);
+        return Result;
     }
 
     public async Task WaitForCallAsync()
