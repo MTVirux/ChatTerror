@@ -4,22 +4,14 @@ import { ALL_CHANNELS, type ChatChannel, type ChatItem } from "../core/protocol"
 import type { SessionState } from "../core/session";
 import { Composer } from "./Composer";
 import { defaultSendAccount, feedKey, mergeFeed } from "./feed";
+import type { PendingSend, PendingSends } from "./pending";
 import { SettingsView } from "./SettingsView";
-import { channelColor, channelLabel, dayLabel, sendErrorText, STATUS_LABELS, tellPartner, timeOfDay } from "./format";
+import { channelColor, channelLabel, dayLabel, STATUS_LABELS, tellPartner, timeOfDay } from "./format";
 
 const MAX_IN_MEMORY = 3000;
 const GROUP_GAP_MS = 5 * 60 * 1000;
 
 export type Tab = { kind: "all" } | { kind: "channel"; channel: ChatChannel } | { kind: "tell"; partner: string };
-
-export interface PendingSend {
-  localId: number;
-  deviceId: string;
-  channel: ChatChannel;
-  target?: string;
-  text: string;
-  error?: string;
-}
 
 function tabKey(tab: Tab): string {
   if (tab.kind === "channel") return `ch:${tab.channel}`;
@@ -31,17 +23,18 @@ function itemTabKey(item: ChatItem): string {
   return item.channel === "tell" ? `tell:${tellPartner(item)}` : `ch:${item.channel}`;
 }
 
-export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAccount }: {
+export function ChatView({ manager, accounts, accountId, sends, pending, onOpenAccount, onAddAccount }: {
   manager: AccountManager;
   accounts: AccountView[];
   accountId: string | null;
+  sends: PendingSends;
+  pending: PendingSend[];
   onOpenAccount: (deviceId: string) => void;
   onAddAccount: () => void;
 }) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [tab, setTab] = useState<Tab>({ kind: "all" });
   const [unread, setUnread] = useState<Record<string, number>>({});
-  const [pending, setPending] = useState<PendingSend[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const [sendAccount, setSendAccount] = useState<string | undefined>(undefined);
@@ -117,6 +110,7 @@ export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAcc
   }, [items, tab]);
 
   const visiblePending = pending.filter((p) => {
+    if (merged ? !accounts.some((a) => a.deviceId === p.deviceId) : p.deviceId !== accountId) return false;
     if (tab.kind === "all") return true;
     if (tab.kind === "channel") return p.channel === tab.channel;
     return p.channel === "tell" && p.target === tab.partner;
@@ -126,25 +120,6 @@ export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAcc
     setTab(next);
     const key = tabKey(next);
     setUnread((prev) => ({ ...prev, [key]: 0 }));
-  }
-
-  const nextLocalId = useRef(1);
-  async function send(deviceId: string, channel: ChatChannel, text: string, target?: string, retryOf?: number) {
-    const localId = retryOf ?? nextLocalId.current++;
-    const entry: PendingSend = { localId, deviceId, channel, text, target };
-    setPending((prev) => (retryOf ? prev.map((p) => (p.localId === retryOf ? entry : p)) : [...prev, entry]));
-    let result;
-    try {
-      result = await manager.session(deviceId)!.send(channel, text, target);
-    } catch {
-      result = { ok: false, error: undefined };
-    }
-    if (result.ok) setPending((prev) => prev.filter((p) => p.localId !== localId));
-    else setPending((prev) => prev.map((p) => (p.localId === localId ? { ...p, error: sendErrorText(result.error) } : p)));
-  }
-
-  function dismiss(localId: number) {
-    setPending((prev) => prev.filter((p) => p.localId !== localId));
   }
 
   const allTitle = merged ? "All accounts" : state.character ?? "ChatTerror";
@@ -188,8 +163,9 @@ export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAcc
         pending={visiblePending}
         showChannel={tab.kind === "all"}
         showAccount={merged && accounts.length > 1}
-        onRetry={(p) => send(p.deviceId, p.channel, p.text, p.target, p.localId)}
-        onDismiss={dismiss}
+        accountLabel={(deviceId) => accounts.find((a) => a.deviceId === deviceId)?.label ?? ""}
+        onRetry={(p) => void sends.retry(p)}
+        onDismiss={sends.dismiss}
       />
 
       <Composer
@@ -200,7 +176,7 @@ export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAcc
           value: sendAccount,
           onChange: setSendAccount,
         } : undefined}
-        onSend={(channel, text, target) => send(targetId, channel, text, target)}
+        onSend={(channel, text, target) => void sends.send(targetId, channel, text, target)}
       />
 
       {settingsOpen && (
@@ -227,12 +203,13 @@ function StatusPill({ status }: { status: SessionState["status"] }) {
   return <span class={`pill pill-${status}`}>{STATUS_LABELS[status]}</span>;
 }
 
-function MessageLog({ tabId, items, pending, showChannel, showAccount, onRetry, onDismiss }: {
+function MessageLog({ tabId, items, pending, showChannel, showAccount, accountLabel, onRetry, onDismiss }: {
   tabId: string;
   items: FeedItem[];
   pending: PendingSend[];
   showChannel: boolean;
   showAccount: boolean;
+  accountLabel: (deviceId: string) => string;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
@@ -299,6 +276,7 @@ function MessageLog({ tabId, items, pending, showChannel, showAccount, onRetry, 
         {pending.map((p) => (
           <div class={`msg out pending-msg${p.error ? " failed" : ""}`} style={{ "--c": channelColor(p.channel) }} key={`p-${p.localId}`}>
             <div class="msg-head">
+              {showAccount && <span class="acct">{accountLabel(p.deviceId)}</span>}
               <span class="chip">{channelLabel(p.channel)}</span>
               {p.target && <span class="sender">to {p.target}</span>}
               <span class="time">{p.error ? "Not sent" : "Sending..."}</span>

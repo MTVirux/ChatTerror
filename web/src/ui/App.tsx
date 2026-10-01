@@ -3,6 +3,7 @@ import type { AccountManager, AccountView } from "../core/accounts";
 import { AccountStrip } from "./AccountStrip";
 import { ChatView } from "./ChatView";
 import { PairScreen } from "./PairScreen";
+import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
 import { initialSelection, validSelection, type Selection } from "./selection";
@@ -34,8 +35,16 @@ function useAccounts(manager: AccountManager): AccountView[] {
   return accounts;
 }
 
+function usePendingSends(sends: PendingSends): PendingSend[] {
+  const [list, setList] = useState(sends.list());
+  useEffect(() => sends.subscribe(setList), [sends]);
+  return list;
+}
+
 export function App({ manager }: { manager: AccountManager }) {
   const accounts = useAccounts(manager);
+  const [sends] = useState(() => createPendingSends(manager));
+  const pending = usePendingSends(sends);
   const [selected, setSelected] = useState<Selection>(() => initialSelection(manager.list(), location.hash, storedTab()));
   const current = validSelection(selected, accounts);
 
@@ -69,6 +78,8 @@ export function App({ manager }: { manager: AccountManager }) {
         manager={manager}
         accounts={accounts}
         accountId={accountId}
+        sends={sends}
+        pending={pending}
         onOpenAccount={setSelected}
         onAddAccount={() => setSelected("add")}
       />
