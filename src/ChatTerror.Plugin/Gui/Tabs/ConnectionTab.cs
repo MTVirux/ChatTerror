@@ -6,7 +6,7 @@ using Dalamud.Interface.Utility.Raii;
 
 namespace ChatTerror.Plugin.Gui.Tabs;
 
-public sealed class ConnectionTab(Configuration config, ConnectionManager connection, DeviceHub hub, Action save) : ITab
+public sealed class ConnectionTab(Configuration config, ConnectionManager connection, Action save) : ITab
 {
     private static readonly Vector4 Green = new(0.4f, 1f, 0.4f, 1f);
     private static readonly Vector4 Yellow = new(1f, 0.85f, 0.3f, 1f);
@@ -64,10 +64,7 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
         using (ImRaii.Disabled(!ctrl || connection.Registering))
         {
             if (ImGui.Button("Re-register"))
-            {
-                hub.ClearDevices();
                 connection.Reregister();
-            }
         }
 
         if (!ctrl)
@@ -107,11 +104,9 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
         if (ImGui.Button("Continue") && pendingUrl != null)
         {
             // Install tokens and devices belong to one relay, so a new relay means a fresh install.
-            config.RelayUrl = pendingUrl;
             relayUrl = pendingUrl;
+            connection.Reregister(pendingUrl);
             pendingUrl = null;
-            hub.ClearDevices();
-            connection.Reregister();
             ImGui.CloseCurrentPopup();
         }
 
@@ -135,21 +130,29 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
 
     private void DrawStatus()
     {
+        if (connection.Notice is { } notice)
+        {
+            ImGui.TextColored(Yellow, notice);
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Dismiss"))
+                connection.Notice = null;
+        }
+
         if (!config.Enabled)
         {
             ImGui.TextDisabled("Disabled");
             return;
         }
 
-        if (connection.Registering)
-        {
-            ImGui.TextColored(Yellow, "Registering with the relay...");
-            return;
-        }
-
         if (connection.LastError is { } error)
         {
             ImGui.TextColored(Red, error);
+            return;
+        }
+
+        if (connection.Registering)
+        {
+            ImGui.TextColored(Yellow, "Registering with the relay...");
             return;
         }
 
