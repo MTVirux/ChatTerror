@@ -122,7 +122,7 @@ export function ChatView({ manager, accounts, accountId, sends, pending, onOpenA
     setUnread((prev) => ({ ...prev, [key]: 0 }));
   }
 
-  const allTitle = merged ? "All accounts" : state.character ?? "ChatTerror";
+  const allTitle = merged ? "All accounts" : state.character ?? "Not logged in";
   const title = tab.kind === "all" ? allTitle : tab.kind === "channel" ? channelLabel(tab.channel) : tab.partner;
 
   return (
