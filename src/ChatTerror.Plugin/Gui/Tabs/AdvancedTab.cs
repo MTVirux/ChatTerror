@@ -17,7 +17,7 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         var settings = config.Settings;
 
         var history = settings.HistorySize;
-        if (IntInput("History size (messages)", ref history, ConfigStatic.MinHistorySize, ConfigStatic.MaxHistorySize))
+        if (IntInput("History size (messages)", ref history, 100, ConfigStatic.MinHistorySize, ConfigStatic.MaxHistorySize))
         {
             settings.HistorySize = history;
             hub.History.Capacity = history;
@@ -25,14 +25,14 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         }
 
         var delay = settings.SendDelayMs;
-        if (IntInput("Delay between sent lines (ms)", ref delay, ConfigStatic.MinSendDelayMs, ConfigStatic.MaxSendDelayMs))
+        if (IntInput("Delay between sent lines (ms)", ref delay, 250, ConfigStatic.MinSendDelayMs, ConfigStatic.MaxSendDelayMs))
         {
             settings.SendDelayMs = delay;
             changed();
         }
 
         var maxLength = settings.MaxLengthBytes;
-        if (IntInput("Max message length (bytes)", ref maxLength, 1, Limits.MaxTextBytes))
+        if (IntInput("Max message length (bytes)", ref maxLength, 10, 1, Limits.MaxTextBytes))
         {
             settings.MaxLengthBytes = maxLength;
             changed();
@@ -46,14 +46,14 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         }
     }
 
-    // Edits apply when the field loses focus, so the typed value is kept here until then.
-    private bool IntInput(string label, ref int value, int min, int max)
+    // Typed values are kept here while the field is active and applied once it is released.
+    private bool IntInput(string label, ref int value, int step, int min, int max)
     {
         if (!pending.TryGetValue(label, out var edited))
             edited = value;
 
         ImGui.SetNextItemWidth(150);
-        ImGui.InputInt(label, ref edited, 0, 0);
+        ImGui.InputInt(label, ref edited, step, step * 10);
         if (ImGui.IsItemActive())
         {
             pending[label] = edited;
@@ -61,9 +61,6 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         }
 
         pending.Remove(label);
-        if (!ImGui.IsItemDeactivatedAfterEdit())
-            return false;
-
         edited = Math.Clamp(edited, min, max);
         if (edited == value)
             return false;

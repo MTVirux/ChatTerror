@@ -77,6 +77,7 @@ public sealed class ConnectionManager : IDisposable
     private void CancelRegistration()
     {
         registration?.Cancel();
+        registration?.Dispose();
         registration = null;
     }
 
@@ -99,6 +100,7 @@ public sealed class ConnectionManager : IDisposable
                     if (ct.IsCancellationRequested)
                         return;
                     registration = null;
+                    current.Dispose();
                     config.InstallId = install.InstallId;
                     config.InstallToken = install.InstallToken;
                     saveConfig();
@@ -113,6 +115,7 @@ public sealed class ConnectionManager : IDisposable
                     if (ct.IsCancellationRequested)
                         return;
                     registration = null;
+                    current.Dispose();
                     LastError = $"Registration failed: {ex.Message}";
                 });
             }

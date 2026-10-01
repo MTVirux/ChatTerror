@@ -12,7 +12,11 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
     private static readonly Vector4 Yellow = new(1f, 0.85f, 0.3f, 1f);
     private static readonly Vector4 Red = new(1f, 0.4f, 0.4f, 1f);
 
+    private const string ConfirmPopup = "Change relay?##confirmRelay";
+
     private string? relayUrl;
+    private string? pendingUrl;
+    private string? urlError;
 
     public string Title => "Connection";
 
@@ -28,10 +32,16 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
 
         relayUrl ??= config.RelayUrl;
         ImGui.SetNextItemWidth(300);
-        ImGui.InputText("Relay URL", ref relayUrl, 256);
-        if (ImGui.IsItemDeactivatedAfterEdit())
-            ApplyRelayUrl();
+        ImGui.InputText("##relayUrl", ref relayUrl, 256);
+        ImGui.SameLine();
+        if (ImGui.Button("Apply"))
+            RequestRelayChange();
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Relay URL");
+        if (urlError != null)
+            ImGui.TextColored(Red, urlError);
         ImGui.TextDisabled("Changing the relay registers a new install and removes all paired devices.");
+        DrawConfirmPopup();
 
         ImGui.Spacing();
         DrawStatus();
@@ -67,23 +77,60 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
         }
     }
 
-    private void ApplyRelayUrl()
+    private void RequestRelayChange()
     {
-        var value = relayUrl?.Trim().TrimEnd('/') ?? "";
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        urlError = null;
+        var value = Normalize(relayUrl);
+        if (value == null)
+        {
+            urlError = "Enter a full http:// or https:// URL.";
+            return;
+        }
+
+        if (value == Normalize(config.RelayUrl))
         {
             relayUrl = config.RelayUrl;
             return;
         }
 
-        relayUrl = value;
-        if (value == config.RelayUrl)
+        pendingUrl = value;
+        ImGui.OpenPopup(ConfirmPopup);
+    }
+
+    private void DrawConfirmPopup()
+    {
+        if (!ImGui.BeginPopupModal(ConfirmPopup, ImGuiWindowFlags.AlwaysAutoResize))
             return;
 
-        // Install tokens and devices belong to one relay, so a new relay means a fresh install.
-        config.RelayUrl = value;
-        hub.ClearDevices();
-        connection.Reregister();
+        ImGui.TextUnformatted("Changing the relay removes all paired devices. Continue?");
+        ImGui.TextDisabled(pendingUrl ?? "");
+        if (ImGui.Button("Continue") && pendingUrl != null)
+        {
+            // Install tokens and devices belong to one relay, so a new relay means a fresh install.
+            config.RelayUrl = pendingUrl;
+            relayUrl = pendingUrl;
+            pendingUrl = null;
+            hub.ClearDevices();
+            connection.Reregister();
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel"))
+        {
+            pendingUrl = null;
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+    }
+
+    // Uri lowercases scheme and host, so equal relays normalize to the same string.
+    private static string? Normalize(string? url)
+    {
+        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return null;
+        return $"{uri.Scheme}://{uri.Authority}{uri.AbsolutePath.TrimEnd('/')}";
     }
 
     private void DrawStatus()
