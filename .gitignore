@@ -7,3 +7,13 @@ src/ChatTerror.Server/wwwroot/
 *.db
 *.db-*
 vapid.json
+.env
+.env.*
+.envrc
+*.pem
+*.key
+*.pfx
+*.p12
+secrets.json
+*.tfvars
+*.tfstate*

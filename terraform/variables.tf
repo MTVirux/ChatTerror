@@ -36,6 +36,12 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "ssh_private_key_path" {
+  description = "Private key matching ssh_public_key. Terraform uses it to copy the GitHub token to the VM and run the first deploy."
+  type        = string
+  default     = "~/.ssh/id_ed25519"
+}
+
 variable "ssh_allowed_cidrs" {
   description = "Source CIDRs allowed to SSH (port 22) into the VM."
   type        = list(string)
@@ -74,20 +80,20 @@ variable "data_volume_size" {
 }
 
 variable "repo_url" {
-  description = "HTTPS URL of the ChatTerror repo cloud-init clones from."
+  description = "HTTPS URL of the ChatTerror repo deploy.sh clones from."
   type        = string
   default     = "https://github.com/MTVirux/ChatTerror.git"
 }
 
 variable "github_token" {
-  description = "Read-only fine-grained GitHub PAT (Contents: read on this repo) for cloning a private repo. Empty for a public one. Set via TF_VAR_github_token."
+  description = "Read-only fine-grained GitHub PAT (Contents: read on this repo) for cloning a private repo. Empty for a public one. Set via TF_VAR_github_token. Copied to the VM over SSH, never put in user_data."
   type        = string
   sensitive   = true
   default     = ""
 }
 
 variable "repo_ref" {
-  description = "Git ref (branch/tag/SHA) cloud-init checks out."
+  description = "Git ref (branch/tag/SHA) deploy.sh checks out."
   type        = string
   default     = "master"
 }

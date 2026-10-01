@@ -20,9 +20,6 @@ provider "hcloud" {
 
 locals {
   fqdn = var.subdomain == "@" ? var.domain : "${var.subdomain}.${var.domain}"
-
-  # The token stays in the clone's remote so deploy.sh can fetch later.
-  clone_url = var.github_token == "" ? var.repo_url : replace(var.repo_url, "https://", "https://x-access-token:${var.github_token}@")
 }
 
 resource "hcloud_ssh_key" "operator" {
@@ -76,7 +73,7 @@ resource "hcloud_server" "relay" {
     fqdn        = local.fqdn
     acme_email  = var.acme_email
     data_device = "/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.data.id}"
-    repo_url    = local.clone_url
+    repo_url    = var.repo_url
     repo_ref    = var.repo_ref
   })
 
@@ -89,6 +86,44 @@ resource "hcloud_volume_attachment" "data" {
   volume_id = hcloud_volume.data.id
   server_id = hcloud_server.relay.id
   automount = false
+}
+
+# The token goes over SSH rather than user_data, which any process on the VM
+# can read from the metadata service. A new token re-runs this to rewrite it.
+resource "terraform_data" "deploy" {
+  triggers_replace = [hcloud_server.relay.id, sha256(var.github_token)]
+
+  depends_on = [hcloud_volume_attachment.data]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.relay.ipv4_address
+    user        = "root"
+    private_key = file(pathexpand(var.ssh_private_key_path))
+    timeout     = "10m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "cloud-init status --wait > /dev/null || true",
+      "test -x /opt/chatterror/deploy.sh",
+      "install -d -m 0700 /etc/chatterror",
+      "install -m 0600 /dev/null /etc/chatterror/github_token",
+    ]
+  }
+
+  # The trailing newline keeps the content non-empty for public repos.
+  provisioner "file" {
+    content     = "${var.github_token}\n"
+    destination = "/etc/chatterror/github_token"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod 0600 /etc/chatterror/github_token",
+      "[ -d /opt/chatterror/src/.git ] || /opt/chatterror/deploy.sh",
+    ]
+  }
 }
 
 resource "hcloud_zone_rrset" "relay_a" {
