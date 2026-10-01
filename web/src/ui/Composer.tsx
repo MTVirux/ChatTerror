@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ChatChannel } from "../core/protocol";
 import type { SessionState } from "../core/session";
 import type { Tab } from "./ChatView";
-import { byteLength, channelColor, channelLabel, sendBlockedReason, TELL_TARGET } from "./format";
+import { byteLength, channelColor, channelLabel, sendBlockedReason, sendPrefix, TELL_TARGET } from "./format";
 
 function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current: ChatChannel | undefined): ChatChannel | undefined {
   if (tab.kind === "tell") return "tell";
@@ -35,12 +35,14 @@ export function Composer({ state, tab, onSend }: {
   const fixedTarget = tab.kind === "tell" ? tab.partner : undefined;
   const needsTarget = channel === "tell" && !fixedTarget;
   const effectiveTarget = fixedTarget ?? (needsTarget ? target.trim() : undefined);
-  const bytes = byteLength(text);
   const trimmed = text.trim();
+  // The plugin limits the whole chat line, so the channel prefix counts too.
+  const bytes = channel ? byteLength(sendPrefix(channel, effectiveTarget) + trimmed) : byteLength(trimmed);
 
   let blocked = sendBlockedReason(state.status);
   if (!blocked && state.sendChannels.length === 0) blocked = "Sending from your phone is turned off in the plugin";
   if (!blocked && channel && !state.sendChannels.includes(channel)) blocked = "Sending to this channel is disabled in the plugin";
+  if (!blocked && fixedTarget && !TELL_TARGET.test(fixedTarget)) blocked = "Can't reply here because this player's world is unknown";
 
   let problem: string | null = null;
   if (trimmed.startsWith("/")) problem = "Commands can't be sent, only chat messages";

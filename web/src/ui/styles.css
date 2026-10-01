@@ -1027,3 +1027,7 @@ p {
 .kv span:first-child {
   color: var(--muted);
 }
+
+.sheet:focus {
+  outline: none;
+}

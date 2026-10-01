@@ -19,6 +19,22 @@ export function tellPartner(item: ChatItem): string {
   return `${item.sender}@${item.senderWorld}`;
 }
 
+export function sendPrefix(channel: ChatChannel, target?: string): string {
+  if (channel === "tell") return `/tell ${target ?? ""} `;
+  if (channel.startsWith("crossLinkshell")) return `/cwl${channel.slice("crossLinkshell".length)} `;
+  if (channel.startsWith("linkshell")) return `/l${channel.slice("linkshell".length)} `;
+  const prefixes: Record<string, string> = {
+    party: "/p ",
+    alliance: "/a ",
+    freeCompany: "/fc ",
+    noviceNetwork: "/n ",
+    say: "/s ",
+    shout: "/sh ",
+    yell: "/y ",
+  };
+  return prefixes[channel] ?? "";
+}
+
 const encoder = new TextEncoder();
 export function byteLength(text: string): number {
   return encoder.encode(text).length;

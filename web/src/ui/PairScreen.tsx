@@ -8,24 +8,28 @@ function formatCodeInput(value: string): string {
 }
 
 function pairErrorText(error: unknown): string {
-  const text = String((error as { code?: string })?.code ?? (error as Error)?.message ?? error);
+  // fetch rejects with a TypeError on network failure; the message differs per browser.
+  if (error instanceof TypeError) {
+    return "Can't reach the relay. Check your connection and try again.";
+  }
+  const code = String((error as { code?: string })?.code ?? (error as Error)?.message ?? error);
   const status = (error as { status?: number })?.status;
-  if (/tooManyDevices/i.test(text) || status === 409) {
+  if (code === "invalidName") {
+    return "That device name can't be used. Try a shorter, plain name.";
+  }
+  if (code === "tooManyDevices" || status === 409) {
     return "This character already has 10 paired devices. Remove one in the plugin, then try again.";
   }
-  if (/rateLimited|429/i.test(text) || status === 429) {
+  if (code === "rateLimited" || status === 429) {
     return "Too many attempts. Wait a minute, then try again.";
   }
-  if (/notFound|404|expired|invalid/i.test(text) || status === 404) {
+  if (/notFound|expired|invalid/i.test(code) || status === 404) {
     return "That code is wrong or has expired. Codes last 10 minutes - make a new one in the plugin.";
-  }
-  if (/fetch|network/i.test(text)) {
-    return "Can't reach the relay. Check your connection and try again.";
   }
   return "Pairing failed. Make a new code in the plugin and try again.";
 }
 
-export function PairScreen({ revoked, onPaired }: { revoked: boolean; onPaired: () => void }) {
+export function PairScreen({ revoked }: { revoked: boolean }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState(defaultDeviceName);
   const [error, setError] = useState("");
@@ -51,7 +55,6 @@ export function PairScreen({ revoked, onPaired }: { revoked: boolean; onPaired: 
     setError("");
     try {
       await pair(normalized, name.trim() || defaultDeviceName());
-      onPaired();
     } catch (e) {
       setError(pairErrorText(e));
       setBusy(false);
@@ -158,12 +161,17 @@ function QrScanner({ onResult, onCancel, onError }: { onResult: (text: string) =
       onError("This browser can't use the camera here. Type the code instead.");
       return;
     }
+    function stopCamera() {
+      stream?.getTracks().forEach((t) => t.stop());
+    }
+
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: "environment" }, audio: false })
       .then(async (s) => {
         stream = s;
+        if (stopped) return stopCamera();
         decode = (await import("jsqr")).default;
-        if (stopped || !videoRef.current) return;
+        if (stopped || !videoRef.current) return stopCamera();
         videoRef.current.srcObject = s;
         await videoRef.current.play();
         frame = requestAnimationFrame(tick);
@@ -176,7 +184,7 @@ function QrScanner({ onResult, onCancel, onError }: { onResult: (text: string) =
     return () => {
       stopped = true;
       cancelAnimationFrame(frame);
-      stream?.getTracks().forEach((t) => t.stop());
+      stopCamera();
     };
   }, []);
 

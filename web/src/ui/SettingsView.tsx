@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ChatChannel } from "../core/protocol";
 import type { Session, SessionState } from "../core/session";
 import { channelColor, channelLabel, isIos } from "./format";
@@ -22,7 +22,16 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
   const [confirm, setConfirm] = useState<"clear" | "unpair" | null>(null);
   const [cleared, setCleared] = useState(false);
   const [unpairing, setUnpairing] = useState(false);
+  const [muteError, setMuteError] = useState("");
+  const [cacheError, setCacheError] = useState("");
+  const dialogRef = useRef<HTMLElement>(null);
   const iosBlocked = needsHomeScreen();
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -56,7 +65,8 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
     const muted = state.mutedChannels.includes(channel)
       ? state.mutedChannels.filter((c) => c !== channel)
       : [...state.mutedChannels, channel];
-    session.setMuted(muted);
+    setMuteError("");
+    session.setMuted(muted).catch(() => setMuteError("Couldn't save mute settings. Try again."));
   }
 
   function chooseTheme(choice: ThemeChoice) {
@@ -67,14 +77,20 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
   function chooseCacheLimit(n: number) {
     setCacheLimit(n);
     saveCacheLimit(n);
-    session.setCacheLimit(n);
+    setCacheError("");
+    session.setCacheLimit(n).catch(() => setCacheError("Couldn't change how many messages are kept. Try again."));
   }
 
   async function clearCache() {
     setConfirm(null);
-    await session.clearCache();
-    setCleared(true);
-    onCacheCleared();
+    setCacheError("");
+    try {
+      await session.clearCache();
+      setCleared(true);
+      onCacheCleared();
+    } catch {
+      setCacheError("Couldn't delete stored messages. Try again.");
+    }
   }
 
   async function unpair() {
@@ -88,7 +104,7 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
 
   return (
     <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section class="sheet" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header class="sheet-head">
           <h2 id="settings-title">Settings</h2>
           <button class="btn ghost" onClick={onClose}>Done</button>
@@ -120,6 +136,7 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
                 ))}
               </div>
               <p class="note">Muted channels still show up here, they just don't buzz your phone.</p>
+              {muteError && <p class="error">{muteError}</p>}
             </section>
           )}
 
@@ -153,6 +170,7 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
                 {cleared ? "Messages deleted" : "Delete stored messages"}
               </button>
             )}
+            {cacheError && <p class="error">{cacheError}</p>}
           </section>
 
           <section class="group">

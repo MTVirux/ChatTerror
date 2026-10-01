@@ -208,13 +208,18 @@ function MessageLog({ tabId, items, pending, showChannel, onRetry, onDismiss }: 
     setShowJump(false);
   }
 
+  const lastId = useRef<string | undefined>(undefined);
+
   useLayoutEffect(() => {
+    const newestId = items.at(-1)?.id;
+    const grew = newestId !== lastId.current;
+    lastId.current = newestId;
     if (atBottom.current) ref.current!.scrollTop = ref.current!.scrollHeight;
-    else setShowJump(true);
+    else if (grew) setShowJump(true);
   }, [items, pending]);
 
   useLayoutEffect(() => {
-    atBottom.current = true;
+    lastId.current = items.at(-1)?.id;
     jump();
   }, [tabId]);
 
