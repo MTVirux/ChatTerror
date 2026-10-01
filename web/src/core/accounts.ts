@@ -130,8 +130,12 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
   }
 
   for (const record of await registry.listAccounts()) {
-    const entry = await open(record);
-    if (record.status === "active" && entry.session.getState().status === "unpaired") await drop(entry);
+    try {
+      const entry = await open(record);
+      if (record.status === "active" && entry.session.getState().status === "unpaired") await drop(entry);
+    } catch {
+      // Skip just this account; its registry row stays so it can load on the next start.
+    }
   }
   emit();
 

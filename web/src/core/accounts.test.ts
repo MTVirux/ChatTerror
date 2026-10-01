@@ -213,6 +213,24 @@ describe("account manager", () => {
     expect(await listAccounts()).toEqual([]);
   });
 
+  it("starts the other accounts when one account's database can't open", async () => {
+    await seed("a");
+    await seed("b");
+    // A newer schema version than the app knows makes opening that database fail.
+    await new Promise<void>((resolve) => {
+      const request = indexedDB.open("chatterror-broken", 99);
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+    });
+    await addAccount({ deviceId: "broken", dbName: "chatterror-broken", pluginPublicKey: "pk-broken", label: "", addedAt: 1, status: "active" });
+
+    const manager = await createAccountManager(fakeDeps().deps);
+    expect(manager.list().map((a) => a.deviceId)).toEqual(["a", "b"]);
+    expect((await listAccounts()).map((r) => r.deviceId)).toContain("broken");
+  });
+
   it("persists the cache limit and applies it to every session", async () => {
     await seed("a");
     await seed("b");
