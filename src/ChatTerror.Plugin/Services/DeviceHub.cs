@@ -149,6 +149,12 @@ public sealed class DeviceHub : IDisposable
         saveConfig();
     }
 
+    public void ClearHistory()
+    {
+        History.Clear();
+        SaveHistory();
+    }
+
     public void Dispose()
     {
         disposed = true;

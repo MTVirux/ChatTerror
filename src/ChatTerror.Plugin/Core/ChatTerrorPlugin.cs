@@ -70,6 +70,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
             new NotificationsTab(config, SettingsChanged),
             new FiltersTab(config, SettingsChanged),
             devicesTab,
+            new HistoryTab(hub, CharacterName),
             new AdvancedTab(config, hub, SettingsChanged),
         ]);
         windowSystem.AddWindow(configWindow);

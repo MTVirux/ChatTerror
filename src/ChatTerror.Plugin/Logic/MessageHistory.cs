@@ -60,6 +60,21 @@ public sealed class MessageHistory
             return byCharacter.Values.SelectMany(items => items).Where(i => i.Ts > ts).OrderBy(i => i.Ts).ToList();
     }
 
+    public IReadOnlyList<string> Characters
+    {
+        get
+        {
+            lock (gate)
+                return byCharacter.Keys.Order(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    public IReadOnlyList<ChatItem> For(string character)
+    {
+        lock (gate)
+            return byCharacter.TryGetValue(character, out var items) ? items.OrderBy(i => i.Ts).ToList() : [];
+    }
+
     public void Clear()
     {
         lock (gate)
