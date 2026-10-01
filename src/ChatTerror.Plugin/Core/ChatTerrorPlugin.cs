@@ -49,18 +49,18 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
             config.Settings.Channels.TryAdd(channel, setting);
         SaveConfig();
 
-        keys = new KeyStore(pluginInterface.ConfigDirectory.FullName);
+        keys = new KeyStore(pluginInterface.ConfigDirectory.FullName, log);
         api = new RelayApi(() => config.RelayUrl);
         relay = new RelayClient(log);
         hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName);
-        connection = new ConnectionManager(config, SaveConfig, keys, api, relay, framework, log);
+        connection = new ConnectionManager(config, SaveConfig, keys, api, relay, hub, framework, log);
         capture = new ChatCapture(chatGui, playerState, config, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);
 
         devicesTab = new DevicesTab(config, api, hub, framework);
         configWindow = new ConfigWindow(
         [
-            new ConnectionTab(config, connection, hub, SaveConfig),
+            new ConnectionTab(config, connection, SaveConfig),
             new ChannelsTab(config, SettingsChanged),
             new NotificationsTab(config, SettingsChanged),
             new FiltersTab(config, SettingsChanged),
@@ -78,7 +78,15 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         commandManager.AddHandler(ConfigStatic.CommandName, command);
         commandManager.AddHandler(ConfigStatic.CommandAlias, command);
 
-        connection.Apply();
+        if (keys.Replaced && config.InstallToken != null)
+        {
+            connection.Notice = "The identity key was unreadable and has been replaced. Paired devices were removed; pair them again.";
+            connection.Reregister();
+        }
+        else
+        {
+            connection.Apply();
+        }
     }
 
     public void Dispose()
@@ -95,8 +103,8 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         devicesTab.Dispose();
         sender.Dispose();
         capture.Dispose();
-        hub.Dispose();
         relay.Dispose();
+        hub.Dispose();
         api.Dispose();
         keys.Dispose();
     }

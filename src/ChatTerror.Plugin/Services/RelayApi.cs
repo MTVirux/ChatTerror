@@ -50,10 +50,10 @@ public sealed class RelayApi : IDisposable
         return await Send<List<DeviceInfo>>(request);
     }
 
-    // A device the relay no longer knows counts as revoked.
-    public async Task RevokeDevice(string installToken, string deviceId)
+    // A device the relay no longer knows counts as revoked. relayUrl overrides the configured relay.
+    public async Task RevokeDevice(string installToken, string deviceId, string? relayUrl = null)
     {
-        using var request = Request(HttpMethod.Delete, $"/api/devices/{Uri.EscapeDataString(deviceId)}", installToken, null);
+        using var request = Request(HttpMethod.Delete, $"/api/devices/{Uri.EscapeDataString(deviceId)}", installToken, null, relayUrl);
         using var response = await http.SendAsync(request);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return;
@@ -62,9 +62,9 @@ public sealed class RelayApi : IDisposable
 
     public void Dispose() => http.Dispose();
 
-    private HttpRequestMessage Request(HttpMethod method, string path, string? token, object? body)
+    private HttpRequestMessage Request(HttpMethod method, string path, string? token, object? body, string? baseUrl = null)
     {
-        var request = new HttpRequestMessage(method, relayUrl().TrimEnd('/') + path);
+        var request = new HttpRequestMessage(method, (baseUrl ?? relayUrl()).TrimEnd('/') + path);
         if (token != null)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (body != null)

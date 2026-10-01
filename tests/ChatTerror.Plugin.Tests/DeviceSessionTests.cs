@@ -18,8 +18,10 @@ public class DeviceSessionTests
         deviceKey = E2eCrypto.DeriveKey(device, pluginPub, pluginPub, devicePub);
     }
 
-    private static ChatItem Item(long ts, ChatChannel channel = ChatChannel.Say) =>
-        new(Guid.NewGuid().ToString("N"), ts, channel, "Bob Smith", Text: "hi", Character: "Alex Doe", Outgoing: false);
+    private static ChatItem Item(long ts, ChatChannel channel = ChatChannel.Say, string text = "hi") =>
+        new(Guid.NewGuid().ToString("N"), ts, channel, "Bob Smith", Text: text, Character: "Alex Doe", Outgoing: false);
+
+    private static int JsonBytes(ChatItem item) => System.Text.Encoding.UTF8.GetByteCount(ProtocolJson.Serialize(item));
 
     [Fact]
     public void Seal_DeviceCanOpen_WithIncreasingSeq()
@@ -56,6 +58,21 @@ public class DeviceSessionTests
         Assert.NotNull(session.Open(envelope));
         Assert.Null(session.Open(envelope));
         Assert.Null(session.Open(older));
+    }
+
+    [Fact]
+    public void Open_LastSeenSeqFromConstructor_RejectsOlder()
+    {
+        var session = new DeviceSession("dev1", pluginKey, [], lastSeenSeq: 100);
+        var older = Payloads.SealPayload(deviceKey, Direction.DeviceToPlugin, new HelloPayload(0) { Seq = 99 });
+        var same = Payloads.SealPayload(deviceKey, Direction.DeviceToPlugin, new HelloPayload(0) { Seq = 100 });
+        var newer = Payloads.SealPayload(deviceKey, Direction.DeviceToPlugin, new HelloPayload(0) { Seq = 101 });
+
+        Assert.Equal(100, session.LastSeenSeq);
+        Assert.Null(session.Open(older));
+        Assert.Null(session.Open(same));
+        Assert.NotNull(session.Open(newer));
+        Assert.Equal(101, session.LastSeenSeq);
     }
 
     [Fact]
@@ -116,5 +133,64 @@ public class DeviceSessionTests
         Assert.All(chunks[..^1], c => Assert.False(c.Done));
         Assert.True(chunks[^1].Done);
         Assert.Equal(items, chunks.SelectMany(c => c.Items));
+    }
+
+    [Fact]
+    public void Backlog_SplitsBySize()
+    {
+        var items = Enumerable.Range(1, 10).Select(i => Item(i, text: new string('x', 900))).ToList();
+        var budget = 3 * (JsonBytes(items[0]) + 1);
+
+        var chunks = DeviceSession.Backlog(items, budget).ToList();
+
+        Assert.Equal([3, 3, 3, 1], chunks.Select(c => c.Items.Count));
+        Assert.All(chunks[..^1], c => Assert.False(c.Done));
+        Assert.True(chunks[^1].Done);
+        Assert.Equal(items, chunks.SelectMany(c => c.Items));
+    }
+
+    [Fact]
+    public void Backlog_DefaultBudget_KeepsChunksUnderFrameLimit()
+    {
+        var items = Enumerable.Range(1, 50).Select(i => Item(i, text: new string('x', 2000))).ToList();
+
+        var chunks = DeviceSession.Backlog(items).ToList();
+
+        Assert.True(chunks.Count > 1);
+        Assert.All(chunks, c => Assert.True(c.Items.Sum(i => JsonBytes(i) + 1) <= DeviceSession.MaxPayloadJsonBytes));
+        Assert.Equal(items, chunks.SelectMany(c => c.Items));
+    }
+
+    [Fact]
+    public void Backlog_OversizedItem_Truncated()
+    {
+        var huge = Item(1, text: new string('x', 100_000));
+
+        var chunk = Assert.Single(DeviceSession.Backlog([huge]));
+
+        var item = Assert.Single(chunk.Items);
+        Assert.True(chunk.Done);
+        Assert.EndsWith("...", item.Text);
+        Assert.True(JsonBytes(item) <= DeviceSession.MaxPayloadJsonBytes);
+    }
+
+    [Fact]
+    public void Fit_SmallItem_Unchanged()
+    {
+        var item = Item(1);
+
+        Assert.Same(item, DeviceSession.Fit(item));
+    }
+
+    [Fact]
+    public void Fit_KeepsSurrogatePairsWhole()
+    {
+        var item = Item(1, text: string.Concat(Enumerable.Repeat("😀", 20_000)));
+
+        var fitted = DeviceSession.Fit(item);
+
+        Assert.True(JsonBytes(fitted) <= DeviceSession.MaxPayloadJsonBytes);
+        var body = fitted.Text[..^3];
+        Assert.False(char.IsHighSurrogate(body[^1]));
     }
 }

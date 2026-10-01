@@ -36,6 +36,7 @@ public sealed class RelayClient : IDisposable
 
     public RelayState State { get; private set; } = RelayState.Disconnected;
 
+    // Throws UriFormatException for a malformed relay URL.
     public void Start(string relayUrl, string token)
     {
         Stop();
@@ -44,30 +45,37 @@ public sealed class RelayClient : IDisposable
         {
             if (disposed)
                 return;
-            cts = new CancellationTokenSource();
-            var ct = cts.Token;
-            loop = Task.Run(() => Run(uri, token, ct), ct);
+            var source = new CancellationTokenSource();
+            cts = source;
+            loop = Task.Run(async () =>
+            {
+                try
+                {
+                    await Run(uri, token, source.Token);
+                }
+                finally
+                {
+                    lock (gate)
+                    {
+                        if (cts == source)
+                            cts = null;
+                    }
+
+                    source.Dispose();
+                }
+            });
         }
     }
 
+    // Returns right away; a cancelled loop never reports state or frames.
     public void Stop()
     {
-        Task? running;
         lock (gate)
         {
             cts?.Cancel();
             cts = null;
-            running = loop;
             loop = null;
             outgoing = null;
-        }
-
-        try
-        {
-            running?.Wait(TimeSpan.FromSeconds(2));
-        }
-        catch (AggregateException)
-        {
         }
 
         SetState(RelayState.Disconnected);
@@ -91,9 +99,21 @@ public sealed class RelayClient : IDisposable
 
     public void Dispose()
     {
+        Task? running;
         lock (gate)
+        {
             disposed = true;
+            running = loop;
+        }
+
         Stop();
+        try
+        {
+            running?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (AggregateException)
+        {
+        }
     }
 
     private static Uri SocketUri(string relayUrl)

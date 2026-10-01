@@ -97,14 +97,41 @@ public class SendQueueTests
     }
 
     [Fact]
-    public void NotLoggedIn_AllowedWhenNotRequired()
+    public void NotLoggedIn_HeldWhenNotRequired_ThenSends()
     {
         gate.IsLoggedIn = false;
         settings.RequireLoggedIn = false;
         var q = NewQueue();
         q.Enqueue(Req("a"));
 
-        Assert.Equal("/p hi", q.Tick().Line);
+        var held = q.Tick();
+        Assert.Null(held.Line);
+        Assert.Empty(held.Results);
+
+        now += 5_000;
+        Assert.Empty(q.Tick().Results);
+
+        gate.IsLoggedIn = true;
+        var (line, results) = q.Tick();
+        Assert.Equal("/p hi", line);
+        Assert.True(Assert.Single(results).Result.Ok);
+    }
+
+    [Fact]
+    public void NotLoggedIn_NotRequired_TimesOutAfter10s()
+    {
+        gate.IsLoggedIn = false;
+        settings.RequireLoggedIn = false;
+        var q = NewQueue();
+        q.Enqueue(Req("a"));
+
+        now += 9_999;
+        Assert.Empty(q.Tick().Results);
+
+        now += 1;
+        var (line, results) = q.Tick();
+        Assert.Null(line);
+        Assert.Equal(SendErrors.NotLoggedIn, Assert.Single(results).Result.Error);
     }
 
     [Fact]
