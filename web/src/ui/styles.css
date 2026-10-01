@@ -446,6 +446,10 @@ p {
   padding-top: 8px;
 }
 
+.accounts + .screen {
+  padding-top: 40px;
+}
+
 .account-tab {
   --c: var(--accent);
   flex: none;
