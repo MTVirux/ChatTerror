@@ -80,11 +80,13 @@ export function ChatView({ session, state, onUnpaired }: { session: Session; sta
       else channels.add(item.channel);
     }
     const list: Tab[] = [{ kind: "all" }];
-    for (const c of ALL_CHANNELS) if (channels.has(c)) list.push({ kind: "channel", channel: c });
+    // Follow the plugin's channel order, channels no longer relayed go last.
+    const order = [...state.relayChannels, ...ALL_CHANNELS.filter((c) => !state.relayChannels.includes(c))];
+    for (const c of order) if (channels.has(c)) list.push({ kind: "channel", channel: c });
     const byRecent = [...partners.entries()].sort((a, b) => b[1] - a[1]);
     for (const [partner] of byRecent) list.push({ kind: "tell", partner });
     return list;
-  }, [items]);
+  }, [items, state.relayChannels]);
 
   const visible = useMemo(() => {
     if (tab.kind === "all") return items;

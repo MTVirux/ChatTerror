@@ -13,6 +13,12 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
     public void Draw()
     {
         ImGui.TextWrapped("Relay sends the channel to your phone, Push notifies for every message, Send lets the phone write to it.");
+        ImGui.TextWrapped("Drag a channel name to reorder it, the app lists channels in this order.");
+        if (ImGui.Button("Reset order"))
+        {
+            config.Settings.ChannelOrder = new();
+            changed();
+        }
         ImGui.Spacing();
 
         if (!ImGui.BeginTable("##channels", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
@@ -24,8 +30,10 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
         ImGui.TableSetupColumn("Send");
         ImGui.TableHeadersRow();
 
-        foreach (var channel in Enum.GetValues<ChatChannel>())
+        var order = config.Settings.OrderedChannels();
+        for (var i = 0; i < order.Count; i++)
         {
+            var channel = order[i];
             if (!config.Settings.Channels.TryGetValue(channel, out var setting))
             {
                 setting = new ChannelSetting();
@@ -35,7 +43,18 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
             ImGui.PushID((int)channel);
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(ChannelMap.DisplayName(channel));
+            ImGui.Selectable(ChannelMap.DisplayName(channel));
+            if (ImGui.IsItemActive() && !ImGui.IsItemHovered())
+            {
+                var next = i + (ImGui.GetMouseDragDelta(ImGuiMouseButton.Left).Y < 0 ? -1 : 1);
+                if (next >= 0 && next < order.Count)
+                {
+                    (order[i], order[next]) = (order[next], order[i]);
+                    config.Settings.ChannelOrder = order;
+                    ImGui.ResetMouseDragDelta();
+                    changed();
+                }
+            }
 
             ImGui.TableNextColumn();
             var relay = setting.Relay;

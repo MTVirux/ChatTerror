@@ -18,6 +18,7 @@ public sealed class RelaySettings
         [ChatChannel.Alliance, ChatChannel.NoviceNetwork];
 
     public Dictionary<ChatChannel, ChannelSetting> Channels { get; set; } = Defaults();
+    public List<ChatChannel> ChannelOrder { get; set; } = new();
     public bool PushOnTell { get; set; } = true;
     public bool PushOnMention { get; set; } = true;
     public List<string> PushKeywords { get; set; } = new();
@@ -30,6 +31,14 @@ public sealed class RelaySettings
     public int SendDelayMs { get; set; } = 1000;
     public bool RequireLoggedIn { get; set; } = true;
     public int MaxLengthBytes { get; set; } = Limits.MaxTextBytes;
+
+    // Drops duplicates and unknown values, then appends channels missing from the saved order.
+    public List<ChatChannel> OrderedChannels()
+    {
+        var order = ChannelOrder.Where(Enum.IsDefined).Distinct().ToList();
+        order.AddRange(Enum.GetValues<ChatChannel>().Except(order));
+        return order;
+    }
 
     public static Dictionary<ChatChannel, ChannelSetting> Defaults() =>
         Enum.GetValues<ChatChannel>().ToDictionary(
