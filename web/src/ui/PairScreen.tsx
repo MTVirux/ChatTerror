@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { formatPairCode, pair, parsePairCode } from "../core/session";
+import { formatPairCode, parsePairCode } from "../core/session";
 import { defaultDeviceName } from "./format";
 
 const MISSING_SECRET = "This code is missing its second half. Enter all 16 characters shown in the plugin, like ABCD-EFGH-JKMN-PQRS.";
@@ -26,6 +26,9 @@ function pairErrorText(error: unknown): string {
   if (code === "invalidName") {
     return "That device name can't be used. Try a shorter, plain name.";
   }
+  if (code === "alreadyPaired") {
+    return "This phone is already paired with that plugin.";
+  }
   if (code === "tooManyDevices" || status === 409) {
     return "This character already has 10 paired devices. Remove one in the plugin, then try again.";
   }
@@ -38,7 +41,7 @@ function pairErrorText(error: unknown): string {
   return "Pairing failed. Make a new code in the plugin and try again.";
 }
 
-export function PairScreen({ revoked }: { revoked: boolean }) {
+export function PairScreen({ revoked, onPair }: { revoked: boolean; onPair: (code: string, deviceName: string) => Promise<unknown> }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState(defaultDeviceName);
   const [error, setError] = useState("");
@@ -62,7 +65,7 @@ export function PairScreen({ revoked }: { revoked: boolean }) {
     setBusy(true);
     setError("");
     try {
-      await pair(code, name.trim() || defaultDeviceName());
+      await onPair(code, name.trim() || defaultDeviceName());
     } catch (e) {
       setError(pairErrorText(e));
       setBusy(false);

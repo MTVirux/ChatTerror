@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { openSession } from "./core/session";
+import { openAccounts } from "./core/accounts";
 import { App } from "./ui/App";
 import { applyTheme, loadTheme } from "./ui/theme";
 import "./ui/styles.css";
@@ -8,8 +8,8 @@ applyTheme(loadTheme());
 
 const root = document.getElementById("app")!;
 
-openSession()
-  .then((session) => render(<App initial={session} />, root))
+openAccounts()
+  .then((manager) => render(<App manager={manager} />, root))
   .catch(() => {
     const message = document.createElement("p");
     message.className = "boot-error";

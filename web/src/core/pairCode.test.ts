@@ -1,11 +1,8 @@
-import "fake-indexeddb/auto";
-import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import type { Api } from "./api";
 import { decode, encode } from "./b64url";
 import { exportPublicRaw, fingerprint, generateDeviceKey } from "./crypto";
 import { formatPairCode, pairDevice, parsePairCode } from "./session";
-import { openAccountStore, resetStorageForTests } from "./storage";
 
 describe("parsePairCode", () => {
   it("accepts a lowercase hyphenated code", () => {
@@ -49,7 +46,7 @@ describe("parsePairCode", () => {
 });
 
 describe("pairDevice", () => {
-  it("sends only the relay code and stores the secret-bound fingerprint", async () => {
+  it("sends only the relay code and returns the secret-bound fingerprint", async () => {
     const plugin = await generateDeviceKey();
     const pluginPublicKey = encode(await exportPublicRaw(plugin.publicKey));
     const seen: string[] = [];
@@ -72,20 +69,31 @@ describe("pairDevice", () => {
       getVapid: fail,
     };
 
-    resetStorageForTests();
-    globalThis.indexedDB = new IDBFactory();
-    const store = openAccountStore("chatterror-test");
-    const result = await pairDevice(api, store, "abcd-efgh-2345-6789", "Phone");
+    const result = await pairDevice(api, "abcd-efgh-2345-6789", "Phone");
 
     expect(seen).toEqual(["ABCD-EFGH", "ABCD-EFGH"]);
     const expected = await fingerprint("23456789", decode(pluginPublicKey), decode(claimedKey));
-    expect(result.fingerprint).toBe(expected);
-    expect((await store.getPairing())?.fingerprint).toBe(expected);
+    expect(result).toMatchObject({ deviceId: "dev", token: "d.dev.s", pluginPublicKey, devicePublicKey: claimedKey, fingerprint: expected });
+    expect(result.aesKey).toBeInstanceOf(CryptoKey);
+  });
+
+  it("refuses an install that is already paired before claiming", async () => {
+    const plugin = await generateDeviceKey();
+    const pluginPublicKey = encode(await exportPublicRaw(plugin.publicKey));
+    let claimed = false;
+    const fail = () => Promise.reject(new Error("not expected"));
+    const api: Api = {
+      lookupPairing: () => Promise.resolve({ installId: "inst", pluginPublicKey }),
+      claimPairing: () => { claimed = true; return fail(); },
+      getMe: fail, deleteDevice: fail, putPush: fail, deletePush: fail, getVapid: fail,
+    };
+    await expect(pairDevice(api, "ABCD-EFGH-2345-6789", "Phone", [pluginPublicKey])).rejects.toMatchObject({ status: 409, code: "alreadyPaired" });
+    expect(claimed).toBe(false);
   });
 
   it("rejects a code missing the secret", async () => {
     const fail = () => Promise.reject(new Error("not expected"));
     const api = { lookupPairing: fail, claimPairing: fail } as unknown as Api;
-    await expect(pairDevice(api, openAccountStore("chatterror-test"), "ABCD-EFGH", "Phone")).rejects.toMatchObject({ code: "invalidCode" });
+    await expect(pairDevice(api, "ABCD-EFGH", "Phone")).rejects.toMatchObject({ code: "invalidCode" });
   });
 });

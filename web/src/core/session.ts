@@ -1,12 +1,11 @@
-import { ApiError, createApi, type Api } from "./api";
+import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, openPayload, sealPayload } from "./crypto";
 import { parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame } from "./protocol";
-import { createPushControl, registerServiceWorker, type PushControl } from "./push";
-import { connectRelay, type RelayConnection, type RelayHandlers } from "./relay";
+import type { PushControl } from "./push";
+import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
-import { getCacheLimit } from "./registry";
-import { DEFAULT_CACHE_LIMIT, LEGACY_DB_NAME, openAccountStore, type AccountStore, type Pairing } from "./storage";
+import { DEFAULT_CACHE_LIMIT, type AccountStore, type Pairing } from "./storage";
 
 export type SessionStatus = "unpaired" | "pending" | "connecting" | "online" | "gameOffline" | "relayOffline" | "revoked";
 
@@ -51,10 +50,6 @@ export interface SessionDeps {
   sendTimeoutMs?: number;
 }
 
-interface InternalSession extends Session {
-  restart(): Promise<void>;
-}
-
 type WithoutSeq<P> = P extends unknown ? Omit<P, "seq"> : never;
 type OutgoingPayload = WithoutSeq<DevicePayload>;
 
@@ -62,8 +57,6 @@ const DEFAULT_MAX_LENGTH = 500;
 const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{16}$/;
 // Covers a full plugin send queue.
 export const SEND_TIMEOUT_MS = 45_000;
-
-const liveSessions = new Set<InternalSession>();
 
 function emptyState(status: SessionStatus, cacheLimit = DEFAULT_CACHE_LIMIT): SessionState {
   return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], pushEnabled: false, cacheLimit };
@@ -87,13 +80,14 @@ export function formatPairCode({ code, secret }: PairCode): string {
   return `${code}-${secret.slice(0, 4)}-${secret.slice(4)}`;
 }
 
-// Lookup, keygen, claim, derive and store. Throws ApiError with a code such as invalidCode, notFound or tooManyDevices.
-export async function pairDevice(api: Api, store: AccountStore, input: string, deviceName: string): Promise<{ fingerprint: string }> {
+// Lookup, keygen, claim and derive. Throws ApiError with a code such as invalidCode, notFound, tooManyDevices or alreadyPaired.
+export async function pairDevice(api: Api, input: string, deviceName: string, pairedKeys: readonly string[] = []): Promise<Pairing> {
   const parsed = parsePairCode(input);
   if (!parsed) throw new ApiError(400, "invalidCode");
   const { code, secret } = parsed;
 
   const { pluginPublicKey } = await api.lookupPairing(code);
+  if (pairedKeys.includes(pluginPublicKey)) throw new ApiError(409, "alreadyPaired");
   const keys = await generateDeviceKey();
   const pluginPub = decode(pluginPublicKey);
   const devicePub = await exportPublicRaw(keys.publicKey);
@@ -101,13 +95,10 @@ export async function pairDevice(api: Api, store: AccountStore, input: string, d
   const print = await fingerprint(secret, pluginPub, devicePub);
   const devicePublicKey = encode(devicePub);
   const { deviceId, deviceToken } = await api.claimPairing(code, devicePublicKey, deviceName);
-
-  await store.wipe();
-  await store.setPairing({ deviceId, token: deviceToken, aesKey, pluginPublicKey, devicePublicKey, fingerprint: print });
-  return { fingerprint: print };
+  return { deviceId, token: deviceToken, aesKey, pluginPublicKey, devicePublicKey, fingerprint: print };
 }
 
-export async function createSession(deps: SessionDeps): Promise<InternalSession> {
+export async function createSession(deps: SessionDeps): Promise<Session> {
   const sendTimeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
   const stateListeners = new Set<(s: SessionState) => void>();
   const messageListeners = new Set<(items: ChatItem[]) => void>();
@@ -350,7 +341,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     if (fresh.length > 0) for (const listener of messageListeners) listener(fresh);
   }
 
-  const session: InternalSession = {
+  const session: Session = {
     getState: () => state,
 
     subscribe(cb) {
@@ -432,25 +423,9 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
       stopConnection();
       stateListeners.clear();
       messageListeners.clear();
-      liveSessions.delete(session);
     },
-
-    restart: start,
   };
 
-  liveSessions.add(session);
   await start();
   return session;
-}
-
-export async function openSession(): Promise<Session> {
-  void registerServiceWorker();
-  const api = createApi();
-  return createSession({ api, connect: connectRelay, push: createPushControl(api), store: openAccountStore(LEGACY_DB_NAME), cacheLimit: await getCacheLimit() });
-}
-
-export async function pair(code: string, deviceName: string): Promise<{ fingerprint: string }> {
-  const result = await pairDevice(createApi(), openAccountStore(LEGACY_DB_NAME), code, deviceName);
-  await Promise.all([...liveSessions].map((s) => s.restart()));
-  return result;
 }
