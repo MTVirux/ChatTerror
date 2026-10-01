@@ -12,6 +12,12 @@ provider "hcloud" {
   token = var.hcloud_token
 }
 
+# The DNS zone can live in a different Hetzner project than the server.
+provider "hcloud" {
+  alias = "dns"
+  token = coalesce(var.dns_token, var.hcloud_token)
+}
+
 locals {
   fqdn = var.subdomain == "@" ? var.domain : "${var.subdomain}.${var.domain}"
 }
@@ -83,9 +89,10 @@ resource "hcloud_volume_attachment" "data" {
 }
 
 resource "hcloud_zone_rrset" "relay_a" {
-  zone = var.domain
-  name = var.subdomain
-  type = "A"
+  provider = hcloud.dns
+  zone     = var.domain
+  name     = var.subdomain
+  type     = "A"
   records = [
     { value = hcloud_server.relay.ipv4_address }
   ]
@@ -93,9 +100,10 @@ resource "hcloud_zone_rrset" "relay_a" {
 }
 
 resource "hcloud_zone_rrset" "relay_aaaa" {
-  zone = var.domain
-  name = var.subdomain
-  type = "AAAA"
+  provider = hcloud.dns
+  zone     = var.domain
+  name     = var.subdomain
+  type     = "AAAA"
   records = [
     { value = hcloud_server.relay.ipv6_address }
   ]

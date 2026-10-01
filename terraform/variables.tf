@@ -4,6 +4,13 @@ variable "hcloud_token" {
   sensitive   = true
 }
 
+variable "dns_token" {
+  description = "API token for the project holding the DNS zone, when it differs from the server's. Set via TF_VAR_dns_token."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "domain" {
   description = "DNS zone hosted in Hetzner DNS."
   type        = string
@@ -12,7 +19,7 @@ variable "domain" {
 variable "subdomain" {
   description = "Record name the relay is served on, joined with domain. Use \"@\" for the apex."
   type        = string
-  default     = "chat"
+  default     = "chatterror"
   validation {
     condition     = length(var.subdomain) > 0 && !can(regex("[.]", var.subdomain))
     error_message = "subdomain must be a single non-empty DNS label (no dots) or \"@\"."

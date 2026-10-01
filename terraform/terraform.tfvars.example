@@ -1,11 +1,12 @@
 # Copy to terraform.tfvars (gitignored) and edit.
 #
-# The API token does NOT live in this file. Export it as TF_VAR_hcloud_token,
-# e.g. from a gitignored .envrc loaded by direnv.
+# Tokens do NOT live in this file. Export them from a gitignored .envrc:
+#   TF_VAR_hcloud_token - project the server goes in
+#   TF_VAR_dns_token    - project holding the DNS zone, if different
 
 # --- required ---
 
-domain     = "example.com"
+domain     = "mtvirux.app"
 acme_email = "you@example.com"
 
 # Inline the public key contents - tfvars only accepts literals, not file().
@@ -14,7 +15,7 @@ ssh_allowed_cidrs = ["1.2.3.4/32"]
 
 # --- optional: variables.tf holds the real defaults ---
 
-# subdomain        = "chat"   # "@" serves the relay on the apex
+# subdomain        = "chatterror"  # "@" serves the relay on the apex
 # location         = "fsn1"
 # server_type      = "cx23"
 # data_volume_size = 10
