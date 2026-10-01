@@ -11,13 +11,13 @@ public class SendValidatorTests
     [Fact]
     public void ChannelSendOff_ChannelNotAllowed()
     {
-        Assert.Equal(SendErrors.ChannelNotAllowed, SendValidator.Validate(Send(ChatChannel.Shout, "hi"), new RelaySettings()));
+        Assert.Equal(SendErrors.ChannelNotAllowed, SendValidator.Validate(Send(ChatChannel.Alliance, "hi"), new RelaySettings()));
     }
 
     [Fact]
     public void ChannelNotAllowed_CheckedBeforeText()
     {
-        Assert.Equal(SendErrors.ChannelNotAllowed, SendValidator.Validate(Send(ChatChannel.Yell, "/logout"), new RelaySettings()));
+        Assert.Equal(SendErrors.ChannelNotAllowed, SendValidator.Validate(Send(ChatChannel.Alliance, "/logout"), new RelaySettings()));
     }
 
     [Theory]
