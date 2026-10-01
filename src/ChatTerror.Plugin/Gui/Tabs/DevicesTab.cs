@@ -36,6 +36,9 @@ public sealed class DevicesTab : ITab, IDisposable
     private int lastDrawnFrame = -1;
     private string? confirmRevoke;
 
+    // Hidden by default for streams and screenshots; a new pairing is a new instance, so it starts hidden again.
+    private ActivePairing? revealedPairing;
+
     public DevicesTab(Configuration config, RelayApi api, DeviceHub hub, IFramework framework)
     {
         this.config = config;
@@ -123,11 +126,17 @@ public sealed class DevicesTab : ITab, IDisposable
         }
 
         var url = $"{config.RelayUrl.TrimEnd('/')}/#pair={current.Code}";
-        ImGui.TextUnformatted($"Pairing code: {current.Code}");
+        var revealed = revealedPairing == current;
+        ImGui.TextUnformatted($"Pairing code: {(revealed ? current.Code : Mask(current.Code))}");
+        ImGui.SameLine();
+        if (ImGui.SmallButton(revealed ? "Hide" : "Show"))
+            revealedPairing = revealed ? null : current;
         ImGui.TextUnformatted($"Expires in {remaining:m\\:ss}");
-        ImGui.TextWrapped($"Scan with your phone or open {url}");
+        ImGui.TextWrapped(revealed ? $"Scan with your phone or open {url}" : "Click Show to see the code, link and QR code.");
         if (ImGui.SmallButton("Copy link"))
             ImGui.SetClipboardText(url);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The link contains the pairing secret. Only share it with your own device.");
         ImGui.SameLine();
         if (ImGui.SmallButton("Cancel"))
         {
@@ -135,9 +144,12 @@ public sealed class DevicesTab : ITab, IDisposable
             hub.CancelPairing();
         }
 
-        qr.Draw(url, 4f * ImGuiHelpers.GlobalScale);
+        if (revealed)
+            qr.Draw(url, 4f * ImGuiHelpers.GlobalScale);
         ImGui.Separator();
     }
+
+    private static string Mask(string code) => string.Concat(code.Select(c => c == '-' ? '-' : '*'));
 
     private void DrawPaired()
     {

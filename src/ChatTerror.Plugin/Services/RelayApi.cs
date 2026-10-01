@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatTerror.Plugin.Logic;
 using ChatTerror.Protocol;
 
 namespace ChatTerror.Plugin.Services;
@@ -64,7 +65,11 @@ public sealed class RelayApi : IDisposable
 
     private HttpRequestMessage Request(HttpMethod method, string path, string? token, object? body, string? baseUrl = null)
     {
-        var request = new HttpRequestMessage(method, (baseUrl ?? relayUrl()).TrimEnd('/') + path);
+        var uri = new Uri((baseUrl ?? relayUrl()).Trim().TrimEnd('/') + path);
+        if (!RelayUrl.IsAllowed(uri))
+            throw new InvalidOperationException(RelayUrl.InsecureError);
+
+        var request = new HttpRequestMessage(method, uri);
         if (token != null)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (body != null)

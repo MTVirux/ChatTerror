@@ -20,11 +20,11 @@ ChatTerror is not in the official Dalamud repository. Add it as a custom reposit
 
 Open the settings with `/chatterror` (or `/ct`).
 
-The default relay URL is `http://localhost:5000` until a hosted instance exists, so for now you need to run your own relay (see below) and set its URL in the **Connection** tab.
+The plugin uses the hosted relay at `https://chatterror.mtvirux.app` by default. To use your own relay (see below), set its URL in the **Connection** tab. Plain `http://` is only accepted for a relay on the same computer (`localhost`, `127.0.0.1`, `::1`).
 
 ## Pairing a phone
 
-1. In the plugin, go to **Devices** and click **Pair new device**. A 16 character code (`XXXX-XXXX-XXXX-XXXX`), a QR code and a link appear.
+1. In the plugin, go to **Devices** and click **Pair new device**. A 16 character code (`XXXX-XXXX-XXXX-XXXX`), a QR code and a link appear. They are hidden until you click **Show**, so the secret part stays off streams and screenshots.
 2. Scan the QR code with your phone, or open the link. You can also open the relay in the phone browser and type the full code. Only the first 8 characters are sent to the relay; the last 8 are a secret that stays between the plugin and the phone.
 3. The phone shows a 6 digit code, and the plugin shows the same code next to the device name. Approve only if they match. A request that did not come from the code currently shown in the plugin is marked unverified and can only be rejected.
 4. On the phone, add the page to your home screen and enable notifications in its settings if you want push for tells and mentions.
@@ -59,7 +59,7 @@ cd web && npm ci && npm run build && cd ..
 dotnet run -c Release --project src/ChatTerror.Server --no-launch-profile
 ```
 
-This listens on `http://localhost:5000`, the plugin default. The web build is written to `src/ChatTerror.Server/wwwroot`, which the relay serves.
+This listens on `http://localhost:5000`. The web build is written to `src/ChatTerror.Server/wwwroot`, which the relay serves.
 
 ### Reverse proxy
 

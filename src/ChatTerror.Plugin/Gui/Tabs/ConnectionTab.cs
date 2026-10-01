@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using ChatTerror.Plugin.Logic;
 using ChatTerror.Plugin.Services;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
@@ -77,14 +78,20 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
     private void RequestRelayChange()
     {
         urlError = null;
-        var value = Normalize(relayUrl);
+        var value = RelayUrl.Normalize(relayUrl);
         if (value == null)
         {
-            urlError = "Enter a full http:// or https:// URL.";
+            urlError = "Enter a full https:// URL.";
             return;
         }
 
-        if (value == Normalize(config.RelayUrl))
+        if (!RelayUrl.IsAllowed(value))
+        {
+            urlError = RelayUrl.InsecureError;
+            return;
+        }
+
+        if (value == RelayUrl.Normalize(config.RelayUrl))
         {
             relayUrl = config.RelayUrl;
             return;
@@ -118,14 +125,6 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
         }
 
         ImGui.EndPopup();
-    }
-
-    // Uri lowercases scheme and host, so equal relays normalize to the same string.
-    private static string? Normalize(string? url)
-    {
-        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            return null;
-        return $"{uri.Scheme}://{uri.Authority}{uri.AbsolutePath.TrimEnd('/')}";
     }
 
     private void DrawStatus()

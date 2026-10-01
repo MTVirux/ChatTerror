@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using ChatTerror.Plugin.Logic;
 using ChatTerror.Protocol;
 using Dalamud.Plugin.Services;
 
@@ -36,7 +37,7 @@ public sealed class RelayClient : IDisposable
 
     public RelayState State { get; private set; } = RelayState.Disconnected;
 
-    // Throws UriFormatException for a malformed relay URL.
+    // Throws UriFormatException for a malformed relay URL or a plain http one that isn't loopback.
     public void Start(string relayUrl, string token)
     {
         Stop();
@@ -121,6 +122,8 @@ public sealed class RelayClient : IDisposable
         var builder = new UriBuilder(relayUrl.Trim());
         builder.Scheme = builder.Scheme == Uri.UriSchemeHttps ? "wss" : "ws";
         builder.Path = builder.Path.TrimEnd('/') + "/ws";
+        if (!RelayUrl.IsAllowed(builder.Uri))
+            throw new UriFormatException(RelayUrl.InsecureError);
         return builder.Uri;
     }
 
