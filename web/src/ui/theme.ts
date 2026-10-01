@@ -1,7 +1,6 @@
 export type ThemeChoice = "system" | "light" | "dark";
 
 const THEME_KEY = "chatterror.theme";
-const CACHE_KEY = "chatterror.cacheLimit";
 
 function read(key: string): string | null {
   try {
@@ -33,15 +32,4 @@ export function applyTheme(choice: ThemeChoice) {
 export function saveTheme(choice: ThemeChoice) {
   write(THEME_KEY, choice);
   applyTheme(choice);
-}
-
-export const CACHE_SIZES = [500, 2000, 5000];
-
-export function loadCacheLimit(): number {
-  const value = Number(read(CACHE_KEY));
-  return CACHE_SIZES.includes(value) ? value : 2000;
-}
-
-export function saveCacheLimit(n: number) {
-  write(CACHE_KEY, String(n));
 }

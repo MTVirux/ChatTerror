@@ -159,8 +159,12 @@ export function clearMessages(): Promise<void> {
   });
 }
 
+// The cache limit is a device preference, not pairing data, so it survives unpair and re-pair.
 export function wipeAll(): Promise<void> {
   return run([...STORES], "readwrite", async (tx) => {
+    const meta = tx.objectStore("meta");
+    const cacheLimit: unknown = await result(meta.get("cacheLimit"));
     await Promise.all(STORES.map((name) => result(tx.objectStore(name).clear())));
+    if (cacheLimit !== undefined) await result(meta.put(cacheLimit, "cacheLimit"));
   });
 }

@@ -4,8 +4,8 @@ import { ApiError, type Api } from "./api";
 import { openPayload, sealPayload } from "./crypto";
 import type { ChatItem, ClientFrame, DevicePayload, PluginPayload, ServerFrame } from "./protocol";
 import type { RelayHandlers } from "./relay";
-import { createSession, type SessionDeps } from "./session";
-import { addMessages, getMeta, getPairing, loadMessages, setMeta, setPairing, wipeAll } from "./storage";
+import { createSession, SEND_TIMEOUT_MS, type SessionDeps } from "./session";
+import { addMessages, DEFAULT_CACHE_LIMIT, getMeta, getPairing, loadMessages, setMeta, setPairing, wipeAll } from "./storage";
 
 let key: CryptoKey;
 
@@ -83,6 +83,7 @@ async function setup(opts: { approved?: boolean; api?: Partial<Api>; sendTimeout
 
 beforeEach(async () => {
   await wipeAll();
+  await setMeta("cacheLimit", DEFAULT_CACHE_LIMIT);
   key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 });
 
@@ -295,6 +296,21 @@ describe("session", () => {
     expect(await session.send("say", "hi")).toEqual({ ok: false, error: "offline" });
   });
 
+  it("send fails fast with gameOffline when the plugin is known offline", async () => {
+    const { session, relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: false });
+    await vi.waitFor(() => expect(session.getState().status).toBe("gameOffline"));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(await session.send("say", "hi")).toEqual({ ok: false, error: "gameOffline" });
+    expect((await relay.payloads()).filter((p) => p.type === "sendChat")).toEqual([]);
+  });
+
+  it("waits long enough for a full plugin send queue", () => {
+    expect(SEND_TIMEOUT_MS).toBe(45_000);
+  });
+
   it("sends prefs when muting", async () => {
     const { session, relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
@@ -339,6 +355,24 @@ describe("session", () => {
     expect(await getMeta("cacheLimit")).toBe(2);
     await session.clearCache();
     expect(await session.loadHistory(10)).toEqual([]);
+  });
+
+  it("exposes the cache limit in state and keeps it across unpair", async () => {
+    const { session } = await setup();
+    expect(session.getState().cacheLimit).toBe(DEFAULT_CACHE_LIMIT);
+
+    await session.setCacheLimit(500);
+    expect(session.getState().cacheLimit).toBe(500);
+
+    await session.unpair();
+    expect(session.getState().cacheLimit).toBe(500);
+    expect(await getMeta("cacheLimit")).toBe(500);
+  });
+
+  it("loads the stored cache limit on start", async () => {
+    await setMeta("cacheLimit", 5000);
+    const { session } = await setup();
+    expect(session.getState().cacheLimit).toBe(5000);
   });
 
   it("notifies subscribers of state changes", async () => {

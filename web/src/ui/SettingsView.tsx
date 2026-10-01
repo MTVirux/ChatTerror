@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ChatChannel } from "../core/protocol";
 import type { Session, SessionState } from "../core/session";
 import { channelColor, channelLabel, isIos } from "./format";
-import { CACHE_SIZES, loadCacheLimit, loadTheme, saveCacheLimit, saveTheme, type ThemeChoice } from "./theme";
+import { loadTheme, saveTheme, type ThemeChoice } from "./theme";
+
+const CACHE_SIZES = [500, 2000, 5000];
 
 function needsHomeScreen(): boolean {
   return isIos() && (navigator as Navigator & { standalone?: boolean }).standalone === false;
@@ -16,7 +18,6 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
   onUnpaired: () => void;
 }) {
   const [theme, setTheme] = useState<ThemeChoice>(loadTheme);
-  const [cacheLimit, setCacheLimit] = useState(loadCacheLimit);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushError, setPushError] = useState("");
   const [confirm, setConfirm] = useState<"clear" | "unpair" | null>(null);
@@ -75,8 +76,6 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
   }
 
   function chooseCacheLimit(n: number) {
-    setCacheLimit(n);
-    saveCacheLimit(n);
     setCacheError("");
     session.setCacheLimit(n).catch(() => setCacheError("Couldn't change how many messages are kept. Try again."));
   }
@@ -155,7 +154,7 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
             <h3>Stored messages</h3>
             <label class="row">
               <span>Keep on this device</span>
-              <select value={String(cacheLimit)} onChange={(e) => chooseCacheLimit(Number(e.currentTarget.value))}>
+              <select value={String(state.cacheLimit)} onChange={(e) => chooseCacheLimit(Number(e.currentTarget.value))}>
                 {CACHE_SIZES.map((n) => <option value={String(n)}>{n.toLocaleString()} messages</option>)}
               </select>
             </label>

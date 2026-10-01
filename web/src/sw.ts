@@ -1,6 +1,7 @@
 import { openPayload } from "./core/crypto";
 import { CHANNEL_LABELS, parsePluginPayload, type ChatItem } from "./core/protocol";
 import { SeqGuard } from "./core/seq";
+import { referencedAssets, staleAssets } from "./core/shell";
 import { addMessages, getMeta, getPairing, setMeta } from "./core/storage";
 
 declare const self: ServiceWorkerGlobalScope;
@@ -12,8 +13,7 @@ async function cacheShell() {
   const cache = await caches.open(SHELL_CACHE);
   await cache.addAll(SHELL_FILES);
   const html = await (await fetch("/index.html", { cache: "no-store" })).text();
-  const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
-  await cache.addAll(assets);
+  await cache.addAll(referencedAssets(html));
 }
 
 self.addEventListener("install", (event) => {
@@ -21,13 +21,22 @@ self.addEventListener("install", (event) => {
   event.waitUntil(cacheShell().catch(() => undefined).then(() => self.skipWaiting()));
 });
 
+async function pruneAssets() {
+  const cache = await caches.open(SHELL_CACHE);
+  const index = await cache.match("/index.html");
+  if (!index) return;
+  const cachedPaths = (await cache.keys()).map((request) => new URL(request.url).pathname);
+  const stale = staleAssets(cachedPaths, await index.text());
+  await Promise.all(stale.map((path) => cache.delete(path)));
+}
+
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(pruneAssets().catch(() => undefined).then(() => self.clients.claim()));
 });
 
 async function networkFirst(request: Request): Promise<Response> {
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { cache: "no-cache" });
     const path = new URL(request.url).pathname;
     if (response.ok && (path === "/" || path === "/index.html")) await (await caches.open(SHELL_CACHE)).put("/index.html", response.clone());
     return response;
@@ -83,7 +92,6 @@ async function handlePush(data: PushMessageData | null) {
     body: item.text,
     tag: item.channel + item.sender,
     icon: "/icon-192.png",
-    data: { id: item.id },
   });
 }
 

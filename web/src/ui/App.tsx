@@ -3,7 +3,6 @@ import { openSession, type Session, type SessionState } from "../core/session";
 import { PairScreen } from "./PairScreen";
 import { PendingScreen } from "./PendingScreen";
 import { ChatView } from "./ChatView";
-import { loadCacheLimit } from "./theme";
 
 function useSessionState(session: Session): SessionState {
   const [state, setState] = useState(session.getState());
@@ -17,13 +16,6 @@ function useSessionState(session: Session): SessionState {
 export function App({ initial }: { initial: Session }) {
   const [session, setSession] = useState(initial);
   const state = useSessionState(session);
-
-  const paired = state.status !== "unpaired" && state.status !== "revoked";
-
-  // Pairing and unpairing wipe the core's stored cache limit, so the saved choice is reapplied.
-  useEffect(() => {
-    if (paired) session.setCacheLimit(loadCacheLimit()).catch(() => {});
-  }, [session, paired]);
 
   async function reopen() {
     session.close();

@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ChatItem } from "./protocol";
-import { addMessages, clearMessages, getMeta, getPairing, loadMessages, setMeta, setPairing, trimMessages, wipeAll } from "./storage";
+import { addMessages, clearMessages, DEFAULT_CACHE_LIMIT, getMeta, getPairing, loadMessages, setMeta, setPairing, trimMessages, wipeAll } from "./storage";
 
 function item(id: string, ts: number): ChatItem {
   return { id, ts, channel: "say", sender: "A B", text: id, character: "C D", outgoing: false };
@@ -9,6 +9,7 @@ function item(id: string, ts: number): ChatItem {
 
 beforeEach(async () => {
   await wipeAll();
+  await setMeta("cacheLimit", DEFAULT_CACHE_LIMIT);
 });
 
 describe("storage", () => {
@@ -60,5 +61,13 @@ describe("storage", () => {
     expect(await getPairing()).toBeUndefined();
     expect(await getMeta("lastSeenPush")).toBe(0);
     expect(await loadMessages(10)).toEqual([]);
+  });
+
+  it("keeps the cache limit when wiping", async () => {
+    await setMeta("cacheLimit", 500);
+    await setMeta("lastSeenWs", 9);
+    await wipeAll();
+    expect(await getMeta("cacheLimit")).toBe(500);
+    expect(await getMeta("lastSeenWs")).toBe(0);
   });
 });
