@@ -1,0 +1,11 @@
+*
+!web
+!src/ChatTerror.Protocol
+!src/ChatTerror.Server
+**/bin
+**/obj
+**/node_modules
+src/ChatTerror.Server/wwwroot
+**/*.db
+**/*.db-*
+**/vapid.json

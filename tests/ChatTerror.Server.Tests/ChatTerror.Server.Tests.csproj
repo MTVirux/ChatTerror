@@ -20,6 +20,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\src\ChatTerror.Plugin\Logic\**\*.cs" Link="PluginLogic\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\ChatTerror.Server\ChatTerror.Server.csproj" />
     <ProjectReference Include="..\..\src\ChatTerror.Protocol\ChatTerror.Protocol.csproj" />
   </ItemGroup>
