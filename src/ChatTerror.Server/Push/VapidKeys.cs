@@ -33,7 +33,11 @@ public sealed class VapidKeys
         var parameters = key.ExportParameters(true);
         PublicKey = Base64Url.Encode([0x04, .. parameters.Q.X!, .. parameters.Q.Y!]);
         PrivateKey = Base64Url.Encode(parameters.D!);
-        File.WriteAllText(path, JsonSerializer.Serialize(new StoredKeys(PublicKey, PrivateKey), JsonSerializerOptions.Web));
+        var fileOptions = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows())
+            fileOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using (var writer = new StreamWriter(path, fileOptions))
+            writer.Write(JsonSerializer.Serialize(new StoredKeys(PublicKey, PrivateKey), JsonSerializerOptions.Web));
         log.LogWarning("No VAPID keys configured, generated a new pair and saved it to {Path}", path);
     }
 

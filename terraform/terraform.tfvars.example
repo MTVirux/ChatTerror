@@ -16,6 +16,7 @@ ssh_allowed_cidrs = ["1.2.3.4/32"]
 
 # --- optional: variables.tf holds the real defaults ---
 
+# ssh_private_key_path = "~/.ssh/id_ed25519"  # used to copy the GitHub token to the VM
 # subdomain        = "chatterror"  # "@" serves the relay on the apex
 # location         = "fsn1"
 # server_type      = "cx23"

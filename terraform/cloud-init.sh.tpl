@@ -28,6 +28,25 @@ apt-get install -y docker-ce docker-ce-cli containerd.io \
     docker-buildx-plugin docker-compose-plugin
 systemctl enable --now docker
 
+# Containers must not reach the metadata service. iptables rules don't
+# survive a reboot, so the rule is re-added whenever docker starts.
+cat > /etc/systemd/system/block-container-metadata.service <<'EOF'
+[Unit]
+Description=Block containers from the cloud metadata service
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -d 169.254.169.254/32 -j DROP 2>/dev/null || iptables -I DOCKER-USER -d 169.254.169.254/32 -j DROP'
+
+[Install]
+WantedBy=docker.service
+EOF
+systemctl daemon-reload
+systemctl enable --now block-container-metadata.service
+
 # The volume is attached after the server is created, so it may not exist yet.
 DATA_DEVICE='${data_device}'
 for _ in $(seq 1 60); do
@@ -45,10 +64,21 @@ mountpoint -q /mnt/data || mount /mnt/data
 # 1654 is the aspnet image's non-root APP_UID.
 mkdir -p /mnt/data/relay /mnt/data/caddy/data /mnt/data/caddy/config
 chown 1654:1654 /mnt/data/relay
+chmod 0700 /mnt/data/relay
 
-if [ ! -d /opt/chatterror/src/.git ]; then
-    git clone --depth 1 --branch '${repo_ref}' '${repo_url}' /opt/chatterror/src
-fi
+mkdir -p /opt/chatterror
+
+# Terraform writes the GitHub token (empty for a public repo) to
+# /etc/chatterror/github_token over SSH after boot.
+cat > /usr/local/bin/git-credential-chatterror <<'EOF'
+#!/bin/sh
+[ "$1" = get ] || exit 0
+token=$(cat /etc/chatterror/github_token 2>/dev/null) || exit 0
+[ -n "$token" ] || exit 0
+echo username=x-access-token
+echo "password=$token"
+EOF
+chmod 0755 /usr/local/bin/git-credential-chatterror
 
 cat > /opt/chatterror/Caddyfile <<'EOF'
 ${fqdn} {
@@ -92,17 +122,21 @@ EOF
 
 cat > /opt/chatterror/deploy.sh <<'EOF'
 #!/bin/bash
-# Pulls the checked out ref and rebuilds. Run as root on the VM.
+# Clones or pulls the configured ref and rebuilds. Run as root on the VM.
 set -euo pipefail
+export GIT_TERMINAL_PROMPT=0
+git_auth() { git -c credential.helper= -c credential.helper=chatterror "$@"; }
 cd /opt/chatterror
-git -C src fetch --depth 1 origin '${repo_ref}'
-git -C src checkout -f FETCH_HEAD
+if [ ! -d src/.git ]; then
+    git_auth clone --depth 1 --branch '${repo_ref}' '${repo_url}' src
+else
+    git_auth -C src fetch --depth 1 origin '${repo_ref}'
+    git -C src checkout -f FETCH_HEAD
+fi
 docker compose up -d --build
 docker image prune -f
 EOF
 chmod +x /opt/chatterror/deploy.sh
 
-cd /opt/chatterror
-docker compose up -d --build
-
+# The first deploy runs from terraform once the token file is in place.
 echo "[$(date -Is)] bootstrap done"
