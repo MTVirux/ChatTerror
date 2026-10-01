@@ -5,19 +5,8 @@ import { parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload
 import { createPushControl, registerServiceWorker, type PushControl } from "./push";
 import { connectRelay, type RelayConnection, type RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
-import {
-  addMessages,
-  clearMessages,
-  DEFAULT_CACHE_LIMIT,
-  getMeta,
-  getPairing,
-  loadMessages,
-  setMeta,
-  setPairing,
-  trimMessages,
-  wipeAll,
-  type Pairing,
-} from "./storage";
+import { getCacheLimit } from "./registry";
+import { DEFAULT_CACHE_LIMIT, LEGACY_DB_NAME, openAccountStore, type AccountStore, type Pairing } from "./storage";
 
 export type SessionStatus = "unpaired" | "pending" | "connecting" | "online" | "gameOffline" | "relayOffline" | "revoked";
 
@@ -57,6 +46,8 @@ export interface SessionDeps {
   api: Api;
   connect(token: string, handlers: RelayHandlers): RelayConnection;
   push: PushControl;
+  store: AccountStore;
+  cacheLimit: number;
   sendTimeoutMs?: number;
 }
 
@@ -97,7 +88,7 @@ export function formatPairCode({ code, secret }: PairCode): string {
 }
 
 // Lookup, keygen, claim, derive and store. Throws ApiError with a code such as invalidCode, notFound or tooManyDevices.
-export async function pairDevice(api: Api, input: string, deviceName: string): Promise<{ fingerprint: string }> {
+export async function pairDevice(api: Api, store: AccountStore, input: string, deviceName: string): Promise<{ fingerprint: string }> {
   const parsed = parsePairCode(input);
   if (!parsed) throw new ApiError(400, "invalidCode");
   const { code, secret } = parsed;
@@ -111,8 +102,8 @@ export async function pairDevice(api: Api, input: string, deviceName: string): P
   const devicePublicKey = encode(devicePub);
   const { deviceId, deviceToken } = await api.claimPairing(code, devicePublicKey, deviceName);
 
-  await wipeAll();
-  await setPairing({ deviceId, token: deviceToken, aesKey, pluginPublicKey, devicePublicKey, fingerprint: print });
+  await store.wipe();
+  await store.setPairing({ deviceId, token: deviceToken, aesKey, pluginPublicKey, devicePublicKey, fingerprint: print });
   return { fingerprint: print };
 }
 
@@ -168,22 +159,21 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
 
   async function start() {
     stopConnection();
-    pairing = await getPairing();
+    pairing = await deps.store.getPairing();
     shownIds.clear();
-    const [settings, muted, push, limit, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
-      getMeta("lastSettings"),
-      getMeta("mutedChannels"),
-      getMeta("pushEnabled"),
-      getMeta("cacheLimit"),
-      getMeta("lastSeenWs"),
-      getMeta("lastSeqSent"),
-      getMeta("syncTs"),
-      getMeta("approved"),
+    const [settings, muted, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
+      deps.store.getMeta("lastSettings"),
+      deps.store.getMeta("mutedChannels"),
+      deps.store.getMeta("pushEnabled"),
+      deps.store.getMeta("lastSeenWs"),
+      deps.store.getMeta("lastSeqSent"),
+      deps.store.getMeta("syncTs"),
+      deps.store.getMeta("approved"),
     ]);
     guard = new SeqGuard(lastSeenWs);
     counter = new SeqCounter(lastSeqSent);
     syncTs = storedSyncTs;
-    cacheLimit = limit;
+    cacheLimit = deps.cacheLimit;
     approved = storedApproved;
     dropped = false;
     pluginOnline = undefined;
@@ -218,7 +208,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
   async function revoke() {
     stopConnection();
     pairing = undefined;
-    await wipeAll();
+    await deps.store.wipe();
     await deps.push.disable().catch(() => undefined);
     setState(emptyState("revoked", cacheLimit));
   }
@@ -235,7 +225,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
   async function sendPayload(payload: OutgoingPayload): Promise<boolean> {
     if (!pairing || !connection || !authed) return false;
     const seq = counter.next();
-    void setMeta("lastSeqSent", seq);
+    void deps.store.setMeta("lastSeqSent", seq);
     const envelope = await sealPayload(pairing.aesKey, "d2p", { ...payload, seq });
     return connection?.send({ t: "send", payload: envelope }) ?? false;
   }
@@ -250,7 +240,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
   async function markApproved() {
     if (approved) return;
     approved = true;
-    await setMeta("approved", true);
+    await deps.store.setMeta("approved", true);
     refreshStatus();
     if (pluginOnline) await sendHello();
   }
@@ -306,7 +296,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
       return;
     }
     if (!payload || !guard.accept(payload.seq)) return;
-    await setMeta("lastSeenWs", payload.seq);
+    await deps.store.setMeta("lastSeenWs", payload.seq);
     if (!pluginOnline) {
       pluginOnline = true;
       refreshStatus();
@@ -327,7 +317,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
         pendingSends.get(payload.requestId)?.({ ok: payload.ok, ...(payload.error ? { error: payload.error } : {}) });
         return;
       case "settings":
-        await setMeta("lastSettings", payload);
+        await deps.store.setMeta("lastSettings", payload);
         setState({
           character: payload.character,
           relayChannels: payload.relayChannels,
@@ -341,13 +331,13 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
   async function advanceSync(ts: number) {
     if (ts <= syncTs) return;
     syncTs = ts;
-    await setMeta("syncTs", ts);
+    await deps.store.setMeta("syncTs", ts);
   }
 
   async function receiveItems(items: ChatItem[], moveSync: boolean) {
     if (items.length === 0) return;
     const sorted = [...items].sort((a, b) => a.ts - b.ts);
-    await addMessages(sorted, cacheLimit);
+    await deps.store.addMessages(sorted, cacheLimit);
     const newest = sorted[sorted.length - 1].ts;
     if (moveSync) await advanceSync(newest);
     else deferredTs = Math.max(deferredTs, newest);
@@ -374,7 +364,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     },
 
     async loadHistory(limit) {
-      const items = await loadMessages(limit);
+      const items = await deps.store.loadMessages(limit);
       for (const item of items) shownIds.add(item.id);
       return items;
     },
@@ -400,7 +390,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
 
     async setMuted(channels) {
       setState({ mutedChannels: [...channels] });
-      await setMeta("mutedChannels", [...channels]);
+      await deps.store.setMeta("mutedChannels", [...channels]);
       await sendPayload({ type: "prefs", mutedChannels: [...channels] });
     },
 
@@ -408,7 +398,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
       if (!pairing) return false;
       const enabled = await guarded(deps.push.enable(pairing.token)).catch(() => false);
       if (!pairing) return false;
-      await setMeta("pushEnabled", enabled);
+      await deps.store.setMeta("pushEnabled", enabled);
       setState({ pushEnabled: enabled });
       return enabled;
     },
@@ -417,17 +407,16 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
       if (!pairing) return;
       await guarded(deps.push.disable(pairing.token)).catch(() => undefined);
       if (!pairing) return;
-      await setMeta("pushEnabled", false);
+      await deps.store.setMeta("pushEnabled", false);
       setState({ pushEnabled: false });
     },
 
-    clearCache: () => clearMessages(),
+    clearCache: () => deps.store.clearMessages(),
 
     async setCacheLimit(n) {
       cacheLimit = n;
       setState({ cacheLimit: n });
-      await setMeta("cacheLimit", n);
-      await trimMessages(n);
+      await deps.store.trimMessages(n);
     },
 
     async unpair() {
@@ -435,7 +424,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
       await deps.push.disable().catch(() => undefined);
       stopConnection();
       pairing = undefined;
-      await wipeAll();
+      await deps.store.wipe();
       setState(emptyState("unpaired", cacheLimit));
     },
 
@@ -457,11 +446,11 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
 export async function openSession(): Promise<Session> {
   void registerServiceWorker();
   const api = createApi();
-  return createSession({ api, connect: connectRelay, push: createPushControl(api) });
+  return createSession({ api, connect: connectRelay, push: createPushControl(api), store: openAccountStore(LEGACY_DB_NAME), cacheLimit: await getCacheLimit() });
 }
 
 export async function pair(code: string, deviceName: string): Promise<{ fingerprint: string }> {
-  const result = await pairDevice(createApi(), code, deviceName);
+  const result = await pairDevice(createApi(), openAccountStore(LEGACY_DB_NAME), code, deviceName);
   await Promise.all([...liveSessions].map((s) => s.restart()));
   return result;
 }

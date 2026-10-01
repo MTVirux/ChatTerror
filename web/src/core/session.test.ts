@@ -1,13 +1,15 @@
 import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type Api } from "./api";
 import { openPayload, sealPayload } from "./crypto";
 import type { ChatItem, ClientFrame, DevicePayload, PluginPayload, ServerFrame } from "./protocol";
 import type { RelayHandlers } from "./relay";
 import { createSession, SEND_TIMEOUT_MS, type SessionDeps } from "./session";
-import { addMessages, DEFAULT_CACHE_LIMIT, getMeta, getPairing, loadMessages, setMeta, setPairing, wipeAll } from "./storage";
+import { DEFAULT_CACHE_LIMIT, openAccountStore, resetStorageForTests, type AccountStore } from "./storage";
 
 let key: CryptoKey;
+let store: AccountStore;
 
 function item(id: string, ts: number, text = id): ChatItem {
   return { id, ts, channel: "say", sender: "Y'shtola Rhul", senderWorld: "Twintania", text, character: "Alpha Beta", outgoing: false };
@@ -67,14 +69,16 @@ function fakeRelay() {
   return relay;
 }
 
-async function setup(opts: { approved?: boolean; api?: Partial<Api>; sendTimeoutMs?: number } = {}) {
-  await setPairing({ deviceId: "dev", token: "d.dev.secret", aesKey: key, pluginPublicKey: "p", devicePublicKey: "d", fingerprint: "123 456" });
-  await setMeta("approved", opts.approved ?? true);
+async function setup(opts: { approved?: boolean; api?: Partial<Api>; sendTimeoutMs?: number; cacheLimit?: number } = {}) {
+  await store.setPairing({ deviceId: "dev", token: "d.dev.secret", aesKey: key, pluginPublicKey: "p", devicePublicKey: "d", fingerprint: "123 456" });
+  await store.setMeta("approved", opts.approved ?? true);
   const relay = fakeRelay();
   const deps: SessionDeps = {
     api: fakeApi(opts.api),
     connect: relay.connect,
     push: { enable: () => Promise.resolve(true), disable: () => Promise.resolve() },
+    store,
+    cacheLimit: opts.cacheLimit ?? DEFAULT_CACHE_LIMIT,
     sendTimeoutMs: opts.sendTimeoutMs,
   };
   const session = await createSession(deps);
@@ -82,15 +86,16 @@ async function setup(opts: { approved?: boolean; api?: Partial<Api>; sendTimeout
 }
 
 beforeEach(async () => {
-  await wipeAll();
-  await setMeta("cacheLimit", DEFAULT_CACHE_LIMIT);
+  resetStorageForTests();
+  globalThis.indexedDB = new IDBFactory();
+  store = openAccountStore("chatterror-test");
   key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 });
 
 describe("session", () => {
   it("is unpaired without a stored pairing and does not connect", async () => {
     const relay = fakeRelay();
-    const session = await createSession({ api: fakeApi(), connect: relay.connect, push: { enable: async () => true, disable: async () => {} } });
+    const session = await createSession({ api: fakeApi(), connect: relay.connect, push: { enable: async () => true, disable: async () => {} }, store, cacheLimit: DEFAULT_CACHE_LIMIT });
     expect(session.getState().status).toBe("unpaired");
     expect(relay.connects).toBe(0);
   });
@@ -132,11 +137,11 @@ describe("session", () => {
     const seq = Date.now();
     await relay.fromPlugin({ type: "backlog", seq, items: [item("a", 100)], done: false });
     await relay.fromPlugin({ type: "chat", seq: seq + 1, item: item("live", 900) });
-    await vi.waitFor(async () => expect(await loadMessages(10)).toHaveLength(2));
-    expect(await getMeta("syncTs")).toBe(100);
+    await vi.waitFor(async () => expect(await store.loadMessages(10)).toHaveLength(2));
+    expect(await store.getMeta("syncTs")).toBe(100);
 
     await relay.fromPlugin({ type: "backlog", seq: seq + 2, items: [item("b", 200)], done: true });
-    await vi.waitFor(async () => expect(await getMeta("syncTs")).toBe(900));
+    await vi.waitFor(async () => expect(await store.getMeta("syncTs")).toBe(900));
   });
 
   it("drops the deferred sync point when the socket closes mid backlog", async () => {
@@ -146,7 +151,7 @@ describe("session", () => {
     const seq = Date.now();
     await relay.fromPlugin({ type: "backlog", seq, items: [item("a", 100)], done: false });
     await relay.fromPlugin({ type: "chat", seq: seq + 1, item: item("live", 900) });
-    await vi.waitFor(async () => expect(await loadMessages(10)).toHaveLength(2));
+    await vi.waitFor(async () => expect(await store.loadMessages(10)).toHaveLength(2));
 
     relay.sent.length = 0;
     relay.drop();
@@ -159,8 +164,8 @@ describe("session", () => {
     const { relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
     await relay.fromPlugin({ type: "chat", seq: Date.now(), item: item("a", 500) });
-    await vi.waitFor(async () => expect(await loadMessages(10)).toHaveLength(1));
-    await addMessages([item("pushed", 900)], 100);
+    await vi.waitFor(async () => expect(await store.loadMessages(10)).toHaveLength(1));
+    await store.addMessages([item("pushed", 900)], 100);
 
     relay.sent.length = 0;
     relay.drop();
@@ -181,7 +186,7 @@ describe("session", () => {
     relay.deliver({ t: "paired" });
     await vi.waitFor(() => expect(session.getState().status).toBe("online"));
     await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello" }));
-    expect(await getMeta("approved")).toBe(true);
+    expect(await store.getMeta("approved")).toBe(true);
   });
 
   it("pending device that was approved while away recovers through getMe", async () => {
@@ -198,7 +203,7 @@ describe("session", () => {
     relay.deliver({ t: "pluginStatus", online: true });
     await new Promise((r) => setTimeout(r, 20));
     expect(session.getState().status).toBe("pending");
-    expect(await getMeta("approved")).toBe(false);
+    expect(await store.getMeta("approved")).toBe(false);
   });
 
   it("dedups chat by id and emits backlog oldest first", async () => {
@@ -218,12 +223,12 @@ describe("session", () => {
 
   it("emits messages the service worker stored while the page was open, but not loaded history", async () => {
     const { session, relay } = await setup();
-    await addMessages([item("old", 50)], 100);
+    await store.addMessages([item("old", 50)], 100);
     expect((await session.loadHistory(10)).map((i) => i.id)).toEqual(["old"]);
     const seen: string[][] = [];
     session.onMessages((items) => seen.push(items.map((i) => i.id)));
 
-    await addMessages([item("pushed", 100)], 100);
+    await store.addMessages([item("pushed", 100)], 100);
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
     await relay.fromPlugin({ type: "backlog", seq: Date.now(), items: [item("old", 50), item("pushed", 100)], done: true });
     await vi.waitFor(() => expect(seen).toEqual([["pushed"]]));
@@ -242,7 +247,7 @@ describe("session", () => {
     await relay.fromPlugin({ type: "chat", seq: seq + 1, item: item("d", 400) });
 
     await vi.waitFor(() => expect(seen).toEqual(["a", "d"]));
-    expect(await getMeta("lastSeenWs")).toBe(seq + 1);
+    expect(await store.getMeta("lastSeenWs")).toBe(seq + 1);
   });
 
   it("drops payloads that fail to decrypt", async () => {
@@ -260,7 +265,7 @@ describe("session", () => {
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
     await relay.fromPlugin({ type: "settings", seq: Date.now(), character: "Alpha Beta", relayChannels: ["say", "tell"], sendChannels: ["say"], maxLength: 300 });
     await vi.waitFor(() => expect(session.getState()).toMatchObject({ character: "Alpha Beta", relayChannels: ["say", "tell"], sendChannels: ["say"], maxLength: 300 }));
-    expect((await getMeta("lastSettings"))?.maxLength).toBe(300);
+    expect((await store.getMeta("lastSettings"))?.maxLength).toBe(300);
   });
 
   it("send resolves on the matching sendResult", async () => {
@@ -316,25 +321,25 @@ describe("session", () => {
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
     await session.setMuted(["shout"]);
     expect(session.getState().mutedChannels).toEqual(["shout"]);
-    expect(await getMeta("mutedChannels")).toEqual(["shout"]);
+    expect(await store.getMeta("mutedChannels")).toEqual(["shout"]);
     await vi.waitFor(async () => expect((await relay.payloads()).some((p) => p.type === "prefs" && p.mutedChannels[0] === "shout")).toBe(true));
   });
 
   it("revoked frame wipes storage", async () => {
     const { session, relay } = await setup();
-    await addMessages([item("a", 1)], 100);
+    await store.addMessages([item("a", 1)], 100);
     relay.deliver({ t: "revoked" });
     await vi.waitFor(() => expect(session.getState().status).toBe("revoked"));
     expect(relay.closed).toBe(true);
-    expect(await getPairing()).toBeUndefined();
-    expect(await loadMessages(10)).toEqual([]);
+    expect(await store.getPairing()).toBeUndefined();
+    expect(await store.loadMessages(10)).toEqual([]);
   });
 
   it("401 from the api revokes", async () => {
     const { session, relay } = await setup({ api: { getMe: () => Promise.reject(new ApiError(401, "unauthorized")) } });
     relay.deliver({ t: "authFail" });
     await vi.waitFor(() => expect(session.getState().status).toBe("revoked"));
-    expect(await getPairing()).toBeUndefined();
+    expect(await store.getPairing()).toBeUndefined();
   });
 
   it("unpair deletes the device and wipes storage", async () => {
@@ -344,15 +349,14 @@ describe("session", () => {
     expect(deleted).toEqual(["dev"]);
     expect(relay.closed).toBe(true);
     expect(session.getState().status).toBe("unpaired");
-    expect(await getPairing()).toBeUndefined();
+    expect(await store.getPairing()).toBeUndefined();
   });
 
-  it("clearCache and setCacheLimit manage stored history", async () => {
+  it("setCacheLimit trims the store and clearCache empties it", async () => {
     const { session } = await setup();
-    await addMessages([item("a", 1), item("b", 2), item("c", 3)], 100);
+    await store.addMessages([item("a", 1), item("b", 2), item("c", 3)], 100);
     await session.setCacheLimit(2);
     expect((await session.loadHistory(10)).map((i) => i.id)).toEqual(["b", "c"]);
-    expect(await getMeta("cacheLimit")).toBe(2);
     await session.clearCache();
     expect(await session.loadHistory(10)).toEqual([]);
   });
@@ -366,12 +370,10 @@ describe("session", () => {
 
     await session.unpair();
     expect(session.getState().cacheLimit).toBe(500);
-    expect(await getMeta("cacheLimit")).toBe(500);
   });
 
-  it("loads the stored cache limit on start", async () => {
-    await setMeta("cacheLimit", 5000);
-    const { session } = await setup();
+  it("starts with the cache limit it is given", async () => {
+    const { session } = await setup({ cacheLimit: 5000 });
     expect(session.getState().cacheLimit).toBe(5000);
   });
 

@@ -2,7 +2,8 @@ import { openPayload } from "./core/crypto";
 import { CHANNEL_LABELS, parsePluginPayload, type ChatItem } from "./core/protocol";
 import { SeqGuard } from "./core/seq";
 import { referencedAssets, staleAssets } from "./core/shell";
-import { addMessages, getMeta, getPairing, setMeta } from "./core/storage";
+import { getCacheLimit } from "./core/registry";
+import { LEGACY_DB_NAME, openAccountStore } from "./core/storage";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -62,15 +63,16 @@ self.addEventListener("fetch", (event) => {
 });
 
 async function decryptPush(envelope: string): Promise<ChatItem | null> {
-  const pairing = await getPairing();
+  const store = openAccountStore(LEGACY_DB_NAME);
+  const pairing = await store.getPairing();
   if (!pairing) return null;
   const payload = parsePluginPayload(await openPayload(pairing.aesKey, "p2d", envelope));
   if (payload?.type !== "chat") return null;
 
-  const guard = new SeqGuard(await getMeta("lastSeenPush"));
+  const guard = new SeqGuard(await store.getMeta("lastSeenPush"));
   if (!guard.accept(payload.seq)) return null;
-  await setMeta("lastSeenPush", payload.seq);
-  await addMessages([payload.item], await getMeta("cacheLimit"));
+  await store.setMeta("lastSeenPush", payload.seq);
+  await store.addMessages([payload.item], await getCacheLimit());
   return payload.item;
 }
 

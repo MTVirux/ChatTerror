@@ -1,10 +1,11 @@
 import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import type { Api } from "./api";
 import { decode, encode } from "./b64url";
 import { exportPublicRaw, fingerprint, generateDeviceKey } from "./crypto";
 import { formatPairCode, pairDevice, parsePairCode } from "./session";
-import { getPairing } from "./storage";
+import { openAccountStore, resetStorageForTests } from "./storage";
 
 describe("parsePairCode", () => {
   it("accepts a lowercase hyphenated code", () => {
@@ -71,17 +72,20 @@ describe("pairDevice", () => {
       getVapid: fail,
     };
 
-    const result = await pairDevice(api, "abcd-efgh-2345-6789", "Phone");
+    resetStorageForTests();
+    globalThis.indexedDB = new IDBFactory();
+    const store = openAccountStore("chatterror-test");
+    const result = await pairDevice(api, store, "abcd-efgh-2345-6789", "Phone");
 
     expect(seen).toEqual(["ABCD-EFGH", "ABCD-EFGH"]);
     const expected = await fingerprint("23456789", decode(pluginPublicKey), decode(claimedKey));
     expect(result.fingerprint).toBe(expected);
-    expect((await getPairing())?.fingerprint).toBe(expected);
+    expect((await store.getPairing())?.fingerprint).toBe(expected);
   });
 
   it("rejects a code missing the secret", async () => {
     const fail = () => Promise.reject(new Error("not expected"));
     const api = { lookupPairing: fail, claimPairing: fail } as unknown as Api;
-    await expect(pairDevice(api, "ABCD-EFGH", "Phone")).rejects.toMatchObject({ code: "invalidCode" });
+    await expect(pairDevice(api, openAccountStore("chatterror-test"), "ABCD-EFGH", "Phone")).rejects.toMatchObject({ code: "invalidCode" });
   });
 });
