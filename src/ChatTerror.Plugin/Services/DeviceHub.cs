@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using ChatTerror.Plugin.Logic;
 using ChatTerror.Protocol;
@@ -18,6 +19,7 @@ public sealed class DeviceHub : IDisposable
 {
     private const int MaxPendingPairs = 10;
     private const long SeqSaveIntervalMs = 5_000;
+    private const long HistorySaveIntervalMs = 10_000;
 
     private readonly Configuration config;
     private readonly Action saveConfig;
@@ -26,15 +28,19 @@ public sealed class DeviceHub : IDisposable
     private readonly IFramework framework;
     private readonly IPluginLog log;
     private readonly Func<string?> characterName;
+    private readonly string historyPath;
     private readonly Dictionary<string, DeviceSession> sessions = new();
     private readonly List<PendingPair> pendingPairs = new();
     private readonly HashSet<string> onlineDevices = new();
     private readonly PairingGate pairingGate = new();
     private bool seqDirty;
     private long lastSeqSaveAt;
+    private long savedHistoryVersion;
+    private long lastHistorySaveAt;
+    private bool warnedHistoryUnsaved;
     private bool disposed;
 
-    public DeviceHub(Configuration config, Action saveConfig, KeyStore keys, RelayClient relay, IFramework framework, IPluginLog log, Func<string?> characterName)
+    public DeviceHub(Configuration config, Action saveConfig, KeyStore keys, RelayClient relay, IFramework framework, IPluginLog log, Func<string?> characterName, string historyPath)
     {
         this.config = config;
         this.saveConfig = saveConfig;
@@ -43,7 +49,9 @@ public sealed class DeviceHub : IDisposable
         this.framework = framework;
         this.log = log;
         this.characterName = characterName;
-        History = new MessageHistory(config.Settings.HistorySize);
+        this.historyPath = historyPath;
+        History = new MessageHistory(config.Settings.HistorySize, LoadHistory());
+        savedHistoryVersion = History.Version;
 
         foreach (var device in config.Devices)
             AddSession(device);
@@ -149,6 +157,7 @@ public sealed class DeviceHub : IDisposable
         framework.Update -= OnUpdate;
         if (seqDirty)
             saveConfig();
+        SaveHistory();
     }
 
     private void OnStateChanged(RelayState state) =>
@@ -179,7 +188,49 @@ public sealed class DeviceHub : IDisposable
             }
         });
 
-    private void OnUpdate(IFramework _) => SaveSeqIfDue();
+    private void OnUpdate(IFramework _)
+    {
+        SaveSeqIfDue();
+        var now = Environment.TickCount64;
+        if (now - lastHistorySaveAt < HistorySaveIntervalMs)
+            return;
+        lastHistorySaveAt = now;
+        SaveHistory();
+    }
+
+    private List<ChatItem> LoadHistory()
+    {
+        try
+        {
+            if (HistoryFile.Load(historyPath) is { } items)
+                return items;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+        log.Warning("The saved chat history could not be read and was discarded.");
+        return [];
+    }
+
+    private void SaveHistory()
+    {
+        var version = History.Version;
+        if (version == savedHistoryVersion)
+            return;
+        savedHistoryVersion = version;
+        try
+        {
+            if (!HistoryFile.Save(historyPath, History.Since(long.MinValue)) && !warnedHistoryUnsaved)
+            {
+                warnedHistoryUnsaved = true;
+                log.Warning("Chat history was not saved: Windows data protection is unavailable.");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Warning(ex, "Failed to save the chat history.");
+        }
+    }
 
     private void SaveSeqIfDue()
     {

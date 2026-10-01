@@ -111,7 +111,7 @@ All settings live under `Relay` and default to the values below. Set them as env
 - Push notifications carry the same end-to-end encrypted payload, decrypted on the phone by the service worker. The push service (Google, Apple, Mozilla) sees only ciphertext.
 - The relay can still see metadata: when you are online, which phone receives how much traffic, and IP addresses.
 - The 6 digit pairing code is derived from both public keys and the secret half of the pairing code, which the relay never sees, so a malicious relay cannot swap keys during pairing without the numbers differing. Compare it every time.
-- The plugin keeps a short in-memory history (500 messages by default) for backlog. Phones cache history locally; you can clear it or unpair from the phone settings.
+- The plugin keeps a history for backlog (500 messages per character by default), saved encrypted with Windows data protection so phones catch up after a reload or game restart. Phones cache history locally; you can clear it or unpair from the phone settings.
 
 ## License
 
