@@ -12,6 +12,8 @@ export interface RelayConnection {
 
 const MIN_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30000;
+// A socket that sat in the background this long may be dead without having closed, so it is replaced.
+export const RESUME_RECONNECT_MS = 10_000;
 
 function defaultUrl(): string {
   return `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`;
@@ -22,6 +24,7 @@ export function connectRelay(token: string, handlers: RelayHandlers, url = defau
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let hiddenAt: number | undefined;
 
   function open() {
     clearTimeout(timer);
@@ -53,8 +56,23 @@ export function connectRelay(token: string, handlers: RelayHandlers, url = defau
     open();
   }
 
+  function replaceSocket() {
+    const old = socket;
+    socket = null;
+    old?.close();
+    handlers.onClose();
+    reconnectNow();
+  }
+
   function onVisibility() {
-    if (document.visibilityState === "visible") reconnectNow();
+    if (document.visibilityState !== "visible") {
+      hiddenAt ??= Date.now();
+      return;
+    }
+    const away = hiddenAt === undefined ? 0 : Date.now() - hiddenAt;
+    hiddenAt = undefined;
+    if (socket && away >= RESUME_RECONNECT_MS) replaceSocket();
+    else reconnectNow();
   }
 
   document.addEventListener("visibilitychange", onVisibility);

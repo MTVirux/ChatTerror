@@ -82,7 +82,8 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 
-app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
+// Without a timeout a phone that went to sleep stays "online" and its messages are never pushed.
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20), KeepAliveTimeout = TimeSpan.FromSeconds(20) });
 app.UseRateLimiter();
 
 app.MapInstallEndpoints();
