@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { AccountManager, AccountView, FeedItem } from "../core/accounts";
 import { ALL_CHANNELS, type ChatChannel, type ChatItem } from "../core/protocol";
-import type { Session, SessionState } from "../core/session";
+import type { SessionState } from "../core/session";
 import { Composer } from "./Composer";
 import { defaultSendAccount, feedKey, mergeFeed } from "./feed";
 import { SettingsView } from "./SettingsView";
@@ -31,18 +31,12 @@ function itemTabKey(item: ChatItem): string {
   return item.channel === "tell" ? `tell:${tellPartner(item)}` : `ch:${item.channel}`;
 }
 
-// Cache limit and unpair go through the manager so the registry stays in sync.
-function managedSession(manager: AccountManager, deviceId: string): Session {
-  const raw = manager.session(deviceId)!;
-  return { ...raw, setCacheLimit: (n) => manager.setCacheLimit(n), unpair: () => manager.remove(deviceId) };
-}
-
-export function ChatView({ manager, accounts, accountId, onUnpaired, onAddAccount }: {
+export function ChatView({ manager, accounts, accountId, onOpenAccount, onAddAccount }: {
   manager: AccountManager;
   accounts: AccountView[];
   accountId: string | null;
-  onUnpaired: (deviceId: string) => void;
-  onAddAccount?: () => void;
+  onOpenAccount: (deviceId: string) => void;
+  onAddAccount: () => void;
 }) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [tab, setTab] = useState<Tab>({ kind: "all" });
@@ -206,8 +200,9 @@ export function ChatView({ manager, accounts, accountId, onUnpaired, onAddAccoun
 
       {settingsOpen && (
         <SettingsView
-          session={managedSession(manager, targetId)}
-          state={state}
+          manager={manager}
+          accounts={accounts}
+          accountId={accountId}
           onClose={() => setSettingsOpen(false)}
           onCacheCleared={() => {
             setItems([]);
@@ -215,7 +210,7 @@ export function ChatView({ manager, accounts, accountId, onUnpaired, onAddAccoun
             setTab({ kind: "all" });
             setEpoch((e) => e + 1);
           }}
-          onUnpaired={() => onUnpaired(targetId)}
+          onOpenAccount={onOpenAccount}
           onAddAccount={onAddAccount}
         />
       )}

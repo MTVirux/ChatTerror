@@ -69,7 +69,7 @@ export function App({ manager }: { manager: AccountManager }) {
         manager={manager}
         accounts={accounts}
         accountId={accountId}
-        onUnpaired={(id) => void manager.remove(id)}
+        onOpenAccount={setSelected}
         onAddAccount={() => setSelected("add")}
       />
     );
