@@ -47,6 +47,7 @@ export function App({ manager }: { manager: AccountManager }) {
   const pending = usePendingSends(sends);
   const [selected, setSelected] = useState<Selection>(() => initialSelection(manager.list(), location.hash, storedTab()));
   const current = validSelection(selected, accounts);
+  const [pairingAgain, setPairingAgain] = useState(false);
 
   useEffect(() => {
     if (location.hash.startsWith("#account=")) history.replaceState(null, "", location.pathname + location.search);
@@ -55,6 +56,7 @@ export function App({ manager }: { manager: AccountManager }) {
   useEffect(() => {
     manager.setViewing(current === "add" ? null : current);
     storeTab(current);
+    if (current !== "add") setPairingAgain(false);
   }, [manager, current]);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export function App({ manager }: { manager: AccountManager }) {
 
   function renderAccount(account: AccountView) {
     if (account.status === "revoked") {
-      return <RevokedNotice label={account.label} onRemove={() => manager.remove(account.deviceId)} onPairAgain={() => setSelected("add")} />;
+      return <RevokedNotice label={account.label} onRemove={() => manager.remove(account.deviceId)} onPairAgain={() => { setPairingAgain(true); setSelected("add"); }} />;
     }
     if (account.state.status === "pending") {
       return <PendingScreen state={account.state} onCancel={() => manager.remove(account.deviceId)} />;
@@ -102,7 +104,7 @@ export function App({ manager }: { manager: AccountManager }) {
     <div class="app">
       {accounts.length > 1 && <AccountStrip accounts={accounts} selected={current} onSelect={setSelected} />}
       {current === "add" ? (
-        <PairScreen onPair={pair} onBack={() => setSelected(accounts[0].deviceId)} />
+        <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => setSelected(accounts[0].deviceId)} />
       ) : current === "all" ? (
         renderChat(null)
       ) : (

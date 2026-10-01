@@ -41,8 +41,9 @@ function pairErrorText(error: unknown): string {
   return "Pairing failed. Make a new code in the plugin and try again.";
 }
 
-export function PairScreen({ revoked, onPair, onBack }: {
+export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
   revoked?: boolean;
+  pairAgain?: boolean;
   onPair: (code: string, deviceName: string) => Promise<unknown>;
   onBack?: () => void;
 }) {
@@ -139,7 +140,7 @@ export function PairScreen({ revoked, onPair, onBack }: {
         {error && <p class="error" role="alert">{error}</p>}
 
         <button type="submit" class="btn primary wide" disabled={busy}>
-          {busy ? "Pairing..." : onBack ? "Add account" : revoked ? "Pair again" : "Pair this device"}
+          {busy ? "Pairing..." : revoked || pairAgain ? "Pair again" : onBack ? "Add account" : "Pair this device"}
         </button>
       </form>
     </main>
