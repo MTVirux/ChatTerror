@@ -9,7 +9,7 @@ namespace ChatTerror.Server.Tests;
 
 public class RelayTests
 {
-    private static async Task SubscribePushAsync(RelayApp app, ClaimResponse device, string endpoint = "https://push.example/sub")
+    private static async Task SubscribePushAsync(RelayApp app, ClaimResponse device, string endpoint = "https://1.1.1.1/sub")
     {
         var response = await app.Client(device.DeviceToken).PutAsJsonAsync("/api/devices/me/push",
             new { endpoint, keys = new { p256dh = "p256", auth = "secret" } });
@@ -122,7 +122,7 @@ public class RelayTests
 
         await app.Push.WaitForCallAsync();
         var (subscription, body) = Assert.Single(app.Push.Calls);
-        Assert.Equal("https://push.example/sub", subscription.Endpoint);
+        Assert.Equal("https://1.1.1.1/sub", subscription.Endpoint);
         Assert.Equal("p256", subscription.P256dh);
         Assert.Equal("secret", subscription.Auth);
         Assert.Equal("{\"p\":\"cipher\"}", body);

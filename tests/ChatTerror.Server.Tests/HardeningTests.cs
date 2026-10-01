@@ -208,7 +208,7 @@ public class HardeningTests
         await using var plugin = await app.ConnectAsync(install.InstallToken);
         var device = await app.PairDeviceAsync(install, plugin);
         await app.Client(device.DeviceToken).PutAsJsonAsync("/api/devices/me/push",
-            new { endpoint = "https://push.example/sub", keys = new { p256dh = "p", auth = "a" } });
+            new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p", auth = "a" } });
 
         await plugin.SendAsync(new SendFrame(device.DeviceId, new string('a', RelaySocketHandler.MaxPushBodyBytes), Notify: true));
         await plugin.SendAsync(new SendFrame(device.DeviceId, string.Concat(Enumerable.Repeat("\u00e9", 2100)), Notify: true));
@@ -249,8 +249,8 @@ public class HardeningTests
             return (plugin, device);
         }
 
-        var (pluginA, deviceA) = await Setup("https://push.example/a");
-        var (pluginB, deviceB) = await Setup("https://push.example/b");
+        var (pluginA, deviceA) = await Setup("https://1.1.1.1/a");
+        var (pluginB, deviceB) = await Setup("https://1.1.1.1/b");
         await using var _a = pluginA;
         await using var _b = pluginB;
 
@@ -285,9 +285,9 @@ public class HardeningTests
         var client = app.Client(device.DeviceToken);
 
         var longEndpoint = await client.PutAsJsonAsync("/api/devices/me/push",
-            new { endpoint = "https://push.example/" + new string('a', 2048), keys = new { p256dh = "p", auth = "a" } });
+            new { endpoint = "https://1.1.1.1/" + new string('a', 2048), keys = new { p256dh = "p", auth = "a" } });
         var longKey = await client.PutAsJsonAsync("/api/devices/me/push",
-            new { endpoint = "https://push.example/sub", keys = new { p256dh = new string('p', 257), auth = "a" } });
+            new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = new string('p', 257), auth = "a" } });
 
         Assert.Equal(HttpStatusCode.BadRequest, longEndpoint.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, longKey.StatusCode);

@@ -30,6 +30,7 @@ export interface SessionState {
   maxLength: number;
   mutedChannels: ChatChannel[];
   pushEnabled: boolean;
+  cacheLimit: number;
 }
 
 export interface SendResult {
@@ -67,13 +68,14 @@ type WithoutSeq<P> = P extends unknown ? Omit<P, "seq"> : never;
 type OutgoingPayload = WithoutSeq<DevicePayload>;
 
 const DEFAULT_MAX_LENGTH = 500;
-const SEND_TIMEOUT_MS = 15000;
 const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{16}$/;
+// Covers a full plugin send queue.
+export const SEND_TIMEOUT_MS = 45_000;
 
 const liveSessions = new Set<InternalSession>();
 
-function emptyState(status: SessionStatus): SessionState {
-  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], pushEnabled: false };
+function emptyState(status: SessionStatus, cacheLimit = DEFAULT_CACHE_LIMIT): SessionState {
+  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], pushEnabled: false, cacheLimit };
 }
 
 export interface PairCode {
@@ -187,12 +189,12 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     pluginOnline = undefined;
 
     if (!pairing) {
-      setState(emptyState(state.status === "revoked" ? "revoked" : "unpaired"));
+      setState(emptyState(state.status === "revoked" ? "revoked" : "unpaired", cacheLimit));
       return;
     }
 
     state = {
-      ...emptyState(approved ? "connecting" : "pending"),
+      ...emptyState(approved ? "connecting" : "pending", cacheLimit),
       fingerprint: pairing.fingerprint,
       character: settings?.character,
       relayChannels: settings?.relayChannels ?? [],
@@ -218,7 +220,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
     pairing = undefined;
     await wipeAll();
     await deps.push.disable().catch(() => undefined);
-    setState(emptyState("revoked"));
+    setState(emptyState("revoked", cacheLimit));
   }
 
   async function guarded<T>(promise: Promise<T>): Promise<T> {
@@ -379,6 +381,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
 
     send(channel, text, target) {
       if (!authed || !approved) return Promise.resolve({ ok: false, error: "offline" });
+      if (pluginOnline === false) return Promise.resolve({ ok: false, error: "gameOffline" });
       const requestId = crypto.randomUUID();
       return new Promise((resolve) => {
         const finish = (result: SendResult) => {
@@ -422,6 +425,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
 
     async setCacheLimit(n) {
       cacheLimit = n;
+      setState({ cacheLimit: n });
       await setMeta("cacheLimit", n);
       await trimMessages(n);
     },
@@ -432,7 +436,7 @@ export async function createSession(deps: SessionDeps): Promise<InternalSession>
       stopConnection();
       pairing = undefined;
       await wipeAll();
-      setState(emptyState("unpaired"));
+      setState(emptyState("unpaired", cacheLimit));
     },
 
     close() {

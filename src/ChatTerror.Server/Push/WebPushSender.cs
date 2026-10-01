@@ -28,6 +28,12 @@ public sealed class WebPushSender : IPushSender, IDisposable
 
     public async Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, CancellationToken ct)
     {
+        if (!Uri.TryCreate(sub.Endpoint, UriKind.Absolute, out var endpoint) || !await IsAllowedAsync(endpoint, ct))
+        {
+            log.LogWarning("Push endpoint {Host} is not a public https address, skipped", endpoint?.Host);
+            return PushResult.Failed;
+        }
+
         var subscription = new PushSubscription { Endpoint = sub.Endpoint };
         subscription.SetKey(PushEncryptionKeyName.P256DH, sub.P256dh);
         subscription.SetKey(PushEncryptionKeyName.Auth, sub.Auth);
@@ -46,6 +52,18 @@ public sealed class WebPushSender : IPushSender, IDisposable
         {
             log.LogWarning(ex, "Push delivery failed");
             return PushResult.Failed;
+        }
+    }
+
+    private static async Task<bool> IsAllowedAsync(Uri endpoint, CancellationToken ct)
+    {
+        try
+        {
+            return await PushEndpointGuard.IsAllowedAsync(endpoint, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 

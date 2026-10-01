@@ -32,6 +32,26 @@ public class PushSenderTests
             Directory.Delete(directory, true);
         }
     }
+
+    [Fact]
+    public void VapidKeys_CreateMissingDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "chatterror-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = Options.Create(new RelayOptions { DbPath = Path.Combine(directory, "data", "relay.db") });
+
+            _ = new VapidKeys(options, NullLogger<VapidKeys>.Instance);
+
+            Assert.True(File.Exists(Path.Combine(directory, "data", "vapid.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, true);
+        }
+    }
+
     [Fact]
     public async Task HangingPushService_GivesUpWhenCancelled()
     {
@@ -67,7 +87,29 @@ public class PushSenderTests
         Assert.Equal(PushResult.Gone, result);
     }
 
-    private static async Task<PushResult> SendWithHandlerAsync(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond)
+    [Fact]
+    public async Task PrivateEndpoint_NotContacted()
+    {
+        var contacted = false;
+        var result = await SendWithHandlerAsync((_, _) =>
+        {
+            contacted = true;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
+        }, "https://192.168.1.10/sub");
+
+        Assert.Equal(PushResult.Failed, result);
+        Assert.False(contacted);
+    }
+
+    [Fact]
+    public async Task PublicEndpoint_Delivered()
+    {
+        var result = await SendWithHandlerAsync((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)));
+
+        Assert.Equal(PushResult.Ok, result);
+    }
+
+    private static async Task<PushResult> SendWithHandlerAsync(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond, string endpoint = "https://1.1.1.1/sub")
     {
         var directory = Path.Combine(Path.GetTempPath(), "chatterror-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -79,7 +121,7 @@ public class PushSenderTests
             using var sender = new WebPushSender(keys, NullLogger<WebPushSender>.Instance, http);
             using var deviceKey = P256.Generate();
             var subscription = new PushSubscriptionRecord(
-                "https://push.example.test/sub",
+                endpoint,
                 Base64Url.Encode(P256.PublicRaw(deviceKey)),
                 Base64Url.Encode(RandomNumberGenerator.GetBytes(16)));
 

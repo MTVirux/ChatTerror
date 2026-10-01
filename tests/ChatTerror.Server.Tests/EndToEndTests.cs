@@ -102,7 +102,7 @@ public class EndToEndTests
             Assert.Equal(earlier, Assert.Single(backlog.Items));
 
             var subscribe = await app.Client(claim.DeviceToken).PutAsJsonAsync("/api/devices/me/push",
-                new { endpoint = "https://push.example/sub", keys = new { p256dh = "p256", auth = "secret" } });
+                new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p256", auth = "secret" } });
             Assert.Equal(HttpStatusCode.NoContent, subscribe.StatusCode);
         }
         await plugin.ReceiveAsync<DeviceOfflineFrame>();

@@ -50,6 +50,7 @@ const SEND_ERRORS: Record<string, string> = {
   disabled: "Sending from your phone is turned off in the plugin",
   timeout: "No response from the game",
   offline: "Not connected to the relay",
+  gameOffline: "The game is offline",
 };
 
 export function sendErrorText(code?: string): string {
