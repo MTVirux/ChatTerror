@@ -1,11 +1,14 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 
 namespace ChatTerror.Plugin.Services;
 
-public sealed class ConnectionManager
+public sealed class ConnectionManager : IDisposable
 {
+    private readonly CancellationTokenSource lifetime = new();
+    private CancellationTokenSource? registration;
     private readonly Configuration config;
     private readonly Action saveConfig;
     private readonly KeyStore keys;
@@ -25,7 +28,7 @@ public sealed class ConnectionManager
         this.log = log;
     }
 
-    public bool Registering { get; private set; }
+    public bool Registering => registration != null;
 
     public string? LastError { get; private set; }
 
@@ -34,8 +37,12 @@ public sealed class ConnectionManager
     // Call from the framework thread after any change to Enabled, RelayUrl or the install token.
     public void Apply()
     {
+        if (lifetime.IsCancellationRequested)
+            return;
+
         if (!config.Enabled)
         {
+            CancelRegistration();
             relay.Stop();
             return;
         }
@@ -54,41 +61,63 @@ public sealed class ConnectionManager
     // A new install id orphans every paired device, so the caller clears them.
     public void Reregister()
     {
+        CancelRegistration();
         config.InstallId = null;
         config.InstallToken = null;
         saveConfig();
         Apply();
     }
 
+    public void Dispose()
+    {
+        lifetime.Cancel();
+        CancelRegistration();
+    }
+
+    private void CancelRegistration()
+    {
+        registration?.Cancel();
+        registration = null;
+    }
+
     private void Register()
     {
-        if (Registering)
+        if (registration != null)
             return;
 
-        Registering = true;
+        var current = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var ct = current.Token;
+        registration = current;
         LastError = null;
         Task.Run(async () =>
         {
             try
             {
-                var install = await api.RegisterInstall(keys.PublicKey);
+                var install = await api.RegisterInstall(keys.PublicKey, ct);
                 await framework.RunOnFrameworkThread(() =>
                 {
+                    if (ct.IsCancellationRequested)
+                        return;
+                    registration = null;
                     config.InstallId = install.InstallId;
                     config.InstallToken = install.InstallToken;
                     saveConfig();
-                    Registering = false;
                     Apply();
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 log.Warning($"Install registration failed: {ex.Message}");
                 await framework.RunOnFrameworkThread(() =>
                 {
+                    if (ct.IsCancellationRequested)
+                        return;
+                    registration = null;
                     LastError = $"Registration failed: {ex.Message}";
-                    Registering = false;
                 });
+            }
+            catch (Exception)
+            {
             }
         });
     }

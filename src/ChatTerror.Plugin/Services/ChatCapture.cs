@@ -85,5 +85,5 @@ public sealed class ChatCapture : IDisposable
 
     // Own lines may start with party slot or cross-world icons from the private use area.
     private static string StripGlyphs(string name) =>
-        new string(name.Where(c => c < '' || c > '').ToArray()).Trim();
+        new string(name.Where(c => c < '\uE000' || c > '\uF8FF').ToArray()).Trim();
 }

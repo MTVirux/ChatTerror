@@ -68,7 +68,7 @@ public sealed class NotificationsTab(Configuration config, Action changed) : ITa
     {
         minutes = current;
         ImGui.SetNextItemWidth(70);
-        ImGui.InputTextWithHint(label, "HH:MM", ref value, 5);
+        ImGui.InputTextWithHint(label, "HH:MM", ref value, 8);
         if (!ImGui.IsItemDeactivatedAfterEdit())
             return false;
 

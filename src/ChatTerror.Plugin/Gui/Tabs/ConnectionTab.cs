@@ -31,6 +31,7 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
         ImGui.InputText("Relay URL", ref relayUrl, 256);
         if (ImGui.IsItemDeactivatedAfterEdit())
             ApplyRelayUrl();
+        ImGui.TextDisabled("Changing the relay registers a new install and removes all paired devices.");
 
         ImGui.Spacing();
         DrawStatus();
@@ -79,9 +80,10 @@ public sealed class ConnectionTab(Configuration config, ConnectionManager connec
         if (value == config.RelayUrl)
             return;
 
+        // Install tokens and devices belong to one relay, so a new relay means a fresh install.
         config.RelayUrl = value;
-        save();
-        connection.Apply();
+        hub.ClearDevices();
+        connection.Reregister();
     }
 
     private void DrawStatus()

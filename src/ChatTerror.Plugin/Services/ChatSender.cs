@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.RegularExpressions;
 using ChatTerror.Plugin.Logic;
 using ChatTerror.Protocol;
@@ -15,7 +16,7 @@ public sealed unsafe class ChatSender : IGameGate, IDisposable
     private const AllowedEntities ChatBoxEntities =
         AllowedEntities.UppercaseLetters | AllowedEntities.LowercaseLetters | AllowedEntities.Numbers |
         AllowedEntities.SpecialCharacters | AllowedEntities.CharacterList | AllowedEntities.OtherCharacters |
-        AllowedEntities.Payloads | AllowedEntities.Unknown9;
+        AllowedEntities.Payloads | AllowedEntities.Unknown9 | AllowedEntities.CJK;
 
     // Last line of defence: only channel-prefixed single-line chat ever reaches the game.
     private static readonly Regex ChatLine = new(
@@ -50,13 +51,17 @@ public sealed unsafe class ChatSender : IGameGate, IDisposable
         condition[ConditionFlag.WatchingCutscene] ||
         condition[ConditionFlag.OccupiedInCutSceneEvent];
 
+    // Control characters are refused outright since 0x02 would start a raw SeString payload.
     public string? Sanitize(string line)
     {
+        if (line.Any(char.IsControl))
+            return null;
+
         var text = Utf8String.FromString(line);
         try
         {
             text->SanitizeString(ChatBoxEntities);
-            return text->ToString().Length == line.Length ? line : null;
+            return text->ToString() == line ? line : null;
         }
         finally
         {
@@ -85,16 +90,23 @@ public sealed unsafe class ChatSender : IGameGate, IDisposable
     // Returns an error code, or null when the line was handed to the game.
     private string? SendLine(string line)
     {
-        if (!ChatLine.IsMatch(line))
+        if (!ChatLine.IsMatch(line) || line.Any(char.IsControl))
         {
             log.Error("Refusing to send a line that is not a plain chat message.");
             return SendErrors.InvalidText;
         }
 
+        if (!clientState.IsLoggedIn)
+            return SendErrors.NotLoggedIn;
+
+        var module = UIModule.Instance();
+        if (module == null)
+            return SendErrors.Busy;
+
         var text = Utf8String.FromString(line);
         try
         {
-            UIModule.Instance()->ProcessChatBoxEntry(text);
+            module->ProcessChatBoxEntry(text);
             return null;
         }
         catch (Exception ex)

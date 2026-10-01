@@ -26,6 +26,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
     private readonly ChatSender sender;
     private readonly WindowSystem windowSystem = new("ChatTerror");
     private readonly ConfigWindow configWindow;
+    private readonly DevicesTab devicesTab;
     private string? lastCharacter;
 
     public ChatTerrorPlugin(
@@ -56,13 +57,14 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         capture = new ChatCapture(chatGui, playerState, config, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);
 
+        devicesTab = new DevicesTab(config, api, hub, framework);
         configWindow = new ConfigWindow(
         [
             new ConnectionTab(config, connection, hub, SaveConfig),
             new ChannelsTab(config, SettingsChanged),
             new NotificationsTab(config, SettingsChanged),
             new FiltersTab(config, SettingsChanged),
-            new DevicesTab(config, api, hub, framework),
+            devicesTab,
             new AdvancedTab(config, hub, SettingsChanged),
         ]);
         windowSystem.AddWindow(configWindow);
@@ -89,6 +91,8 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         pluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         windowSystem.RemoveAllWindows();
 
+        connection.Dispose();
+        devicesTab.Dispose();
         sender.Dispose();
         capture.Dispose();
         hub.Dispose();

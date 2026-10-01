@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ChatTerror.Plugin.Services;
 using ChatTerror.Protocol;
 using Dalamud.Bindings.ImGui;
@@ -7,6 +8,8 @@ namespace ChatTerror.Plugin.Gui.Tabs;
 
 public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action changed) : ITab
 {
+    private readonly Dictionary<string, int> pending = new();
+
     public string Title => "Advanced";
 
     public void Draw()
@@ -43,11 +46,21 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         }
     }
 
-    private static bool IntInput(string label, ref int value, int min, int max)
+    // Edits apply when the field loses focus, so the typed value is kept here until then.
+    private bool IntInput(string label, ref int value, int min, int max)
     {
+        if (!pending.TryGetValue(label, out var edited))
+            edited = value;
+
         ImGui.SetNextItemWidth(150);
-        var edited = value;
-        ImGui.InputInt(label, ref edited);
+        ImGui.InputInt(label, ref edited, 0, 0);
+        if (ImGui.IsItemActive())
+        {
+            pending[label] = edited;
+            return false;
+        }
+
+        pending.Remove(label);
         if (!ImGui.IsItemDeactivatedAfterEdit())
             return false;
 

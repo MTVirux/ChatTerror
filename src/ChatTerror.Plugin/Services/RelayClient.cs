@@ -23,6 +23,7 @@ public sealed class RelayClient : IDisposable
     private CancellationTokenSource? cts;
     private Task? loop;
     private Channel<string>? outgoing;
+    private bool disposed;
 
     public RelayClient(IPluginLog log)
     {
@@ -41,6 +42,8 @@ public sealed class RelayClient : IDisposable
         var uri = SocketUri(relayUrl);
         lock (gate)
         {
+            if (disposed)
+                return;
             cts = new CancellationTokenSource();
             var ct = cts.Token;
             loop = Task.Run(() => Run(uri, token, ct), ct);
@@ -73,13 +76,25 @@ public sealed class RelayClient : IDisposable
     // Frames are dropped while disconnected; devices catch up with hello and backlog.
     public bool Send(RelayFrame frame)
     {
+        var json = ProtocolJson.Serialize(frame);
+        if (Encoding.UTF8.GetByteCount(json) > Limits.MaxFrameBytes)
+        {
+            log.Error($"Dropping a {frame.GetType().Name} that exceeds the relay frame limit.");
+            return false;
+        }
+
         Channel<string>? channel;
         lock (gate)
             channel = State == RelayState.Connected ? outgoing : null;
-        return channel != null && channel.Writer.TryWrite(ProtocolJson.Serialize(frame));
+        return channel != null && channel.Writer.TryWrite(json);
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        lock (gate)
+            disposed = true;
+        Stop();
+    }
 
     private static Uri SocketUri(string relayUrl)
     {
@@ -121,9 +136,6 @@ public sealed class RelayClient : IDisposable
             {
                 log.Warning($"Relay connection error: {ex.Message}");
             }
-
-            lock (gate)
-                outgoing = null;
 
             if (authFailed)
             {
@@ -174,6 +186,12 @@ public sealed class RelayClient : IDisposable
         }
         finally
         {
+            lock (gate)
+            {
+                if (outgoing == channel)
+                    outgoing = null;
+            }
+
             channel.Writer.TryComplete();
             linked.Cancel();
             try
