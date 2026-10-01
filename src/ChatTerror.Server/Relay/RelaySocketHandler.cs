@@ -329,7 +329,7 @@ public sealed class RelaySocketHandler(
 
     private async Task PushAsync(DeviceRecord device, PushSubscriptionRecord subscription, string payload)
     {
-        var body = JsonSerializer.Serialize(new { p = payload });
+        var body = JsonSerializer.Serialize(new { p = payload, d = device.Id });
         var bodyBytes = Encoding.UTF8.GetByteCount(body);
         if (bodyBytes > MaxPushBodyBytes)
         {

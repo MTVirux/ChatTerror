@@ -118,7 +118,9 @@ public class EndToEndTests
 
         await app.Push.WaitForCallAsync();
         Assert.True(app.Push.Calls.TryDequeue(out var push));
-        var pushBody = JsonDocument.Parse(push.Body).RootElement.GetProperty("p").GetString()!;
+        var pushJson = JsonDocument.Parse(push.Body).RootElement;
+        var pushBody = pushJson.GetProperty("p").GetString()!;
+        Assert.Equal(claim.DeviceId, pushJson.GetProperty("d").GetString());
         Assert.Equal(tell, phone.Open<ChatPayload>(pushBody).Item);
 
         // The phone answers the tell; the plugin turns it into a single chat line.

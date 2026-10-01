@@ -16,6 +16,7 @@ export interface Meta {
   // Newest ts received over the socket. Push-only messages do not count, so hello still backfills around them.
   syncTs: number;
   mutedChannels: ChatChannel[];
+  // Only read when adopting a database from before multiple accounts.
   cacheLimit: number;
   lastSettings: SettingsPayload | null;
   approved: boolean;
@@ -39,21 +40,46 @@ const META_DEFAULTS: Meta = {
 const STORES = ["pairing", "messages", "meta"] as const;
 type StoreName = (typeof STORES)[number];
 
-let dbPromise: Promise<IDBDatabase> | undefined;
+export const LEGACY_DB_NAME = "chatterror";
 
-function openDb(): Promise<IDBDatabase> {
-  dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open("chatterror", 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      db.createObjectStore("pairing");
-      db.createObjectStore("meta");
-      db.createObjectStore("messages", { keyPath: "id" }).createIndex("ts", "ts");
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-  return dbPromise;
+export function accountDbName(deviceId: string): string {
+  return `chatterror-${deviceId}`;
+}
+
+const databases = new Map<string, Promise<IDBDatabase>>();
+
+function openDb(name: string): Promise<IDBDatabase> {
+  let promise = databases.get(name);
+  if (!promise) {
+    promise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(name, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        db.createObjectStore("pairing");
+        db.createObjectStore("meta");
+        db.createObjectStore("messages", { keyPath: "id" }).createIndex("ts", "ts");
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        // Removing an account from another tab or the service worker must not be blocked by this connection.
+        db.onversionchange = () => {
+          db.close();
+          databases.delete(name);
+        };
+        resolve(db);
+      };
+      request.onerror = () => {
+        databases.delete(name);
+        reject(request.error);
+      };
+    });
+    databases.set(name, promise);
+  }
+  return promise;
+}
+
+export function resetStorageForTests(): void {
+  databases.clear();
 }
 
 function result<T>(request: IDBRequest<T>): Promise<T> {
@@ -68,35 +94,6 @@ function done(tx: IDBTransaction): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
-  });
-}
-
-async function run<T>(stores: StoreName | StoreName[], mode: IDBTransactionMode, work: (tx: IDBTransaction) => Promise<T>): Promise<T> {
-  const tx = (await openDb()).transaction(stores, mode);
-  const finished = done(tx);
-  const value = await work(tx);
-  await finished;
-  return value;
-}
-
-export function getPairing(): Promise<Pairing | undefined> {
-  return run("pairing", "readonly", (tx) => result(tx.objectStore("pairing").get("current")));
-}
-
-export function setPairing(pairing: Pairing): Promise<void> {
-  return run("pairing", "readwrite", async (tx) => {
-    await result(tx.objectStore("pairing").put(pairing, "current"));
-  });
-}
-
-export async function getMeta<K extends keyof Meta>(key: K): Promise<Meta[K]> {
-  const value = await run("meta", "readonly", (tx) => result(tx.objectStore("meta").get(key)));
-  return value === undefined ? META_DEFAULTS[key] : value;
-}
-
-export function setMeta<K extends keyof Meta>(key: K, value: Meta[K]): Promise<void> {
-  return run("meta", "readwrite", async (tx) => {
-    await result(tx.objectStore("meta").put(value, key));
   });
 }
 
@@ -116,55 +113,87 @@ async function trimIn(store: IDBObjectStore, limit: number): Promise<void> {
   });
 }
 
-export function addMessages(items: ChatItem[], limit: number): Promise<ChatItem[]> {
-  return run("messages", "readwrite", async (tx) => {
-    const store = tx.objectStore("messages");
-    const added: ChatItem[] = [];
-    const ids = new Set<string>();
-    for (const item of items) {
-      if (ids.has(item.id)) continue;
-      ids.add(item.id);
-      if ((await result(store.getKey(item.id))) !== undefined) continue;
-      store.put(item);
-      added.push(item);
-    }
-    await trimIn(store, limit);
-    return added;
-  });
+export interface AccountStore {
+  readonly dbName: string;
+  getPairing(): Promise<Pairing | undefined>;
+  setPairing(pairing: Pairing): Promise<void>;
+  getMeta<K extends keyof Meta>(key: K): Promise<Meta[K]>;
+  setMeta<K extends keyof Meta>(key: K, value: Meta[K]): Promise<void>;
+  addMessages(items: ChatItem[], limit: number): Promise<ChatItem[]>;
+  trimMessages(limit: number): Promise<void>;
+  loadMessages(limit: number): Promise<ChatItem[]>;
+  clearMessages(): Promise<void>;
+  wipe(): Promise<void>;
+  destroy(): Promise<void>;
 }
 
-export function trimMessages(limit: number): Promise<void> {
-  return run("messages", "readwrite", (tx) => trimIn(tx.objectStore("messages"), limit));
-}
+export function openAccountStore(dbName: string): AccountStore {
+  async function run<T>(stores: StoreName | StoreName[], mode: IDBTransactionMode, work: (tx: IDBTransaction) => Promise<T>): Promise<T> {
+    const tx = (await openDb(dbName)).transaction(stores, mode);
+    const finished = done(tx);
+    const value = await work(tx);
+    await finished;
+    return value;
+  }
 
-export function loadMessages(limit: number): Promise<ChatItem[]> {
-  return run("messages", "readonly", (tx) => {
-    const request = tx.objectStore("messages").index("ts").openCursor(null, "prev");
-    const items: ChatItem[] = [];
-    return new Promise((resolve, reject) => {
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor || items.length >= limit) return resolve(items.reverse());
-        items.push(cursor.value as ChatItem);
-        cursor.continue();
-      };
-      request.onerror = () => reject(request.error);
-    });
-  });
-}
-
-export function clearMessages(): Promise<void> {
-  return run("messages", "readwrite", async (tx) => {
-    await result(tx.objectStore("messages").clear());
-  });
-}
-
-// The cache limit is a device preference, not pairing data, so it survives unpair and re-pair.
-export function wipeAll(): Promise<void> {
-  return run([...STORES], "readwrite", async (tx) => {
-    const meta = tx.objectStore("meta");
-    const cacheLimit: unknown = await result(meta.get("cacheLimit"));
-    await Promise.all(STORES.map((name) => result(tx.objectStore(name).clear())));
-    if (cacheLimit !== undefined) await result(meta.put(cacheLimit, "cacheLimit"));
-  });
+  return {
+    dbName,
+    getPairing: () => run("pairing", "readonly", (tx) => result(tx.objectStore("pairing").get("current"))),
+    setPairing: (pairing) => run("pairing", "readwrite", async (tx) => {
+      await result(tx.objectStore("pairing").put(pairing, "current"));
+    }),
+    async getMeta(key) {
+      const value = await run("meta", "readonly", (tx) => result(tx.objectStore("meta").get(key)));
+      return value === undefined ? META_DEFAULTS[key] : value;
+    },
+    setMeta: (key, value) => run("meta", "readwrite", async (tx) => {
+      await result(tx.objectStore("meta").put(value, key));
+    }),
+    addMessages: (items, limit) => run("messages", "readwrite", async (tx) => {
+      const store = tx.objectStore("messages");
+      const added: ChatItem[] = [];
+      const ids = new Set<string>();
+      for (const item of items) {
+        if (ids.has(item.id)) continue;
+        ids.add(item.id);
+        if ((await result(store.getKey(item.id))) !== undefined) continue;
+        store.put(item);
+        added.push(item);
+      }
+      await trimIn(store, limit);
+      return added;
+    }),
+    trimMessages: (limit) => run("messages", "readwrite", (tx) => trimIn(tx.objectStore("messages"), limit)),
+    loadMessages: (limit) => run("messages", "readonly", (tx) => {
+      const request = tx.objectStore("messages").index("ts").openCursor(null, "prev");
+      const items: ChatItem[] = [];
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor || items.length >= limit) return resolve(items.reverse());
+          items.push(cursor.value as ChatItem);
+          cursor.continue();
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }),
+    clearMessages: () => run("messages", "readwrite", async (tx) => {
+      await result(tx.objectStore("messages").clear());
+    }),
+    wipe: () => run([...STORES], "readwrite", async (tx) => {
+      await Promise.all(STORES.map((name) => result(tx.objectStore(name).clear())));
+    }),
+    async destroy() {
+      const db = await databases.get(dbName)?.catch(() => undefined);
+      db?.close();
+      databases.delete(dbName);
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(dbName);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+        // Deletion finishes once the other connections close; nothing here depends on it.
+        request.onblocked = () => resolve();
+      });
+    },
+  };
 }

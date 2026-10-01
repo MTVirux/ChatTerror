@@ -1,32 +1,115 @@
 import { useEffect, useState } from "preact/hooks";
-import { openSession, type Session, type SessionState } from "../core/session";
-import { PairScreen } from "./PairScreen";
-import { PendingScreen } from "./PendingScreen";
+import type { AccountManager, AccountView } from "../core/accounts";
+import { AccountStrip } from "./AccountStrip";
 import { ChatView } from "./ChatView";
+import { PairScreen } from "./PairScreen";
+import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
+import { PendingScreen } from "./PendingScreen";
+import { RevokedNotice } from "./RevokedNotice";
+import { initialSelection, validSelection, type Selection } from "./selection";
 
-function useSessionState(session: Session): SessionState {
-  const [state, setState] = useState(session.getState());
-  useEffect(() => {
-    setState(session.getState());
-    return session.subscribe(setState);
-  }, [session]);
-  return state;
+const TAB_KEY = "chatterror.account";
+
+function storedTab(): string | null {
+  try {
+    return localStorage.getItem(TAB_KEY);
+  } catch {
+    return null;
+  }
 }
 
-export function App({ initial }: { initial: Session }) {
-  const [session, setSession] = useState(initial);
-  const state = useSessionState(session);
+function storeTab(selection: Selection) {
+  try {
+    if (selection !== "add") localStorage.setItem(TAB_KEY, selection);
+  } catch {
+    // Private mode or blocked storage; the tab is just not remembered.
+  }
+}
 
-  async function reopen() {
-    session.close();
-    setSession(await openSession());
+function useAccounts(manager: AccountManager): AccountView[] {
+  const [accounts, setAccounts] = useState(manager.list());
+  useEffect(() => {
+    setAccounts(manager.list());
+    return manager.subscribe(setAccounts);
+  }, [manager]);
+  return accounts;
+}
+
+function usePendingSends(sends: PendingSends): PendingSend[] {
+  const [list, setList] = useState(sends.list());
+  useEffect(() => sends.subscribe(setList), [sends]);
+  return list;
+}
+
+export function App({ manager }: { manager: AccountManager }) {
+  const accounts = useAccounts(manager);
+  const [sends] = useState(() => createPendingSends(manager));
+  const pending = usePendingSends(sends);
+  const [selected, setSelected] = useState<Selection>(() => initialSelection(manager.list(), location.hash, storedTab()));
+  const current = validSelection(selected, accounts);
+  const [pairingAgain, setPairingAgain] = useState(false);
+
+  useEffect(() => {
+    if (location.hash.startsWith("#account=")) history.replaceState(null, "", location.pathname + location.search);
+  }, []);
+
+  useEffect(() => {
+    manager.setViewing(current === "add" ? null : current);
+    storeTab(current);
+    if (current !== "add") setPairingAgain(false);
+  }, [manager, current]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "openAccount" && typeof event.data.deviceId === "string") setSelected(event.data.deviceId);
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, []);
+
+  async function pair(code: string, name: string) {
+    const { deviceId } = await manager.pair(code, name);
+    setSelected(deviceId);
   }
 
-  if (state.status === "unpaired" || state.status === "revoked") {
-    return <PairScreen revoked={state.status === "revoked"} />;
+  function renderChat(accountId: string | null) {
+    return (
+      <ChatView
+        key={accountId ?? "all"}
+        manager={manager}
+        accounts={accounts}
+        accountId={accountId}
+        sends={sends}
+        pending={pending}
+        onOpenAccount={setSelected}
+        onAddAccount={() => setSelected("add")}
+      />
+    );
   }
-  if (state.status === "pending") {
-    return <PendingScreen session={session} state={state} onCancelled={reopen} />;
+
+  function renderAccount(account: AccountView) {
+    if (account.status === "revoked") {
+      return <RevokedNotice label={account.label} onRemove={() => manager.remove(account.deviceId)} onPairAgain={() => { setPairingAgain(true); setSelected("add"); }} />;
+    }
+    if (account.state.status === "pending") {
+      return <PendingScreen state={account.state} onCancel={() => manager.remove(account.deviceId)} />;
+    }
+    return renderChat(account.deviceId);
   }
-  return <ChatView session={session} state={state} onUnpaired={reopen} />;
+
+  if (accounts.length === 0) return <PairScreen onPair={pair} />;
+
+  return (
+    <div class="app">
+      {accounts.length > 1 && <AccountStrip accounts={accounts} selected={current} onSelect={setSelected} />}
+      {current === "add" ? (
+        <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => setSelected(accounts[0].deviceId)} />
+      ) : current === "all" ? (
+        renderChat(null)
+      ) : (
+        renderAccount(accounts.find((a) => a.deviceId === current)!)
+      )}
+    </div>
+  );
 }

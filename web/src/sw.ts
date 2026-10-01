@@ -1,8 +1,5 @@
-import { openPayload } from "./core/crypto";
-import { CHANNEL_LABELS, parsePluginPayload, type ChatItem } from "./core/protocol";
-import { SeqGuard } from "./core/seq";
+import { notificationTitle, routePush, type RoutedPush } from "./core/pushRoute";
 import { referencedAssets, staleAssets } from "./core/shell";
-import { addMessages, getMeta, getPairing, setMeta } from "./core/storage";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -61,37 +58,24 @@ self.addEventListener("fetch", (event) => {
   else if (url.pathname.startsWith("/assets/")) event.respondWith(cacheFirst(request));
 });
 
-async function decryptPush(envelope: string): Promise<ChatItem | null> {
-  const pairing = await getPairing();
-  if (!pairing) return null;
-  const payload = parsePluginPayload(await openPayload(pairing.aesKey, "p2d", envelope));
-  if (payload?.type !== "chat") return null;
-
-  const guard = new SeqGuard(await getMeta("lastSeenPush"));
-  if (!guard.accept(payload.seq)) return null;
-  await setMeta("lastSeenPush", payload.seq);
-  await addMessages([payload.item], await getMeta("cacheLimit"));
-  return payload.item;
-}
-
 async function handlePush(data: PushMessageData | null) {
-  let item: ChatItem | null = null;
+  let routed: RoutedPush | null = null;
   try {
-    const body = data?.json() as { p?: unknown } | undefined;
-    if (typeof body?.p === "string") item = await decryptPush(body.p);
+    routed = await routePush(data?.json());
   } catch {
-    item = null;
+    routed = null;
   }
 
   // Browsers penalise push events that do not show a notification, so failures still show one.
-  if (!item) {
+  if (!routed) {
     await self.registration.showNotification("ChatTerror", { body: "New message", tag: "chatterror", icon: "/icon-192.png" });
     return;
   }
-  await self.registration.showNotification(`${item.sender} (${CHANNEL_LABELS[item.channel]})`, {
-    body: item.text,
-    tag: item.channel + item.sender,
+  await self.registration.showNotification(notificationTitle(routed), {
+    body: routed.item.text,
+    tag: routed.deviceId + routed.item.channel + routed.item.sender,
     icon: "/icon-192.png",
+    data: { deviceId: routed.deviceId },
   });
 }
 
@@ -99,14 +83,19 @@ self.addEventListener("push", (event) => {
   event.waitUntil(handlePush(event.data));
 });
 
-async function focusApp() {
+async function focusApp(deviceId: string | undefined) {
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   const existing = windows[0];
-  if (existing) await existing.focus();
-  else await self.clients.openWindow("/");
+  if (existing) {
+    if (deviceId) existing.postMessage({ type: "openAccount", deviceId });
+    await existing.focus();
+  } else {
+    await self.clients.openWindow(deviceId ? `/#account=${encodeURIComponent(deviceId)}` : "/");
+  }
 }
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(focusApp());
+  const deviceId = (event.notification.data as { deviceId?: string } | null)?.deviceId;
+  event.waitUntil(focusApp(deviceId));
 });

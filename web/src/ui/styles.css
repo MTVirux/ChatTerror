@@ -125,6 +125,7 @@ textarea {
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
 }
@@ -256,6 +257,10 @@ p {
   margin-top: 12px;
   border-radius: 2px;
   background: linear-gradient(90deg, var(--ch-tell) 0 20%, var(--ch-party) 20% 40%, var(--ch-freeCompany) 40% 60%, var(--ch-ls) 60% 80%, var(--ch-shout) 80%);
+}
+
+.btn.back {
+  align-self: flex-start;
 }
 
 .lede {
@@ -401,6 +406,80 @@ p {
   font-size: 1.15rem;
   font-weight: 600;
   max-width: 30ch;
+}
+
+/* App shell and account strip */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app > .chat,
+.app > .screen {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.app > .screen {
+  overflow-y: auto;
+}
+
+.accounts {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: calc(6px + var(--safe-top)) 16px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.accounts::-webkit-scrollbar {
+  display: none;
+}
+
+/* The strip already clears the notch. */
+.accounts + .chat .topbar {
+  padding-top: 8px;
+}
+
+.accounts + .screen {
+  padding-top: 40px;
+}
+
+.account-tab {
+  --c: var(--accent);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.account-tab.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.account-tab.muted {
+  opacity: 0.55;
+}
+
+.account-tab.add {
+  font-size: 1.1rem;
 }
 
 /* Chat */
@@ -608,6 +687,21 @@ p {
   background: color-mix(in srgb, var(--c) 15%, transparent);
 }
 
+.acct {
+  flex: none;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 15%, transparent);
+}
+
 .sender {
   min-width: 0;
   overflow: hidden;
@@ -698,7 +792,8 @@ p {
   min-width: 0;
 }
 
-.channel-select {
+.channel-select,
+.account-select {
   min-height: 32px;
   padding: 0 8px;
   border: 1px solid var(--c);
@@ -709,7 +804,14 @@ p {
   font-size: 0.85rem;
 }
 
-.channel-select option {
+.account-select {
+  min-width: 0;
+  max-width: 40%;
+  text-overflow: ellipsis;
+}
+
+.channel-select option,
+.account-select option {
   color: var(--text);
   background: var(--surface);
 }
@@ -881,9 +983,44 @@ p {
   border-bottom: 0;
 }
 
-.group h3 {
+.group h4 {
   font-size: 0.95rem;
   font-weight: 700;
+}
+
+.section-head {
+  padding-top: 20px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sheet-body > .section-head:first-child {
+  padding-top: 0;
+}
+
+.account-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--raised);
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-link small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
 .row {

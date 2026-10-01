@@ -1,22 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { AccountManager, AccountView, FeedItem } from "../core/accounts";
 import { ALL_CHANNELS, type ChatChannel, type ChatItem } from "../core/protocol";
-import type { Session, SessionState } from "../core/session";
+import type { SessionState } from "../core/session";
 import { Composer } from "./Composer";
+import { defaultSendAccount, feedKey, mergeFeed } from "./feed";
+import type { PendingSend, PendingSends } from "./pending";
 import { SettingsView } from "./SettingsView";
-import { channelColor, channelLabel, dayLabel, sendErrorText, STATUS_LABELS, tellPartner, timeOfDay } from "./format";
+import { channelColor, channelLabel, dayLabel, STATUS_LABELS, tellPartner, timeOfDay } from "./format";
 
 const MAX_IN_MEMORY = 3000;
 const GROUP_GAP_MS = 5 * 60 * 1000;
 
 export type Tab = { kind: "all" } | { kind: "channel"; channel: ChatChannel } | { kind: "tell"; partner: string };
-
-export interface PendingSend {
-  localId: number;
-  channel: ChatChannel;
-  target?: string;
-  text: string;
-  error?: string;
-}
 
 function tabKey(tab: Tab): string {
   if (tab.kind === "channel") return `ch:${tab.channel}`;
@@ -28,45 +23,65 @@ function itemTabKey(item: ChatItem): string {
   return item.channel === "tell" ? `tell:${tellPartner(item)}` : `ch:${item.channel}`;
 }
 
-function merge(existing: ChatItem[], incoming: ChatItem[]): ChatItem[] {
-  const seen = new Set(existing.map((i) => i.id));
-  const fresh = incoming.filter((i) => !seen.has(i.id));
-  if (fresh.length === 0) return existing;
-  const out = existing.concat(fresh).sort((a, b) => a.ts - b.ts);
-  return out.length > MAX_IN_MEMORY ? out.slice(-MAX_IN_MEMORY) : out;
-}
-
-export function ChatView({ session, state, onUnpaired }: { session: Session; state: SessionState; onUnpaired: () => void }) {
-  const [items, setItems] = useState<ChatItem[]>([]);
+export function ChatView({ manager, accounts, accountId, sends, pending, onOpenAccount, onAddAccount }: {
+  manager: AccountManager;
+  accounts: AccountView[];
+  accountId: string | null;
+  sends: PendingSends;
+  pending: PendingSend[];
+  onOpenAccount: (deviceId: string) => void;
+  onAddAccount: () => void;
+}) {
+  const [items, setItems] = useState<FeedItem[]>([]);
   const [tab, setTab] = useState<Tab>({ kind: "all" });
   const [unread, setUnread] = useState<Record<string, number>>({});
-  const [pending, setPending] = useState<PendingSend[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [epoch, setEpoch] = useState(0);
+  const [sendAccount, setSendAccount] = useState<string | undefined>(undefined);
   const activeKey = useRef("all");
   activeKey.current = tabKey(tab);
+  const merged = accountId === null;
 
   useEffect(() => {
     let alive = true;
-    const off = session.onMessages((incoming) => {
-      setItems((prev) => merge(prev, incoming));
+    const off = manager.onMessages((incoming) => {
+      const mine = accountId ? incoming.filter((i) => i.deviceId === accountId) : incoming;
+      if (mine.length === 0) return;
+      setItems((prev) => mergeFeed(prev, mine, MAX_IN_MEMORY));
       setUnread((prev) => {
         const next = { ...prev };
-        for (const item of incoming) {
+        for (const item of mine) {
           const key = itemTabKey(item);
           if (!item.outgoing && key !== activeKey.current) next[key] = (next[key] ?? 0) + 1;
         }
         return next;
       });
     });
-    session.loadHistory(300).then((history) => {
-      if (alive) setItems((prev) => merge(history, prev));
+    const history = accountId
+      ? manager.session(accountId)!.loadHistory(300).then((list) => list.map((i) => ({ ...i, deviceId: accountId })))
+      : manager.loadMerged(300);
+    history.then((list) => {
+      if (alive) setItems((prev) => mergeFeed(list, prev, MAX_IN_MEMORY));
     });
     return () => {
       alive = false;
       off();
     };
-  }, [session, epoch]);
+  }, [manager, accountId, epoch]);
+
+  // Preselect by tell partner only when the tab changes, so account updates don't undo a manual pick.
+  const pickedForTab = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const key = tabKey(tab);
+    const partner = key !== pickedForTab.current && tab.kind === "tell" ? tab.partner : undefined;
+    pickedForTab.current = key;
+    setSendAccount((c) => defaultSendAccount(items, accounts, c, partner));
+  }, [tab, accounts]);
+
+  // With no active account in the merged view, the first account's state shows why sending is blocked.
+  const targetId = accountId ?? sendAccount ?? accounts[0].deviceId;
+  const state = accounts.find((a) => a.deviceId === targetId)?.state ?? accounts[0].state;
+  const activeAccounts = accounts.filter((a) => a.status === "active");
 
   useEffect(() => {
     document.querySelector(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -95,6 +110,7 @@ export function ChatView({ session, state, onUnpaired }: { session: Session; sta
   }, [items, tab]);
 
   const visiblePending = pending.filter((p) => {
+    if (merged ? !accounts.some((a) => a.deviceId === p.deviceId) : p.deviceId !== accountId) return false;
     if (tab.kind === "all") return true;
     if (tab.kind === "channel") return p.channel === tab.channel;
     return p.channel === "tell" && p.target === tab.partner;
@@ -106,33 +122,15 @@ export function ChatView({ session, state, onUnpaired }: { session: Session; sta
     setUnread((prev) => ({ ...prev, [key]: 0 }));
   }
 
-  const nextLocalId = useRef(1);
-  async function send(channel: ChatChannel, text: string, target?: string, retryOf?: number) {
-    const localId = retryOf ?? nextLocalId.current++;
-    const entry: PendingSend = { localId, channel, text, target };
-    setPending((prev) => (retryOf ? prev.map((p) => (p.localId === retryOf ? entry : p)) : [...prev, entry]));
-    let result;
-    try {
-      result = await session.send(channel, text, target);
-    } catch {
-      result = { ok: false, error: undefined };
-    }
-    if (result.ok) setPending((prev) => prev.filter((p) => p.localId !== localId));
-    else setPending((prev) => prev.map((p) => (p.localId === localId ? { ...p, error: sendErrorText(result.error) } : p)));
-  }
-
-  function dismiss(localId: number) {
-    setPending((prev) => prev.filter((p) => p.localId !== localId));
-  }
-
-  const title = tab.kind === "all" ? state.character ?? "ChatTerror" : tab.kind === "channel" ? channelLabel(tab.channel) : tab.partner;
+  const allTitle = merged ? "All accounts" : state.character ?? "ChatTerror";
+  const title = tab.kind === "all" ? allTitle : tab.kind === "channel" ? channelLabel(tab.channel) : tab.partner;
 
   return (
     <div class="chat">
       <header class="topbar">
         <div class="topbar-title">
           <h1>{title}</h1>
-          <StatusPill status={state.status} />
+          {!merged && <StatusPill status={state.status} />}
         </div>
         <button class="icon-btn" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           <GearIcon />
@@ -159,14 +157,33 @@ export function ChatView({ session, state, onUnpaired }: { session: Session; sta
         })}
       </nav>
 
-      <MessageLog tabId={activeKey.current} items={visible} pending={visiblePending} showChannel={tab.kind === "all"} onRetry={(p) => send(p.channel, p.text, p.target, p.localId)} onDismiss={dismiss} />
+      <MessageLog
+        tabId={activeKey.current}
+        items={visible}
+        pending={visiblePending}
+        showChannel={tab.kind === "all"}
+        showAccount={merged && accounts.length > 1}
+        accountLabel={(deviceId) => accounts.find((a) => a.deviceId === deviceId)?.label ?? ""}
+        onRetry={(p) => void sends.retry(p)}
+        onDismiss={sends.dismiss}
+      />
 
-      <Composer state={state} tab={tab} onSend={(channel, text, target) => send(channel, text, target)} />
+      <Composer
+        state={state}
+        tab={tab}
+        account={merged && activeAccounts.length > 1 && sendAccount ? {
+          options: activeAccounts.map((a) => ({ deviceId: a.deviceId, label: a.label, online: a.state.status === "online" })),
+          value: sendAccount,
+          onChange: setSendAccount,
+        } : undefined}
+        onSend={(channel, text, target) => void sends.send(targetId, channel, text, target)}
+      />
 
       {settingsOpen && (
         <SettingsView
-          session={session}
-          state={state}
+          manager={manager}
+          accounts={accounts}
+          accountId={accountId}
           onClose={() => setSettingsOpen(false)}
           onCacheCleared={() => {
             setItems([]);
@@ -174,7 +191,8 @@ export function ChatView({ session, state, onUnpaired }: { session: Session; sta
             setTab({ kind: "all" });
             setEpoch((e) => e + 1);
           }}
-          onUnpaired={onUnpaired}
+          onOpenAccount={onOpenAccount}
+          onAddAccount={onAddAccount}
         />
       )}
     </div>
@@ -185,11 +203,13 @@ function StatusPill({ status }: { status: SessionState["status"] }) {
   return <span class={`pill pill-${status}`}>{STATUS_LABELS[status]}</span>;
 }
 
-function MessageLog({ tabId, items, pending, showChannel, onRetry, onDismiss }: {
+function MessageLog({ tabId, items, pending, showChannel, showAccount, accountLabel, onRetry, onDismiss }: {
   tabId: string;
-  items: ChatItem[];
+  items: FeedItem[];
   pending: PendingSend[];
   showChannel: boolean;
+  showAccount: boolean;
+  accountLabel: (deviceId: string) => string;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
@@ -213,7 +233,8 @@ function MessageLog({ tabId, items, pending, showChannel, onRetry, onDismiss }: 
   const lastId = useRef<string | undefined>(undefined);
 
   useLayoutEffect(() => {
-    const newestId = items.at(-1)?.id;
+    const last = items.at(-1);
+    const newestId = last && feedKey(last);
     const grew = newestId !== lastId.current;
     lastId.current = newestId;
     if (atBottom.current) ref.current!.scrollTop = ref.current!.scrollHeight;
@@ -221,22 +242,24 @@ function MessageLog({ tabId, items, pending, showChannel, onRetry, onDismiss }: 
   }, [items, pending]);
 
   useLayoutEffect(() => {
-    lastId.current = items.at(-1)?.id;
+    const last = items.at(-1);
+    lastId.current = last && feedKey(last);
     jump();
   }, [tabId]);
 
   const rows = [];
-  let prev: ChatItem | undefined;
+  let prev: FeedItem | undefined;
   for (const item of items) {
+    const key = feedKey(item);
     const day = dayLabel(item.ts);
     const newDay = !prev || dayLabel(prev.ts) !== day;
-    if (newDay) rows.push(<div class="day" key={`day-${item.id}`}><span>{day}</span></div>);
-    if (!prev || prev.character !== item.character) {
-      rows.push(<div class="as-character" key={`char-${item.id}`}>as {item.character}</div>);
+    if (newDay) rows.push(<div class="day" key={`day-${key}`}><span>{day}</span></div>);
+    if (!showAccount && (!prev || prev.character !== item.character)) {
+      rows.push(<div class="as-character" key={`char-${key}`}>as {item.character}</div>);
     }
-    const continued = !!prev && !newDay && prev.character === item.character && prev.channel === item.channel &&
-      prev.sender === item.sender && prev.outgoing === item.outgoing && item.ts - prev.ts < GROUP_GAP_MS;
-    rows.push(<Message key={item.id} item={item} continued={continued} showChannel={showChannel} />);
+    const continued = !!prev && !newDay && prev.deviceId === item.deviceId && prev.character === item.character &&
+      prev.channel === item.channel && prev.sender === item.sender && prev.outgoing === item.outgoing && item.ts - prev.ts < GROUP_GAP_MS;
+    rows.push(<Message key={key} item={item} continued={continued} showChannel={showChannel} showAccount={showAccount} />);
     prev = item;
   }
 
@@ -253,6 +276,7 @@ function MessageLog({ tabId, items, pending, showChannel, onRetry, onDismiss }: 
         {pending.map((p) => (
           <div class={`msg out pending-msg${p.error ? " failed" : ""}`} style={{ "--c": channelColor(p.channel) }} key={`p-${p.localId}`}>
             <div class="msg-head">
+              {showAccount && <span class="acct">{accountLabel(p.deviceId)}</span>}
               <span class="chip">{channelLabel(p.channel)}</span>
               {p.target && <span class="sender">to {p.target}</span>}
               <span class="time">{p.error ? "Not sent" : "Sending..."}</span>
@@ -273,12 +297,13 @@ function MessageLog({ tabId, items, pending, showChannel, onRetry, onDismiss }: 
   );
 }
 
-function Message({ item, continued, showChannel }: { item: ChatItem; continued: boolean; showChannel: boolean }) {
+function Message({ item, continued, showChannel, showAccount }: { item: ChatItem; continued: boolean; showChannel: boolean; showAccount: boolean }) {
   const isTell = item.channel === "tell";
   return (
     <div class={`msg${item.outgoing ? " out" : ""}${continued ? " cont" : ""}`} style={{ "--c": channelColor(item.channel) }}>
       {!continued && (
         <div class="msg-head">
+          {showAccount && <span class="acct">{item.character}</span>}
           {showChannel && <span class="chip">{channelLabel(item.channel)}</span>}
           <span class="sender">
             {isTell && item.outgoing ? "to " : ""}
