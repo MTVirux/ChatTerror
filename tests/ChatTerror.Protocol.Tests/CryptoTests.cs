@@ -115,11 +115,43 @@ public class CryptoTests
         var pubA = P256.PublicRaw(a);
         var pubB = P256.PublicRaw(b);
 
-        var forward = Fingerprint.Compute(pubA, pubB);
-        var reverse = Fingerprint.Compute(pubB, pubA);
+        var forward = Fingerprint.Compute("ABCD2345", pubA, pubB);
+        var reverse = Fingerprint.Compute("ABCD2345", pubB, pubA);
 
         Assert.Matches(new Regex(@"^\d{3} \d{3}$"), forward);
         Assert.Matches(new Regex(@"^\d{3} \d{3}$"), reverse);
         Assert.NotEqual(forward, reverse);
+    }
+
+    [Fact]
+    public void Fingerprint_DependsOnSecret()
+    {
+        using var a = P256.Generate();
+        using var b = P256.Generate();
+        var pubA = P256.PublicRaw(a);
+        var pubB = P256.PublicRaw(b);
+
+        Assert.NotEqual(Fingerprint.Compute("ABCD2345", pubA, pubB), Fingerprint.Compute("ABCD2346", pubA, pubB));
+        Assert.Equal(Fingerprint.Compute("ABCD2345", pubA, pubB), Fingerprint.Compute("abcd-2345", pubA, pubB));
+        Assert.Throws<ArgumentException>(() => Fingerprint.Compute("ABCD234", pubA, pubB));
+    }
+
+    [Fact]
+    public void PairingSecret_GenerateIsValid()
+    {
+        var secrets = Enumerable.Range(0, 50).Select(_ => PairingSecret.Generate()).ToList();
+
+        Assert.All(secrets, s => Assert.Matches(new Regex("^[0-9A-HJKMNP-TV-Z]{8}$"), s));
+        Assert.True(secrets.Distinct().Count() > 45);
+    }
+
+    [Fact]
+    public void PairingSecret_Normalize()
+    {
+        Assert.Equal("ABCD2345", PairingSecret.Normalize("abcd-2345"));
+        Assert.Equal("0111ABCD", PairingSecret.Normalize("OIL1 ABCD"));
+        Assert.Null(PairingSecret.Normalize("ABCD234"));
+        Assert.Null(PairingSecret.Normalize("ABCD234U"));
+        Assert.Equal("ABCD-2345", PairingSecret.Format("ABCD2345"));
     }
 }

@@ -24,9 +24,9 @@ The default relay URL is `http://localhost:5000` until a hosted instance exists,
 
 ## Pairing a phone
 
-1. In the plugin, go to **Devices** and click **Pair new device**. A QR code and a link appear.
-2. Scan the QR code with your phone, or open the link. You can also open the relay in the phone browser and type the code.
-3. The phone shows a 6 digit code, and the plugin shows the same code next to the device name. Approve only if they match.
+1. In the plugin, go to **Devices** and click **Pair new device**. A 16 character code (`XXXX-XXXX-XXXX-XXXX`), a QR code and a link appear.
+2. Scan the QR code with your phone, or open the link. You can also open the relay in the phone browser and type the full code. Only the first 8 characters are sent to the relay; the last 8 are a secret that stays between the plugin and the phone.
+3. The phone shows a 6 digit code, and the plugin shows the same code next to the device name. Approve only if they match. A request that did not come from the code currently shown in the plugin is marked unverified and can only be rejected.
 4. On the phone, add the page to your home screen and enable notifications in its settings if you want push for tells and mentions.
 
 Pairing codes expire after 10 minutes. Up to 10 devices can be paired. Revoking a device in the plugin wipes its data the next time it connects.
@@ -108,7 +108,7 @@ All settings live under `Relay` in `appsettings.json` and can be set as environm
 - The relay stores the plugin and device public keys, device names, approval status, last seen times and push subscriptions. Tokens are stored as SHA-256 hashes. It never stores or can read messages.
 - Push notifications carry the same end-to-end encrypted payload, decrypted on the phone by the service worker. The push service (Google, Apple, Mozilla) sees only ciphertext.
 - The relay can still see metadata: when you are online, which phone receives how much traffic, and IP addresses.
-- The 6 digit pairing code protects against a malicious relay swapping keys during pairing. Compare it every time.
+- The 6 digit pairing code is derived from both public keys and the secret half of the pairing code, which the relay never sees, so a malicious relay cannot swap keys during pairing without the numbers differing. Compare it every time.
 - The plugin keeps a short in-memory history (500 messages by default) for backlog. Phones cache history locally; you can clear it or unpair from the phone settings.
 
 ## License

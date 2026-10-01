@@ -8,7 +8,11 @@ using Dalamud.Plugin.Services;
 
 namespace ChatTerror.Plugin.Services;
 
-public sealed record PendingPair(string DeviceId, string DeviceName, string DevicePublicKey, string Fingerprint);
+// Fingerprint is null when the request did not arrive during this plugin's active pairing session.
+public sealed record PendingPair(string DeviceId, string DeviceName, string DevicePublicKey, string? Fingerprint)
+{
+    public bool Verified => Fingerprint != null;
+}
 
 // Only used from the framework thread; relay events are marshalled there.
 public sealed class DeviceHub : IDisposable
@@ -27,6 +31,7 @@ public sealed class DeviceHub : IDisposable
     private readonly Dictionary<string, DeviceSession> sessions = new();
     private readonly List<PendingPair> pendingPairs = new();
     private readonly HashSet<string> onlineDevices = new();
+    private readonly PairingGate pairingGate = new();
     private bool disposed;
 
     public DeviceHub(Configuration config, Action saveConfig, KeyStore keys, RelayClient relay, IFramework framework, IPluginLog log, Func<string?> characterName)
@@ -77,12 +82,17 @@ public sealed class DeviceHub : IDisposable
             SendTo(session, BuildSettings(), false);
     }
 
+    public void StartPairing(string secret, long expiresAt) => pairingGate.Start(secret, expiresAt);
+
+    public void CancelPairing() => pairingGate.Cancel();
+
     public bool Approve(PendingPair pair)
     {
-        if (!relay.Send(new PairDecisionFrame(pair.DeviceId, true)))
+        if (!pair.Verified || !relay.Send(new PairDecisionFrame(pair.DeviceId, true)))
             return false;
 
         pendingPairs.Remove(pair);
+        pairingGate.Forget(pair.DeviceId);
         var device = new PairedDevice
         {
             DeviceId = pair.DeviceId,
@@ -103,12 +113,14 @@ public sealed class DeviceHub : IDisposable
             return false;
 
         pendingPairs.Remove(pair);
+        pairingGate.Forget(pair.DeviceId);
         return true;
     }
 
     public void RemoveDevice(string deviceId)
     {
         pendingPairs.RemoveAll(p => p.DeviceId == deviceId);
+        pairingGate.Forget(deviceId);
         sessions.Remove(deviceId);
         onlineDevices.Remove(deviceId);
         if (config.Devices.RemoveAll(d => d.DeviceId == deviceId) > 0)
@@ -119,6 +131,7 @@ public sealed class DeviceHub : IDisposable
     {
         sessions.Clear();
         pendingPairs.Clear();
+        pairingGate.Clear();
         onlineDevices.Clear();
         config.Devices.Clear();
         saveConfig();
@@ -201,12 +214,11 @@ public sealed class DeviceHub : IDisposable
         if (pendingPairs.Any(p => p.DeviceId == request.DeviceId))
             return;
 
-        string fingerprint;
+        byte[] devicePublic;
         try
         {
-            var devicePublic = Base64Url.Decode(request.DevicePublicKey);
+            devicePublic = Base64Url.Decode(request.DevicePublicKey);
             P256.ImportPublicRaw(devicePublic).Dispose();
-            fingerprint = Fingerprint.Compute(keys.PublicRaw, devicePublic);
         }
         catch (Exception ex) when (ex is FormatException or System.Security.Cryptography.CryptographicException)
         {
@@ -215,6 +227,8 @@ public sealed class DeviceHub : IDisposable
             return;
         }
 
+        var secret = pairingGate.Bind(request.DeviceId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var fingerprint = secret == null ? null : Fingerprint.Compute(secret, keys.PublicRaw, devicePublic);
         var pair = new PendingPair(request.DeviceId, request.DeviceName, request.DevicePublicKey, fingerprint);
         pendingPairs.Add(pair);
         PairRequested?.Invoke(pair);

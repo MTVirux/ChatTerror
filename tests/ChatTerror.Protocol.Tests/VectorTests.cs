@@ -64,7 +64,7 @@ public class VectorTests
         Assert.Equal(devicePub, P256.PublicRaw(device));
         Assert.Equal(expectedKey, E2eCrypto.DeriveKey(plugin, devicePub, pluginPub, devicePub));
         Assert.Equal(expectedKey, E2eCrypto.DeriveKey(device, pluginPub, pluginPub, devicePub));
-        Assert.Equal((string)root["fingerprint"]!, Fingerprint.Compute(pluginPub, devicePub));
+        Assert.Equal((string)root["fingerprint"]!, Fingerprint.Compute((string)root["secret"]!, pluginPub, devicePub));
         Assert.Equal("p2d", (string)seal["direction"]!);
         Assert.Equal(envelope, E2eCrypto.Seal(expectedKey, Direction.PluginToDevice, plaintext, nonce));
         Assert.Equal(plaintext, E2eCrypto.Open(expectedKey, Direction.PluginToDevice, envelope));
@@ -79,6 +79,7 @@ public class VectorTests
         var pluginPub = P256.PublicRaw(plugin);
         var devicePub = P256.PublicRaw(device);
         var key = E2eCrypto.DeriveKey(plugin, devicePub, pluginPub, devicePub);
+        var secret = PairingSecret.Generate();
         var nonce = Enumerable.Range(0, 12).Select(i => (byte)i).ToArray();
         var item = new ChatItem("0123456789abcdef0123456789abcdef", 1700000000000, ChatChannel.FreeCompany, "Y'shtola Rhul", "Twintania", "hello <3", "Alpha Beta", false);
         var plaintext = ProtocolJson.Serialize<Payload>(new ChatPayload(item) { Seq = 1700000000000 });
@@ -89,7 +90,8 @@ public class VectorTests
             ["plugin"] = new JsonObject { ["jwk"] = ToJwk(plugin), ["publicRaw"] = Base64Url.Encode(pluginPub) },
             ["device"] = new JsonObject { ["jwk"] = ToJwk(device), ["publicRaw"] = Base64Url.Encode(devicePub) },
             ["key"] = Base64Url.Encode(key),
-            ["fingerprint"] = Fingerprint.Compute(pluginPub, devicePub),
+            ["secret"] = secret,
+            ["fingerprint"] = Fingerprint.Compute(secret, pluginPub, devicePub),
             ["seal"] = new JsonObject
             {
                 ["direction"] = "p2d",

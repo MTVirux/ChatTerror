@@ -68,7 +68,7 @@ type OutgoingPayload = WithoutSeq<DevicePayload>;
 
 const DEFAULT_MAX_LENGTH = 500;
 const SEND_TIMEOUT_MS = 15000;
-const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{8}$/;
+const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{16}$/;
 
 const liveSessions = new Set<InternalSession>();
 
@@ -76,24 +76,36 @@ function emptyState(status: SessionStatus): SessionState {
   return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], pushEnabled: false };
 }
 
-export function parsePairCode(input: string): string | null {
+export interface PairCode {
+  code: string;
+  secret: string;
+}
+
+// The relay only ever gets `code`; `secret` stays on this device and goes into the fingerprint.
+export function parsePairCode(input: string): PairCode | null {
   const fromUrl = input.match(/[#?&]pair=([^&\s]+)/i);
   let raw = fromUrl ? decodeURIComponent(fromUrl[1]) : input;
   raw = raw.replace(/[\s-]/g, "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1");
-  return CROCKFORD.test(raw) ? `${raw.slice(0, 4)}-${raw.slice(4)}` : null;
+  if (!CROCKFORD.test(raw)) return null;
+  return { code: `${raw.slice(0, 4)}-${raw.slice(4, 8)}`, secret: raw.slice(8) };
+}
+
+export function formatPairCode({ code, secret }: PairCode): string {
+  return `${code}-${secret.slice(0, 4)}-${secret.slice(4)}`;
 }
 
 // Lookup, keygen, claim, derive and store. Throws ApiError with a code such as invalidCode, notFound or tooManyDevices.
 export async function pairDevice(api: Api, input: string, deviceName: string): Promise<{ fingerprint: string }> {
-  const code = parsePairCode(input);
-  if (!code) throw new ApiError(400, "invalidCode");
+  const parsed = parsePairCode(input);
+  if (!parsed) throw new ApiError(400, "invalidCode");
+  const { code, secret } = parsed;
 
   const { pluginPublicKey } = await api.lookupPairing(code);
   const keys = await generateDeviceKey();
   const pluginPub = decode(pluginPublicKey);
   const devicePub = await exportPublicRaw(keys.publicKey);
   const aesKey = await deriveKey(keys.privateKey, pluginPub, devicePub);
-  const print = await fingerprint(pluginPub, devicePub);
+  const print = await fingerprint(secret, pluginPub, devicePub);
   const devicePublicKey = encode(devicePub);
   const { deviceId, deviceToken } = await api.claimPairing(code, devicePublicKey, deviceName);
 
