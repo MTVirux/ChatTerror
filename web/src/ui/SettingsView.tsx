@@ -22,8 +22,10 @@ export function SettingsView({ manager, accounts, accountId, onClose, onCacheCle
 }) {
   const [theme, setTheme] = useState<ThemeChoice>(loadTheme);
   const [cacheError, setCacheError] = useState("");
+  const [picked, setPicked] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  const account = accountId ? accounts.find((a) => a.deviceId === accountId) : undefined;
+  const shownId = accountId ?? picked;
+  const account = shownId ? accounts.find((a) => a.deviceId === shownId) : undefined;
   const session = account && manager.session(account.deviceId);
 
   useEffect(() => {
@@ -50,8 +52,10 @@ export function SettingsView({ manager, accounts, accountId, onClose, onCacheCle
     manager.setCacheLimit(n).catch(() => setCacheError("Couldn't change how many messages are kept. Try again."));
   }
 
-  function openAccount(deviceId: string) {
-    onOpenAccount(deviceId);
+  // A removed account has no settings left, its tab offers Remove and Pair again instead.
+  function openAccount(a: AccountView) {
+    if (a.status !== "revoked") return setPicked(a.deviceId);
+    onOpenAccount(a.deviceId);
     onClose();
   }
 
@@ -64,16 +68,18 @@ export function SettingsView({ manager, accounts, accountId, onClose, onCacheCle
         </header>
 
         <div class="sheet-body">
+          {picked && <button class="btn ghost back" onClick={() => setPicked(null)}>All accounts</button>}
+
           {account && session && (
             <AccountSettings manager={manager} account={account} session={session} onClose={onClose} onCacheCleared={onCacheCleared} />
           )}
 
-          {accountId === null && (
+          {shownId === null && (
             <>
               <h3 class="section-head">Accounts</h3>
               <section class="group">
                 {accounts.map((a) => (
-                  <button class="account-link" key={a.deviceId} onClick={() => openAccount(a.deviceId)}>
+                  <button class="account-link" key={a.deviceId} onClick={() => openAccount(a)}>
                     <span>{a.label}</span>
                     <small>{a.status === "revoked" ? "Removed" : STATUS_LABELS[a.state.status]}</small>
                   </button>
