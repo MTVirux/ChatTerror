@@ -5,8 +5,8 @@ namespace ChatTerror.Plugin.Tests;
 
 public class MessageHistoryTests
 {
-    private static ChatItem Item(long ts) =>
-        new(Guid.NewGuid().ToString("N"), ts, ChatChannel.Say, "Bob Smith", Text: $"m{ts}", Character: "Alex Doe", Outgoing: false);
+    private static ChatItem Item(long ts, string character = "Alex Doe") =>
+        new(Guid.NewGuid().ToString("N"), ts, ChatChannel.Say, "Bob Smith", Text: $"m{ts}", Character: character, Outgoing: false);
 
     [Fact]
     public void Add_OverCapacity_DropsOldest()
@@ -75,5 +75,51 @@ public class MessageHistoryTests
         Parallel.For(0, 1000, i => h.Add(Item(i)));
 
         Assert.Equal(100, h.Since(-1).Count);
+    }
+
+    [Fact]
+    public void Capacity_IsPerCharacter()
+    {
+        var h = new MessageHistory(2);
+        h.Add(Item(1, "Alex Doe"));
+        h.Add(Item(2, "Alex Doe"));
+        h.Add(Item(3, "Sam Roe"));
+        h.Add(Item(4, "Sam Roe"));
+        h.Add(Item(5, "Sam Roe"));
+
+        Assert.Equal([1L, 2L, 4L, 5L], h.Since(0).Select(i => i.Ts));
+    }
+
+    [Fact]
+    public void Since_MergesCharactersInTimeOrder()
+    {
+        var h = new MessageHistory(10);
+        h.Add(Item(3, "Sam Roe"));
+        h.Add(Item(1, "Alex Doe"));
+        h.Add(Item(2, "Sam Roe"));
+
+        Assert.Equal([1L, 2L, 3L], h.Since(0).Select(i => i.Ts));
+    }
+
+    [Fact]
+    public void Constructor_RestoresItemsWithinCapacity()
+    {
+        var h = new MessageHistory(2, [Item(1), Item(2), Item(3), Item(4, "Sam Roe")]);
+
+        Assert.Equal([2L, 3L, 4L], h.Since(0).Select(i => i.Ts));
+    }
+
+    [Fact]
+    public void Version_ChangesOnEveryMutation()
+    {
+        var h = new MessageHistory(5);
+        var v0 = h.Version;
+        h.Add(Item(1));
+        var v1 = h.Version;
+        h.Capacity = 1;
+        var v2 = h.Version;
+        h.Clear();
+
+        Assert.True(v0 < v1 && v1 < v2 && v2 < h.Version);
     }
 }

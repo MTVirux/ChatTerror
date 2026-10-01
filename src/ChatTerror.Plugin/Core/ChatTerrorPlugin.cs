@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using ChatTerror.Plugin.Gui;
 using ChatTerror.Plugin.Gui.Tabs;
 using ChatTerror.Plugin.Logic;
@@ -55,7 +56,8 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         keys = new KeyStore(pluginInterface.ConfigDirectory.FullName, log);
         api = new RelayApi(() => config.RelayUrl);
         relay = new RelayClient(log);
-        hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName);
+        hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName,
+            Path.Combine(pluginInterface.ConfigDirectory.FullName, HistoryFile.Name));
         connection = new ConnectionManager(config, SaveConfig, keys, api, relay, hub, framework, log);
         capture = new ChatCapture(chatGui, playerState, config, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);

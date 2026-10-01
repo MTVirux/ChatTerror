@@ -23,6 +23,7 @@
     <Compile Include="..\..\src\ChatTerror.Plugin\Logic\**\*.cs" Link="Logic\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\ChatTerror.Plugin\Services\Secrets.cs" Link="Services\Secrets.cs" />
     <Compile Include="..\..\src\ChatTerror.Plugin\Services\IdentityKeyFile.cs" Link="Services\IdentityKeyFile.cs" />
+    <Compile Include="..\..\src\ChatTerror.Plugin\Services\HistoryFile.cs" Link="Services\HistoryFile.cs" />
   </ItemGroup>
 
   <ItemGroup>
