@@ -15,7 +15,7 @@ public sealed class ChannelSetting
 public sealed class RelaySettings
 {
     private static readonly HashSet<ChatChannel> SendOffByDefault =
-        [ChatChannel.Alliance, ChatChannel.NoviceNetwork, ChatChannel.Shout, ChatChannel.Yell];
+        [ChatChannel.Alliance, ChatChannel.NoviceNetwork];
 
     public Dictionary<ChatChannel, ChannelSetting> Channels { get; set; } = Defaults();
     public bool PushOnTell { get; set; } = true;

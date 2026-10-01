@@ -212,7 +212,7 @@ public class RelaySettingsTests
     public void Defaults_MatchSpec()
     {
         var d = RelaySettings.Defaults();
-        var sendOff = new[] { ChatChannel.Alliance, ChatChannel.NoviceNetwork, ChatChannel.Shout, ChatChannel.Yell };
+        var sendOff = new[] { ChatChannel.Alliance, ChatChannel.NoviceNetwork };
 
         Assert.Equal(Enum.GetValues<ChatChannel>().Length, d.Count);
         foreach (var channel in Enum.GetValues<ChatChannel>())
