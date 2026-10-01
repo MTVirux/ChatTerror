@@ -1,3 +1,4 @@
+using System.Net;
 using ChatTerror.Server.Push;
 
 namespace ChatTerror.Server.Tests;
@@ -32,14 +33,42 @@ public class PushEndpointGuardTests
     [InlineData("https://[ff02::1]/sub")]
     [InlineData("https://[::ffff:127.0.0.1]/sub")]
     [InlineData("https://[::ffff:192.168.0.1]/sub")]
+    [InlineData("https://[64:ff9b::a00:1]/sub")]
+    [InlineData("https://[2002:a00:1::1]/sub")]
     public async Task NonPublicOrPlainEndpoint_Rejected(string endpoint)
     {
         Assert.False(await PushEndpointGuard.IsAllowedAsync(new Uri(endpoint)));
     }
 
     [Fact]
-    public async Task LocalhostName_Rejected()
+    public void PickAddress_ReturnsFirstWhenAllPublic()
     {
-        Assert.False(await PushEndpointGuard.IsAllowedAsync(new Uri("https://localhost/sub")));
+        var picked = PushEndpointGuard.PickAddress([IPAddress.Parse("1.1.1.1"), IPAddress.Parse("2606:4700::1111")]);
+
+        Assert.Equal(IPAddress.Parse("1.1.1.1"), picked);
+    }
+
+    [Theory]
+    [InlineData("1.1.1.1", "10.0.0.1")]
+    [InlineData("127.0.0.1")]
+    [InlineData("2606:4700::1111", "::1")]
+    public void PickAddress_RejectsAnyNonPublic(params string[] addresses)
+    {
+        Assert.Null(PushEndpointGuard.PickAddress(addresses.Select(IPAddress.Parse).ToArray()));
+    }
+
+    [Fact]
+    public void PickAddress_RejectsEmpty()
+    {
+        Assert.Null(PushEndpointGuard.PickAddress([]));
+    }
+
+    [Fact]
+    public void DefaultHandler_DoesNotFollowRedirects_AndChecksConnections()
+    {
+        using var handler = WebPushSender.CreateHandler();
+
+        Assert.False(handler.AllowAutoRedirect);
+        Assert.NotNull(handler.ConnectCallback);
     }
 }

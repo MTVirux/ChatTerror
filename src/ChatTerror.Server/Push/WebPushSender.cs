@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using Lib.Net.Http.WebPush;
 using Lib.Net.Http.WebPush.Authentication;
 
@@ -13,8 +14,34 @@ public sealed class WebPushSender : IPushSender, IDisposable
     private readonly ILogger<WebPushSender> log;
 
     public WebPushSender(VapidKeys keys, ILogger<WebPushSender> log)
-        : this(keys, log, new HttpClient())
+        : this(keys, log, new HttpClient(CreateHandler()))
     {
+    }
+
+    // Redirects and DNS answers that change after the endpoint check could otherwise reach internal hosts.
+    internal static SocketsHttpHandler CreateHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = ConnectToPublicAddressAsync,
+    };
+
+    private static async ValueTask<Stream> ConnectToPublicAddressAsync(SocketsHttpConnectionContext context, CancellationToken ct)
+    {
+        var host = context.DnsEndPoint.Host;
+        var address = PushEndpointGuard.PickAddress(await PushEndpointGuard.ResolveAsync(host, ct))
+            ?? throw new HttpRequestException($"Push host {host} does not resolve to a public address.");
+
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(address, context.DnsEndPoint.Port, ct);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
     }
 
     internal WebPushSender(VapidKeys keys, ILogger<WebPushSender> log, HttpClient http)

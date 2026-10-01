@@ -18,34 +18,34 @@ public static class PushEndpointGuard
         (IPAddress.Parse("224.0.0.0"), 3),
         (IPAddress.Parse("::"), 128),
         (IPAddress.Parse("::1"), 128),
+        (IPAddress.Parse("64:ff9b::"), 96),
+        (IPAddress.Parse("2002::"), 16),
         (IPAddress.Parse("fc00::"), 7),
         (IPAddress.Parse("fe80::"), 10),
         (IPAddress.Parse("ff00::"), 8),
     ];
 
-    public static async Task<bool> IsAllowedAsync(Uri endpoint, CancellationToken ct = default)
-    {
-        if (endpoint.Scheme != Uri.UriSchemeHttps)
-            return false;
+    public static async Task<bool> IsAllowedAsync(Uri endpoint, CancellationToken ct = default) =>
+        endpoint.Scheme == Uri.UriSchemeHttps && PickAddress(await ResolveAsync(endpoint.DnsSafeHost, ct)) != null;
 
-        IPAddress[] addresses;
-        if (IPAddress.TryParse(endpoint.DnsSafeHost, out var literal))
+    // Unresolvable hosts come back empty, which PickAddress rejects.
+    public static async Task<IPAddress[]> ResolveAsync(string host, CancellationToken ct)
+    {
+        if (IPAddress.TryParse(host, out var literal))
+            return [literal];
+        try
         {
-            addresses = [literal];
+            return await Dns.GetHostAddressesAsync(host, ct);
         }
-        else
+        catch (Exception ex) when (ex is SocketException or ArgumentException)
         {
-            try
-            {
-                addresses = await Dns.GetHostAddressesAsync(endpoint.DnsSafeHost, ct);
-            }
-            catch (SocketException)
-            {
-                return false;
-            }
+            return [];
         }
-        return addresses.Length > 0 && addresses.All(IsPublic);
     }
+
+    // One non-public address rejects the host, so DNS cannot mix in an internal target.
+    public static IPAddress? PickAddress(IReadOnlyList<IPAddress> addresses) =>
+        addresses.Count > 0 && addresses.All(IsPublic) ? addresses[0] : null;
 
     public static bool IsPublic(IPAddress address)
     {

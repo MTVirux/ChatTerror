@@ -35,6 +35,8 @@ public sealed class RelayApp : WebApplicationFactory<Program>
             settings[key] = value;
     }
 
+    private string DbPath => Path.Combine(directory, "relay.db");
+
     public FakePushSender Push { get; } = new();
 
     public MutableTimeProvider Time { get; } = new();
@@ -44,7 +46,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(directory);
-        builder.UseSetting("Relay:DbPath", Path.Combine(directory, "relay.db"));
+        builder.UseSetting("Relay:DbPath", DbPath);
         foreach (var (key, value) in settings)
             builder.UseSetting(key, value);
 
@@ -59,7 +61,9 @@ public sealed class RelayApp : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        SqliteConnection.ClearAllPools();
+        // Must match the connection string RelayStore builds, so only this app's pool is cleared.
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.GetFullPath(DbPath), Pooling = true }.ToString()))
+            SqliteConnection.ClearPool(connection);
         try
         {
             Directory.Delete(directory, true);
