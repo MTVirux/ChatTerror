@@ -29,7 +29,9 @@ The plugin uses the hosted relay at `https://chatterror.mtvirux.app` by default.
 3. The phone shows a 6 digit code, and the plugin shows the same code next to the device name. Approve only if they match. A request that did not come from the code currently shown in the plugin is marked unverified and can only be rejected.
 4. On the phone, add the page to your home screen and enable notifications in its settings if you want push for tells and mentions.
 
-Pairing codes expire after 10 minutes. Up to 10 devices can be paired. Revoking a device in the plugin wipes its data the next time it connects.
+To follow several game clients from one phone, pair each one separately: open the phone settings, choose **Add account**, and pair with the code from the other client. Each client is shown as its own tab, with an **All** tab that merges them. All clients must use the same relay as the phone app.
+
+Pairing codes expire after 10 minutes. Each game client can have up to 10 paired devices. Revoking a device in the plugin wipes its data the next time it connects.
 
 ## What gets relayed
 
