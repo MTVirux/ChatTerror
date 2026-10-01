@@ -125,6 +125,7 @@ textarea {
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
 }
@@ -990,6 +991,10 @@ p {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.sheet-body > .section-head:first-child {
+  padding-top: 0;
 }
 
 .account-link {
