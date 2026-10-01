@@ -11,9 +11,11 @@ public sealed class ConnectionManager : IDisposable
 {
     private static readonly TimeSpan MinRetry = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaxRetry = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan AutoReregisterCooldown = TimeSpan.FromMinutes(10);
 
     private readonly CancellationTokenSource lifetime = new();
     private CancellationTokenSource? registration;
+    private DateTime lastAutoReregister = DateTime.MinValue;
     private readonly Configuration config;
     private readonly Action saveConfig;
     private readonly KeyStore keys;
@@ -111,6 +113,12 @@ public sealed class ConnectionManager : IDisposable
         {
             if (lifetime.IsCancellationRequested || !config.Enabled || config.Devices.Count > 0 || config.InstallToken != rejectedToken)
                 return;
+            if (DateTime.UtcNow - lastAutoReregister < AutoReregisterCooldown)
+            {
+                log.Warning("Relay rejected the install again soon after an automatic re-register, waiting for a manual one.");
+                return;
+            }
+            lastAutoReregister = DateTime.UtcNow;
             log.Information("Relay rejected the install and no devices are paired, registering again.");
             Reregister();
         });

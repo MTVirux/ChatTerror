@@ -35,6 +35,7 @@ public class PushEndpointGuardTests
     [InlineData("https://[::ffff:192.168.0.1]/sub")]
     [InlineData("https://[64:ff9b::a00:1]/sub")]
     [InlineData("https://[2002:a00:1::1]/sub")]
+    [InlineData("https://[2001:0:4136:e378::1]/sub")]
     public async Task NonPublicOrPlainEndpoint_Rejected(string endpoint)
     {
         Assert.False(await PushEndpointGuard.IsAllowedAsync(new Uri(endpoint)));
@@ -69,6 +70,7 @@ public class PushEndpointGuardTests
         using var handler = WebPushSender.CreateHandler();
 
         Assert.False(handler.AllowAutoRedirect);
+        Assert.False(handler.UseProxy);
         Assert.NotNull(handler.ConnectCallback);
     }
 }

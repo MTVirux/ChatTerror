@@ -19,6 +19,7 @@ public static class PushEndpointGuard
         (IPAddress.Parse("::"), 128),
         (IPAddress.Parse("::1"), 128),
         (IPAddress.Parse("64:ff9b::"), 96),
+        (IPAddress.Parse("2001::"), 32),
         (IPAddress.Parse("2002::"), 16),
         (IPAddress.Parse("fc00::"), 7),
         (IPAddress.Parse("fe80::"), 10),

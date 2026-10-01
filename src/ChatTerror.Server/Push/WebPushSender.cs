@@ -22,6 +22,7 @@ public sealed class WebPushSender : IPushSender, IDisposable
     internal static SocketsHttpHandler CreateHandler() => new()
     {
         AllowAutoRedirect = false,
+        UseProxy = false,
         ConnectCallback = ConnectToPublicAddressAsync,
     };
 
