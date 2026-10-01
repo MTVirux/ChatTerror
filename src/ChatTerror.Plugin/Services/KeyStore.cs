@@ -10,13 +10,23 @@ public sealed class KeyStore : IDisposable
 {
     public KeyStore(string configDirectory, IPluginLog log)
     {
-        var path = Path.Combine(configDirectory, "identity.key");
-        var key = File.Exists(path) ? Load(path, log) : null;
+        // A plaintext key next to an encrypted one means a migration was interrupted or an older version ran since,
+        // either way it is the current key.
+        var plain = Path.Combine(configDirectory, IdentityKeyFile.PlainName);
+        var encrypted = Path.Combine(configDirectory, IdentityKeyFile.ProtectedName);
+        var key = Load(plain, false, log) ?? Load(encrypted, true, log);
         if (key == null)
         {
-            Directory.CreateDirectory(configDirectory);
             key = P256.Generate();
-            Write(path, P256.ExportPrivate(key));
+            Save(configDirectory, key, log);
+            if (Replaced)
+                log.Error("Generated a new identity key, paired devices have to be paired again.");
+        }
+        else
+        {
+            Replaced = false;
+            if (File.Exists(plain))
+                Save(configDirectory, key, log);
         }
 
         Key = key;
@@ -35,12 +45,18 @@ public sealed class KeyStore : IDisposable
 
     public void Dispose() => Key.Dispose();
 
-    private ECDiffieHellman? Load(string path, IPluginLog log)
+    private ECDiffieHellman? Load(string path, bool encrypted, IPluginLog log)
     {
+        if (!File.Exists(path))
+            return null;
+
+        var name = Path.GetFileName(path);
         ECDiffieHellman? key = null;
         try
         {
-            key = P256.ImportPrivate(File.ReadAllBytes(path));
+            var der = IdentityKeyFile.Read(path, encrypted)
+                ?? throw new CryptographicException("It could not be decrypted, it may belong to another Windows user or machine.");
+            key = P256.ImportPrivate(der);
             if (key.KeySize != 256)
                 throw new CryptographicException("Not a P-256 key.");
             return key;
@@ -48,25 +64,23 @@ public sealed class KeyStore : IDisposable
         catch (CryptographicException ex)
         {
             key?.Dispose();
-            var backup = $"{path}.bad-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
             try
             {
-                File.Move(path, backup, true);
-                log.Error(ex, $"identity.key is unreadable, moved it to {Path.GetFileName(backup)} and generated a new key.");
+                var backup = IdentityKeyFile.MoveToBackup(path);
+                log.Error(ex, $"{name} is unreadable, moved it to {Path.GetFileName(backup)}.");
             }
             catch (Exception moveError) when (moveError is IOException or UnauthorizedAccessException)
             {
-                log.Error(ex, $"identity.key is unreadable and could not be backed up ({moveError.Message}), overwriting it with a new key.");
+                log.Error(ex, $"{name} is unreadable and could not be backed up ({moveError.Message}).");
             }
             Replaced = true;
             return null;
         }
     }
 
-    private static void Write(string path, byte[] data)
+    private static void Save(string configDirectory, ECDiffieHellman key, IPluginLog log)
     {
-        var temp = path + ".tmp";
-        File.WriteAllBytes(temp, data);
-        File.Move(temp, path, true);
+        if (!IdentityKeyFile.Save(configDirectory, P256.ExportPrivate(key)))
+            log.Warning("Windows data protection is unavailable, the identity key is stored unencrypted.");
     }
 }
