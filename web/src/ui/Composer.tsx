@@ -11,9 +11,16 @@ function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current: ChatCh
   return sendChannels.find((c) => c !== "tell") ?? sendChannels[0];
 }
 
-export function Composer({ state, tab, onSend }: {
+export interface AccountPicker {
+  options: { deviceId: string; label: string; online: boolean }[];
+  value: string;
+  onChange: (deviceId: string) => void;
+}
+
+export function Composer({ state, tab, account, onSend }: {
   state: SessionState;
   tab: Tab;
+  account?: AccountPicker;
   onSend: (channel: ChatChannel, text: string, target?: string) => void;
 }) {
   const [channel, setChannel] = useState<ChatChannel | undefined>(() => preferredChannel(tab, state.sendChannels, undefined));
@@ -75,6 +82,11 @@ export function Composer({ state, tab, onSend }: {
     <form class={`composer${blocked ? " blocked" : ""}`} style={{ "--c": color }} onSubmit={submit}>
       {blocked && <p class="composer-reason">{blocked}</p>}
       <div class="composer-meta">
+        {account && (
+          <select class="account-select" aria-label="Send as" value={account.value} onChange={(e) => account.onChange(e.currentTarget.value)}>
+            {account.options.map((o) => <option value={o.deviceId}>{o.online ? o.label : `${o.label} (offline)`}</option>)}
+          </select>
+        )}
         {fixedTarget ? (
           <span class="to-fixed"><span class="chip">Tell</span> to {fixedTarget}</span>
         ) : (

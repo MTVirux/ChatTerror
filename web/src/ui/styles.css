@@ -682,6 +682,21 @@ p {
   background: color-mix(in srgb, var(--c) 15%, transparent);
 }
 
+.acct {
+  flex: none;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 15%, transparent);
+}
+
 .sender {
   min-width: 0;
   overflow: hidden;
@@ -772,7 +787,8 @@ p {
   min-width: 0;
 }
 
-.channel-select {
+.channel-select,
+.account-select {
   min-height: 32px;
   padding: 0 8px;
   border: 1px solid var(--c);
@@ -783,7 +799,14 @@ p {
   font-size: 0.85rem;
 }
 
-.channel-select option {
+.account-select {
+  min-width: 0;
+  max-width: 40%;
+  text-overflow: ellipsis;
+}
+
+.channel-select option,
+.account-select option {
   color: var(--text);
   background: var(--surface);
 }

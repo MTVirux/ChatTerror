@@ -1,6 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
-import type { Session } from "../core/session";
 import { AccountStrip } from "./AccountStrip";
 import { ChatView } from "./ChatView";
 import { PairScreen } from "./PairScreen";
@@ -24,20 +23,6 @@ function storeTab(selection: Selection) {
   } catch {
     // Private mode or blocked storage; the tab is just not remembered.
   }
-}
-
-// Cache limit and unpair go through the manager so the registry stays in sync.
-// Cached so ChatView gets a stable session and doesn't reload its history.
-const managedSessions = new WeakMap<Session, Session>();
-
-function managedSession(manager: AccountManager, deviceId: string): Session {
-  const raw = manager.session(deviceId)!;
-  let session = managedSessions.get(raw);
-  if (!session) {
-    session = { ...raw, setCacheLimit: (n) => manager.setCacheLimit(n), unpair: () => manager.remove(deviceId) };
-    managedSessions.set(raw, session);
-  }
-  return session;
 }
 
 function useAccounts(manager: AccountManager): AccountView[] {
@@ -77,6 +62,19 @@ export function App({ manager }: { manager: AccountManager }) {
     setSelected(deviceId);
   }
 
+  function renderChat(accountId: string | null) {
+    return (
+      <ChatView
+        key={accountId ?? "all"}
+        manager={manager}
+        accounts={accounts}
+        accountId={accountId}
+        onUnpaired={(id) => void manager.remove(id)}
+        onAddAccount={() => setSelected("add")}
+      />
+    );
+  }
+
   function renderAccount(account: AccountView) {
     if (account.status === "revoked") {
       return <RevokedNotice label={account.label} onRemove={() => manager.remove(account.deviceId)} onPairAgain={() => setSelected("add")} />;
@@ -84,15 +82,7 @@ export function App({ manager }: { manager: AccountManager }) {
     if (account.state.status === "pending") {
       return <PendingScreen state={account.state} onCancel={() => manager.remove(account.deviceId)} />;
     }
-    return (
-      <ChatView
-        key={account.deviceId}
-        session={managedSession(manager, account.deviceId)}
-        state={account.state}
-        onUnpaired={() => void manager.remove(account.deviceId)}
-        onAddAccount={() => setSelected("add")}
-      />
-    );
+    return renderChat(account.deviceId);
   }
 
   if (accounts.length === 0) return <PairScreen onPair={pair} />;
@@ -103,8 +93,7 @@ export function App({ manager }: { manager: AccountManager }) {
       {current === "add" ? (
         <PairScreen onPair={pair} onBack={() => setSelected(accounts[0].deviceId)} />
       ) : current === "all" ? (
-        // No merged feed yet, so All shows the first account.
-        renderAccount(accounts[0])
+        renderChat(null)
       ) : (
         renderAccount(accounts.find((a) => a.deviceId === current)!)
       )}
