@@ -36,7 +36,12 @@ function merge(existing: ChatItem[], incoming: ChatItem[]): ChatItem[] {
   return out.length > MAX_IN_MEMORY ? out.slice(-MAX_IN_MEMORY) : out;
 }
 
-export function ChatView({ session, state, onUnpaired }: { session: Session; state: SessionState; onUnpaired: () => void }) {
+export function ChatView({ session, state, onUnpaired, onAddAccount }: {
+  session: Session;
+  state: SessionState;
+  onUnpaired: () => void;
+  onAddAccount?: () => void;
+}) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [tab, setTab] = useState<Tab>({ kind: "all" });
   const [unread, setUnread] = useState<Record<string, number>>({});
@@ -175,6 +180,7 @@ export function ChatView({ session, state, onUnpaired }: { session: Session; sta
             setEpoch((e) => e + 1);
           }}
           onUnpaired={onUnpaired}
+          onAddAccount={onAddAccount}
         />
       )}
     </div>

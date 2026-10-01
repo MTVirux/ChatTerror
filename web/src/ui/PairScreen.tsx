@@ -27,10 +27,10 @@ function pairErrorText(error: unknown): string {
     return "That device name can't be used. Try a shorter, plain name.";
   }
   if (code === "alreadyPaired") {
-    return "This phone is already paired with that plugin.";
+    return "This phone is already paired with that game client.";
   }
   if (code === "tooManyDevices" || status === 409) {
-    return "This character already has 10 paired devices. Remove one in the plugin, then try again.";
+    return "This game client already has 10 paired devices. Remove one in the plugin, then try again.";
   }
   if (code === "rateLimited" || status === 429) {
     return "Too many attempts. Wait a minute, then try again.";
@@ -41,7 +41,11 @@ function pairErrorText(error: unknown): string {
   return "Pairing failed. Make a new code in the plugin and try again.";
 }
 
-export function PairScreen({ revoked, onPair }: { revoked: boolean; onPair: (code: string, deviceName: string) => Promise<unknown> }) {
+export function PairScreen({ revoked, onPair, onBack }: {
+  revoked?: boolean;
+  onPair: (code: string, deviceName: string) => Promise<unknown>;
+  onBack?: () => void;
+}) {
   const [code, setCode] = useState("");
   const [name, setName] = useState(defaultDeviceName);
   const [error, setError] = useState("");
@@ -87,6 +91,8 @@ export function PairScreen({ revoked, onPair }: { revoked: boolean; onPair: (cod
 
   return (
     <main class="screen pair">
+      {onBack && <button class="btn ghost back" onClick={onBack}>Back</button>}
+
       <header class="brand">
         <h1 class="wordmark">ChatTerror</h1>
         <p class="lede">Your FFXIV chat on your phone, end-to-end encrypted.</p>
@@ -133,7 +139,7 @@ export function PairScreen({ revoked, onPair }: { revoked: boolean; onPair: (cod
         {error && <p class="error" role="alert">{error}</p>}
 
         <button type="submit" class="btn primary wide" disabled={busy}>
-          {busy ? "Pairing..." : revoked ? "Pair again" : "Pair this device"}
+          {busy ? "Pairing..." : onBack ? "Add account" : revoked ? "Pair again" : "Pair this device"}
         </button>
       </form>
     </main>

@@ -1,16 +1,16 @@
 import { useState } from "preact/hooks";
-import type { Session, SessionState } from "../core/session";
+import type { SessionState } from "../core/session";
 
-export function PendingScreen({ session, state, onCancelled }: { session: Session; state: SessionState; onCancelled: () => void }) {
+export function PendingScreen({ state, onCancel }: { state: SessionState; onCancel: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const groups = (state.fingerprint ?? "--- ---").split(" ");
 
   async function cancel() {
     setBusy(true);
     try {
-      await session.unpair();
+      await onCancel();
     } finally {
-      onCancelled();
+      setBusy(false);
     }
   }
 

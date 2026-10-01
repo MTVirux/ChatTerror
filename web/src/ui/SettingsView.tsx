@@ -10,12 +10,13 @@ function needsHomeScreen(): boolean {
   return isIos() && (navigator as Navigator & { standalone?: boolean }).standalone === false;
 }
 
-export function SettingsView({ session, state, onClose, onCacheCleared, onUnpaired }: {
+export function SettingsView({ session, state, onClose, onCacheCleared, onUnpaired, onAddAccount }: {
   session: Session;
   state: SessionState;
   onClose: () => void;
   onCacheCleared: () => void;
   onUnpaired: () => void;
+  onAddAccount?: () => void;
 }) {
   const [theme, setTheme] = useState<ThemeChoice>(loadTheme);
   const [pushBusy, setPushBusy] = useState(false);
@@ -176,6 +177,7 @@ export function SettingsView({ session, state, onClose, onCacheCleared, onUnpair
             <h3>This device</h3>
             {state.character && <p class="kv"><span>Character</span><span>{state.character}</span></p>}
             {state.fingerprint && <p class="kv"><span>Security number</span><span class="mono">{state.fingerprint}</span></p>}
+            {onAddAccount && <button class="btn secondary" onClick={onAddAccount}>Add account</button>}
             {confirm === "unpair" ? (
               <div class="confirm">
                 <span>Unpair this device? Stored messages are deleted and you'll need a new code to pair again.</span>

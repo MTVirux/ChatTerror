@@ -258,6 +258,10 @@ p {
   background: linear-gradient(90deg, var(--ch-tell) 0 20%, var(--ch-party) 20% 40%, var(--ch-freeCompany) 40% 60%, var(--ch-ls) 60% 80%, var(--ch-shout) 80%);
 }
 
+.btn.back {
+  align-self: flex-start;
+}
+
 .lede {
   color: var(--muted);
   font-size: 1.05rem;
@@ -401,6 +405,76 @@ p {
   font-size: 1.15rem;
   font-weight: 600;
   max-width: 30ch;
+}
+
+/* App shell and account strip */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app > .chat,
+.app > .screen {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.app > .screen {
+  overflow-y: auto;
+}
+
+.accounts {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: calc(6px + var(--safe-top)) 16px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.accounts::-webkit-scrollbar {
+  display: none;
+}
+
+/* The strip already clears the notch. */
+.accounts + .chat .topbar {
+  padding-top: 8px;
+}
+
+.account-tab {
+  --c: var(--accent);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.account-tab.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.account-tab.muted {
+  opacity: 0.55;
+}
+
+.account-tab.add {
+  font-size: 1.1rem;
 }
 
 /* Chat */
