@@ -125,7 +125,7 @@ public class LifecycleTests
         var device = await app.PairDeviceAsync(install, plugin);
         await app.Client(device.DeviceToken).PutAsJsonAsync("/api/devices/me/push",
             new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p", auth = "a" } });
-        var wrapper = "{\"p\":\"\"}".Length;
+        var wrapper = $"{{\"p\":\"\",\"d\":\"{device.DeviceId}\"}}".Length;
 
         Assert.Equal(3993, RelaySocketHandler.MaxPushBodyBytes);
         await plugin.SendAsync(new SendFrame(device.DeviceId, new string('a', 3994 - wrapper), Notify: true));

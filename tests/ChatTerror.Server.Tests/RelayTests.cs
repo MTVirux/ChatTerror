@@ -125,7 +125,7 @@ public class RelayTests
         Assert.Equal("https://1.1.1.1/sub", subscription.Endpoint);
         Assert.Equal("p256", subscription.P256dh);
         Assert.Equal("secret", subscription.Auth);
-        Assert.Equal("{\"p\":\"cipher\"}", body);
+        Assert.Equal($"{{\"p\":\"cipher\",\"d\":\"{device.DeviceId}\"}}", body);
     }
 
     [Fact]
