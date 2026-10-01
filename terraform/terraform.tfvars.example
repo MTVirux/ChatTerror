@@ -3,6 +3,7 @@
 # Tokens do NOT live in this file. Export them from a gitignored .envrc:
 #   TF_VAR_hcloud_token - project the server goes in
 #   TF_VAR_dns_token    - project holding the DNS zone, if different
+#   TF_VAR_github_token - read-only PAT, if the repo is private
 
 # --- required ---
 

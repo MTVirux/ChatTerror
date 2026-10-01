@@ -74,9 +74,16 @@ variable "data_volume_size" {
 }
 
 variable "repo_url" {
-  description = "Public ChatTerror repo URL cloud-init clones from."
+  description = "HTTPS URL of the ChatTerror repo cloud-init clones from."
   type        = string
   default     = "https://github.com/MTVirux/ChatTerror.git"
+}
+
+variable "github_token" {
+  description = "Read-only fine-grained GitHub PAT (Contents: read on this repo) for cloning a private repo. Empty for a public one. Set via TF_VAR_github_token."
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "repo_ref" {

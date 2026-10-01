@@ -20,6 +20,9 @@ provider "hcloud" {
 
 locals {
   fqdn = var.subdomain == "@" ? var.domain : "${var.subdomain}.${var.domain}"
+
+  # The token stays in the clone's remote so deploy.sh can fetch later.
+  clone_url = var.github_token == "" ? var.repo_url : replace(var.repo_url, "https://", "https://x-access-token:${var.github_token}@")
 }
 
 resource "hcloud_ssh_key" "operator" {
@@ -73,7 +76,7 @@ resource "hcloud_server" "relay" {
     fqdn        = local.fqdn
     acme_email  = var.acme_email
     data_device = "/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.data.id}"
-    repo_url    = var.repo_url
+    repo_url    = local.clone_url
     repo_ref    = var.repo_ref
   })
 
