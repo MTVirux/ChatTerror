@@ -18,7 +18,8 @@ public sealed class RelaySocketHandler(
     ILogger<RelaySocketHandler> log)
 {
     public const int PreAuthMaxBytes = 4096;
-    public const int MaxPushBodyBytes = 4096;
+    // Push services cap the encrypted record at 4096 bytes, which leaves 3993 for the body.
+    public const int MaxPushBodyBytes = 3993;
 
     private readonly PushLimiter pushLimiter = new(options.Value.MaxConcurrentPushes, options.Value.MaxPushesPerInstall);
 
@@ -185,6 +186,7 @@ public sealed class RelaySocketHandler(
             conn.InstallId = install.Id;
             conn.Send(new AuthOkFrame(conn.Role, conn.Id));
             registry.Add(conn);
+            store.TouchInstall(install.Id);
             OnPluginConnected(conn);
         }
         else if (store.FindDeviceByToken(token) is { } device)
@@ -230,6 +232,7 @@ public sealed class RelaySocketHandler(
     {
         if (conn.Role == RelayRoles.Plugin)
         {
+            store.TouchInstall(conn.InstallId);
             foreach (var device in registry.DevicesOf(conn.InstallId))
                 device.Send(new PluginStatusFrame(false));
             return;

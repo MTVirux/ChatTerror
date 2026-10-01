@@ -59,17 +59,17 @@ public static class DeviceEndpoints
             return Results.NoContent();
         });
 
-        app.MapPut("/api/devices/me/push", (PushRequest? body, HttpContext context, RelayStore store) =>
+        app.MapPut("/api/devices/me/push", async (PushRequest? body, HttpContext context, RelayStore store) =>
         {
             if (AuthHelpers.Device(context, store) is not { } device)
                 return AuthHelpers.Unauthorized();
 
-            var isHttps = Uri.TryCreate(body?.Endpoint, UriKind.Absolute, out var endpoint) && endpoint.Scheme == Uri.UriSchemeHttps;
-            if (!isHttps || body!.Endpoint!.Length > MaxEndpointLength
-                || body.Keys is not { P256dh: { Length: > 0 and <= MaxKeyLength } p256dh, Auth: { Length: > 0 and <= MaxKeyLength } auth })
+            if (body is not { Endpoint: { Length: <= MaxEndpointLength } url, Keys: { P256dh: { Length: > 0 and <= MaxKeyLength } p256dh, Auth: { Length: > 0 and <= MaxKeyLength } auth } }
+                || !Uri.TryCreate(url, UriKind.Absolute, out var endpoint)
+                || !await PushEndpointGuard.IsAllowedAsync(endpoint, context.RequestAborted))
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidSubscription");
 
-            store.SetPush(device.Id, new PushSubscriptionRecord(body.Endpoint, p256dh, auth));
+            store.SetPush(device.Id, new PushSubscriptionRecord(url, p256dh, auth));
             return Results.NoContent();
         });
 

@@ -19,10 +19,12 @@ public static class PairingEndpoints
 
     public static void MapPairingEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/pairings", (HttpContext context, RelayStore store) =>
+        app.MapPost("/api/pairings", (HttpContext context, RelayStore store, PairingLimiter limiter) =>
         {
             if (AuthHelpers.Install(context, store) is not { } install)
                 return AuthHelpers.Unauthorized();
+            if (!limiter.TryAcquire(install.Id))
+                return AuthHelpers.Error(StatusCodes.Status429TooManyRequests, "rateLimited");
 
             var (code, expiresAt) = store.CreatePairing(install.Id);
             return Results.Ok(new CreatePairingResponse(code, expiresAt));

@@ -189,12 +189,12 @@ public class RestTests
         var client = app.Client(device.DeviceToken);
         var store = app.Services.GetRequiredService<ChatTerror.Server.Data.RelayStore>();
 
-        var badPut = await client.PutAsJsonAsync("/api/devices/me/push", new { endpoint = "http://push.example/x", keys = new { p256dh = "a", auth = "b" } });
-        var put = await client.PutAsJsonAsync("/api/devices/me/push", new { endpoint = "https://push.example/x", keys = new { p256dh = "a", auth = "b" } });
+        var badPut = await client.PutAsJsonAsync("/api/devices/me/push", new { endpoint = "http://1.1.1.1/x", keys = new { p256dh = "a", auth = "b" } });
+        var put = await client.PutAsJsonAsync("/api/devices/me/push", new { endpoint = "https://1.1.1.1/x", keys = new { p256dh = "a", auth = "b" } });
 
         Assert.Equal(HttpStatusCode.BadRequest, badPut.StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
-        Assert.Equal(new ChatTerror.Server.Push.PushSubscriptionRecord("https://push.example/x", "a", "b"), store.FindDevice(device.DeviceId)!.Push);
+        Assert.Equal(new ChatTerror.Server.Push.PushSubscriptionRecord("https://1.1.1.1/x", "a", "b"), store.FindDevice(device.DeviceId)!.Push);
 
         var delete = await client.DeleteAsync("/api/devices/me/push");
 

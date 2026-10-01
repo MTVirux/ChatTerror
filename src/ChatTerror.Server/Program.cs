@@ -25,6 +25,7 @@ builder.Services.AddSingleton<VapidKeys>();
 builder.Services.AddSingleton<IPushSender, WebPushSender>();
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<RelaySocketHandler>();
+builder.Services.AddSingleton<PairingLimiter>();
 builder.Services.AddSingleton<ExpiryService>();
 builder.Services.AddHostedService(services => services.GetRequiredService<ExpiryService>());
 builder.Services.AddCors();
@@ -76,7 +77,7 @@ app.UseStaticFiles(new StaticFileOptions
     ContentTypeProvider = contentTypes,
     OnPrepareResponse = file =>
     {
-        if (file.File.Name == "sw.js")
+        if (file.File.Name is "index.html" or "manifest.webmanifest" or "sw.js")
             file.Context.Response.Headers.CacheControl = "no-cache";
     },
 });

@@ -26,6 +26,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
     {
         ["Relay:PairingRequestsPerMinute"] = "1000",
         ["Relay:InstallsPerHour"] = "1000",
+        ["Relay:PairingsPerInstallPerHour"] = "1000",
     };
 
     public RelayApp(Dictionary<string, string>? overrides = null)

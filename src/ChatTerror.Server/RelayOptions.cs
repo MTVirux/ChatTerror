@@ -28,6 +28,11 @@ public sealed class RelayOptions
 
     public int InstallsPerHour { get; set; } = 5;
 
+    public int PairingsPerInstallPerHour { get; set; } = 10;
+
+    // Installs with no devices are deleted once they have not connected for this long.
+    public TimeSpan InstallTtl { get; set; } = TimeSpan.FromDays(30);
+
     public TimeSpan PendingDeviceTtl { get; set; } = TimeSpan.FromHours(1);
 
     public int MaxConcurrentPushes { get; set; } = 32;

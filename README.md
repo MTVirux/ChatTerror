@@ -79,7 +79,7 @@ With nginx, add `proxy_set_header Host $host;`, `proxy_set_header X-Forwarded-Fo
 
 ### Configuration
 
-All settings live under `Relay` in `appsettings.json` and can be set as environment variables with a `Relay__` prefix. Durations use `hh:mm:ss`.
+All settings live under `Relay` and default to the values below. Set them as environment variables with a `Relay__` prefix, or add a `Relay` section to `appsettings.json`. Durations use `hh:mm:ss`, or `d.hh:mm:ss` for days.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -95,6 +95,8 @@ All settings live under `Relay` in `appsettings.json` and can be set as environm
 | `Relay__PairingRequestsPerMinute` | `10` | Pairing lookups and claims per minute per IP. |
 | `Relay__InstallsPerHour` | `5` | Plugin registrations per hour per IP. |
 | `Relay__PendingDeviceTtl` | `01:00:00` | How long an unapproved device is kept. |
+| `Relay__PairingsPerInstallPerHour` | `10` | Pairing codes a plugin install can create per hour. Each new code replaces the previous one. |
+| `Relay__InstallTtl` | `30.00:00:00` | Plugin installs with no devices are deleted after not connecting for this long. |
 | `Relay__MaxConcurrentPushes` | `32` | Push requests in flight across the relay. |
 | `Relay__MaxPushesPerInstall` | `4` | Push requests in flight per plugin install. |
 | `Relay__PushTimeout` | `00:00:10` | Timeout for one push request. |

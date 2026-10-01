@@ -18,7 +18,9 @@ public sealed class VapidKeys
             return;
         }
 
-        var path = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(relay.DbPath))!, "vapid.json");
+        var directory = Path.GetDirectoryName(Path.GetFullPath(relay.DbPath))!;
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "vapid.json");
         if (File.Exists(path))
         {
             var stored = JsonSerializer.Deserialize<StoredKeys>(File.ReadAllText(path), JsonSerializerOptions.Web)!;

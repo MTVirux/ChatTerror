@@ -35,7 +35,8 @@ public sealed class RelayStore
             id TEXT PRIMARY KEY,
             token_hash BLOB NOT NULL,
             public_key TEXT NOT NULL,
-            created INTEGER NOT NULL);
+            created INTEGER NOT NULL,
+            last_seen INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS devices(
             id TEXT PRIMARY KEY,
             install_id TEXT NOT NULL,
@@ -53,6 +54,7 @@ public sealed class RelayStore
             code TEXT PRIMARY KEY,
             install_id TEXT NOT NULL,
             expires INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS pairings_install ON pairings(install_id);
         """;
 
     private const string DeviceColumns = "id, install_id, name, public_key, status, created, last_seen, push_endpoint, push_p256dh, push_auth";
@@ -60,17 +62,30 @@ public sealed class RelayStore
     private readonly string connectionString;
     private readonly TimeProvider time;
     private readonly TimeSpan pendingDeviceTtl;
+    private readonly TimeSpan installTtl;
     private readonly Lock claimLock = new();
 
     public RelayStore(IOptions<RelayOptions> options, TimeProvider time)
     {
         this.time = time;
         pendingDeviceTtl = options.Value.PendingDeviceTtl;
+        installTtl = options.Value.InstallTtl;
 
         var path = Path.GetFullPath(options.Value.DbPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         connectionString = new SqliteConnectionStringBuilder { DataSource = path, Pooling = true }.ToString();
         Execute(Schema);
+        AddInstallLastSeen();
+    }
+
+    // Databases created before installs tracked last_seen.
+    private void AddInstallLastSeen()
+    {
+        var columns = Query("PRAGMA table_info(installs)", reader => reader.GetString(1));
+        if (columns.Contains("last_seen"))
+            return;
+        Execute("ALTER TABLE installs ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0");
+        Execute("UPDATE installs SET last_seen = created");
     }
 
     private long Now => time.GetUtcNow().ToUnixTimeMilliseconds();
@@ -79,7 +94,7 @@ public sealed class RelayStore
     {
         var id = Tokens.NewId();
         var (token, hash) = Tokens.Create(Tokens.InstallPrefix, id);
-        Execute("INSERT INTO installs(id, token_hash, public_key, created) VALUES($id, $hash, $key, $now)",
+        Execute("INSERT INTO installs(id, token_hash, public_key, created, last_seen) VALUES($id, $hash, $key, $now, $now)",
             ("$id", id), ("$hash", hash), ("$key", publicKey), ("$now", Now));
         return (id, token);
     }
@@ -94,9 +109,14 @@ public sealed class RelayStore
         return found is { } install && Tokens.Matches(install.Hash, secret) ? new InstallRecord(id, install.PublicKey) : null;
     }
 
+    public void TouchInstall(string id) =>
+        Execute("UPDATE installs SET last_seen = $now WHERE id = $id", ("$id", id), ("$now", Now));
+
+    // Replaces any earlier code, so an install has at most one live code.
     public (string Code, long ExpiresAt) CreatePairing(string installId)
     {
         var expires = time.GetUtcNow().Add(Limits.PairingTtl).ToUnixTimeMilliseconds();
+        Execute("DELETE FROM pairings WHERE install_id = $install", ("$install", installId));
         while (true)
         {
             var code = PairingCodes.Generate();
@@ -208,6 +228,35 @@ public sealed class RelayStore
             .Where(device => Execute("DELETE FROM devices WHERE id = $id AND status = $pending",
                 ("$id", device.DeviceId), ("$pending", DeviceStatus.Pending)) == 1)
             .ToList();
+    }
+
+    // Deletes installs with no devices that have not connected within the TTL and are not connected now.
+    public int DeleteStaleInstalls(Func<string, bool> isConnected)
+    {
+        var cutoff = Now - (long)installTtl.TotalMilliseconds;
+        var candidates = Query("""
+            SELECT id FROM installs i
+            WHERE last_seen <= $cutoff AND NOT EXISTS(SELECT 1 FROM devices d WHERE d.install_id = i.id)
+            """,
+            reader => reader.GetString(0), ("$cutoff", cutoff));
+
+        var deleted = 0;
+        foreach (var id in candidates.Where(id => !isConnected(id)))
+        {
+            lock (claimLock)
+            {
+                var removed = Execute("""
+                    DELETE FROM installs
+                    WHERE id = $id AND last_seen <= $cutoff AND NOT EXISTS(SELECT 1 FROM devices WHERE install_id = $id)
+                    """,
+                    ("$id", id), ("$cutoff", cutoff));
+                if (removed == 0)
+                    continue;
+                Execute("DELETE FROM pairings WHERE install_id = $id", ("$id", id));
+                deleted++;
+            }
+        }
+        return deleted;
     }
 
     private static DeviceRecord ReadDevice(SqliteDataReader reader, int offset)
