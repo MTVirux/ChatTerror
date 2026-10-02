@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
 import { buildChannelTree, channelKey, type ChannelRef } from "./channels";
 import { ChannelList, HomeList } from "./ChannelList";
-import { ChatView } from "./ChatView";
+import { ChatPane } from "./ChatPane";
 import { Drawer } from "./Drawer";
 import { GearIcon, MenuIcon } from "./icons";
-import { initialNav, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
+import { initialNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type LastChannels, type Nav, type Server } from "./nav";
 import { PairScreen } from "./PairScreen";
 import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
@@ -16,10 +16,11 @@ import { createUnreadTracker, type UnreadTracker } from "./unread";
 import { useFeed } from "./useFeed";
 
 const NAV_KEY = "chatterror.nav";
+const LAST_KEY = "chatterror.lastChannels";
 
-function storedNav(): string | null {
+function stored(key: string): string | null {
   try {
-    return localStorage.getItem(NAV_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
@@ -30,6 +31,14 @@ function storeNav(nav: Nav) {
     if (nav.server !== "add") localStorage.setItem(NAV_KEY, serializeNav(nav));
   } catch {
     // Private mode or blocked storage; the place is just not remembered.
+  }
+}
+
+function storeLast(last: LastChannels) {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify(last));
+  } catch {
+    // Same as above.
   }
 }
 
@@ -66,8 +75,10 @@ export function App({ manager }: { manager: AccountManager }) {
   const [sends] = useState(() => createPendingSends(manager));
   const pending = usePendingSends(sends);
   const unread = useUnreadTracker(manager);
-  const [saved, setNav] = useState<Nav>(() => initialNav(manager.list(), location.hash, storedNav()));
+  const [last] = useState(() => ({ current: parseLastChannels(stored(LAST_KEY)) }));
+  const [saved, setNav] = useState<Nav>(() => initialNav(manager.list(), location.hash, stored(NAV_KEY), last.current));
   const nav = validNav(saved, accounts);
+  const go = (server: Server) => setNav(navTo(server, last.current));
   const [pairingAgain, setPairingAgain] = useState(false);
 
   useEffect(() => {
@@ -79,12 +90,19 @@ export function App({ manager }: { manager: AccountManager }) {
     if (nav.server !== "add") setPairingAgain(false);
   }, [manager, nav.server]);
 
-  useEffect(() => storeNav(nav), [nav.server, nav.channel]);
+  useEffect(() => {
+    storeNav(nav);
+    const next = rememberChannel(last.current, nav);
+    if (next !== last.current) {
+      last.current = next;
+      storeLast(next);
+    }
+  }, [nav.server, nav.channel]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === "openAccount" && typeof event.data.deviceId === "string") setNav({ server: event.data.deviceId, channel: null });
+      if (event.data?.type === "openAccount" && typeof event.data.deviceId === "string") go(event.data.deviceId);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
@@ -97,7 +115,7 @@ export function App({ manager }: { manager: AccountManager }) {
 
   if (accounts.length === 0) return <PairScreen onPair={pair} />;
   if (nav.server === "add") {
-    return <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => setNav({ server: accounts[0].deviceId, channel: null })} />;
+    return <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => go(accounts[0].deviceId)} />;
   }
 
   return (
@@ -106,6 +124,7 @@ export function App({ manager }: { manager: AccountManager }) {
       accounts={accounts}
       nav={nav}
       setNav={setNav}
+      go={go}
       sends={sends}
       pending={pending}
       unread={unread}
@@ -117,11 +136,12 @@ export function App({ manager }: { manager: AccountManager }) {
   );
 }
 
-function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onPairAgain }: {
+function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread, onPairAgain }: {
   manager: AccountManager;
   accounts: AccountView[];
   nav: Nav;
   setNav: (nav: Nav) => void;
+  go: (server: Server) => void;
   sends: PendingSends;
   pending: PendingSend[];
   unread: UnreadTracker;
@@ -132,7 +152,7 @@ function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onP
   const [epoch, setEpoch] = useState(0);
   const home = nav.server === "home";
   const account = home ? undefined : accounts.find((a) => a.deviceId === nav.server);
-  const items = useFeed(manager, home ? null : nav.server, epoch);
+  const { items, loaded } = useFeed(manager, home ? null : nav.server, epoch);
 
   const tree = useMemo(
     () => (account ? buildChannelTree(items, { character: account.character, relayChannels: account.state.relayChannels }) : []),
@@ -141,14 +161,23 @@ function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onP
   const channel = home ? null : resolveChannel(nav.channel, tree);
   const openKey = channel && channelKey(channel);
 
+  // Before history loads the channel can resolve to a fallback, which must not be cleared or pinned.
+  const shownKey = loaded ? openKey : null;
+  const unreadCount = useMemo(() => (home || !shownKey ? 0 : unread.count(nav.server, shownKey)), [home, nav.server, shownKey]);
+
   useEffect(() => {
-    unread.setOpen(home ? "home" : openKey ? { deviceId: nav.server, key: openKey } : null);
-  }, [unread, home, nav.server, openKey]);
+    unread.setOpen(home ? "home" : shownKey ? { deviceId: nav.server, key: shownKey } : null);
+  }, [unread, home, nav.server, shownKey]);
+
+  // Pin the resolved channel so new messages don't move the view.
+  useEffect(() => {
+    if (!home && shownKey && shownKey !== nav.channel) setNav({ server: nav.server, channel: shownKey });
+  }, [home, nav.server, shownKey, nav.channel]);
 
   useEffect(() => () => unread.setOpen(null), [unread]);
 
   function selectServer(server: Server) {
-    if (server !== nav.server) setNav({ server, channel: null });
+    if (server !== nav.server) go(server);
   }
 
   function openChannel(ref: ChannelRef) {
@@ -161,6 +190,8 @@ function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onP
     setSettings({ accountId });
   }
 
+  const chatPane = account?.status !== "revoked" && account?.state.status !== "pending";
+
   function chat() {
     if (account?.status === "revoked") {
       return <RevokedNotice label={account.label} onRemove={() => manager.remove(account.deviceId)} onPairAgain={onPairAgain} />;
@@ -169,16 +200,17 @@ function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onP
       return <PendingScreen state={account.state} onCancel={() => manager.remove(account.deviceId)} />;
     }
     return (
-      <ChatView
+      <ChatPane
         key={`${nav.server}-${epoch}`}
-        manager={manager}
         accounts={accounts}
-        accountId={home ? null : nav.server}
+        server={nav.server}
         channel={channel}
+        items={items}
+        unreadCount={unreadCount}
         sends={sends}
         pending={pending}
-        onOpenAccount={(deviceId) => setNav({ server: deviceId, channel: null })}
-        onAddAccount={() => setNav({ server: "add", channel: null })}
+        onMenu={() => setDrawerOpen(true)}
+        onOpenSettings={() => openSettings(home ? null : nav.server)}
       />
     );
   }
@@ -213,9 +245,11 @@ function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onP
 
   return (
     <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} drawer={drawer}>
-      <button class="icon-btn menu-btn" aria-label="Open navigation" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>
-        <MenuIcon />
-      </button>
+      {!chatPane && (
+        <button class="icon-btn menu-btn floating" aria-label="Open navigation" onClick={() => setDrawerOpen(true)}>
+          <MenuIcon />
+        </button>
+      )}
       {chat()}
       {settings && (
         <SettingsView
@@ -224,8 +258,8 @@ function Workspace({ manager, accounts, nav, setNav, sends, pending, unread, onP
           accountId={settings.accountId}
           onClose={() => setSettings(null)}
           onCacheCleared={() => setEpoch((e) => e + 1)}
-          onOpenAccount={(deviceId) => setNav({ server: deviceId, channel: null })}
-          onAddAccount={() => setNav({ server: "add", channel: null })}
+          onOpenAccount={go}
+          onAddAccount={() => go("add")}
         />
       )}
     </Drawer>
