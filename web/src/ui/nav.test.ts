@@ -46,24 +46,25 @@ describe("nav", () => {
 });
 
 describe("resolveChannel", () => {
-  const tree = [
-    { character: "Alpha Beta", active: true, chats: ["party", "say"], tells: [], lastTs: 0 },
-    { character: "Old Char", active: false, chats: [], tells: [{ partner: "Y'shtola Rhul@Twintania", ts: 1 }], lastTs: 1 },
-  ] as Category[];
+  const custom = { kind: "custom", character: "Alpha Beta", id: "a1" } as const;
+  const tell = { kind: "tell", character: "Old Char", partner: "Y'shtola Rhul@Twintania" } as const;
+  const tree: Category[] = [
+    { character: "Alpha Beta", active: true, refs: [custom], lastTs: 0 },
+    { character: "Old Char", active: false, refs: [tell], lastTs: 1 },
+  ];
 
   it("keeps a channel that exists", () => {
-    expect(resolveChannel("c|Alpha Beta|say", tree)).toEqual({ kind: "chat", character: "Alpha Beta", channel: "say" });
-    expect(resolveChannel("t|Old Char|Y'shtola Rhul@Twintania", tree)).toEqual({ kind: "tell", character: "Old Char", partner: "Y'shtola Rhul@Twintania" });
+    expect(resolveChannel("x|Alpha Beta|a1", tree)).toEqual(custom);
+    expect(resolveChannel("t|Old Char|Y'shtola Rhul@Twintania", tree)).toEqual(tell);
   });
   it("falls back to the first channel when the saved one is gone or missing", () => {
-    const first = { kind: "chat", character: "Alpha Beta", channel: "party" };
-    expect(resolveChannel(null, tree)).toEqual(first);
-    expect(resolveChannel("c|Gone Char|party", tree)).toEqual(first);
-    expect(resolveChannel("c|Old Char|party", tree)).toEqual(first);
-    expect(resolveChannel("nonsense", tree)).toEqual(first);
+    expect(resolveChannel(null, tree)).toEqual(custom);
+    expect(resolveChannel("x|Alpha Beta|gone", tree)).toEqual(custom);
+    expect(resolveChannel("c|Alpha Beta|party", tree)).toEqual(custom);
+    expect(resolveChannel("nonsense", tree)).toEqual(custom);
   });
   it("gives nothing for an empty tree", () => {
-    expect(resolveChannel("c|Alpha Beta|say", [])).toBeNull();
+    expect(resolveChannel("x|Alpha Beta|a1", [])).toBeNull();
   });
   it("opens a notification link on that account's last channel", () => {
     expect(initialNav([acct("a"), acct("b")], "#account=b", null, { b: "c|X|party" })).toEqual({ server: "b", channel: "c|X|party" });

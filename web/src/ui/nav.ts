@@ -1,5 +1,5 @@
 import type { AccountView } from "../core/accounts";
-import { firstChannel, parseChannelKey, type Category, type ChannelRef } from "./channels";
+import { channelKey, firstChannel, type Category, type ChannelRef } from "./channels";
 
 export type Server = "home" | "add" | string;
 
@@ -70,11 +70,9 @@ export function serializeNav(nav: Nav): string {
 }
 
 export function resolveChannel(key: string | null, tree: Category[]): ChannelRef | null {
-  const ref = key ? parseChannelKey(key) : null;
-  const category = ref && tree.find((c) => c.character === ref.character);
-  if (ref && category) {
-    const exists = ref.kind === "chat" ? category.chats.includes(ref.channel) : category.tells.some((t) => t.partner === ref.partner);
-    if (exists) return ref;
+  for (const category of tree) {
+    const ref = category.refs.find((r) => channelKey(r) === key);
+    if (ref) return ref;
   }
   return firstChannel(tree);
 }

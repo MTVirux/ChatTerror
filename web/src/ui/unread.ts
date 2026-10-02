@@ -1,15 +1,16 @@
 import type { AccountManager } from "../core/accounts";
-import { channelKey, itemChannelRef } from "./channels";
+import { itemKey } from "./channels";
 
 export interface UnreadSummary {
   unread: boolean;
   tells: number;
 }
 
-export type OpenChannel = { deviceId: string; key: string } | "home" | null;
+// includes tells which message keys the open channel shows.
+export type OpenChannel = { deviceId: string; includes: (key: string) => boolean } | "home" | null;
 
 export interface UnreadTracker {
-  count(deviceId: string, key: string): number;
+  count(deviceId: string, includes: (key: string) => boolean): number;
   summary(deviceId: string): UnreadSummary;
   total(deviceIds: string[]): UnreadSummary;
   setOpen(open: OpenChannel): void;
@@ -48,8 +49,8 @@ export function createUnreadTracker(
     let changed = false;
     for (const item of items) {
       if (item.outgoing) continue;
-      const key = channelKey(itemChannelRef(item));
-      if (open && open.deviceId === item.deviceId && open.key === key) continue;
+      const key = itemKey(item);
+      if (open && open.deviceId === item.deviceId && open.includes(key)) continue;
       const m = of(item.deviceId);
       m.set(key, (m.get(key) ?? 0) + 1);
       changed = true;
@@ -58,7 +59,11 @@ export function createUnreadTracker(
   });
 
   return {
-    count: (deviceId, key) => counts.get(deviceId)?.get(key) ?? 0,
+    count(deviceId, includes) {
+      let total = 0;
+      for (const [key, n] of counts.get(deviceId) ?? []) if (includes(key)) total += n;
+      return total;
+    },
     summary: summarize,
     total(deviceIds) {
       let unread = false;
@@ -72,10 +77,14 @@ export function createUnreadTracker(
     },
     setOpen(next) {
       open = next;
-      if (next && next !== "home" && (counts.get(next.deviceId)?.get(next.key) ?? 0) > 0) {
-        counts.get(next.deviceId)!.set(next.key, 0);
-        notify();
+      if (!next || next === "home") return;
+      let changed = false;
+      for (const [key, n] of counts.get(next.deviceId) ?? []) {
+        if (n <= 0 || !next.includes(key)) continue;
+        counts.get(next.deviceId)!.set(key, 0);
+        changed = true;
       }
+      if (changed) notify();
     },
     subscribe(cb) {
       listeners.add(cb);
