@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickable, preferredChannel, type Tab } from "./Composer";
+import { blockedReason, pickable, preferredChannel, type Tab } from "./Composer";
 
 describe("composer channel", () => {
   const tab: Tab = { kind: "custom", channels: ["freeCompany", "linkshell1", "tell"], latest: "linkshell1" };
@@ -16,5 +16,19 @@ describe("composer channel", () => {
   it("falls back to the first sendable chat channel", () => {
     expect(preferredChannel({ ...tab, latest: "party" }, ["tell", "freeCompany"], undefined)).toBe("freeCompany");
     expect(preferredChannel(tab, ["party"], undefined)).toBeUndefined();
+  });
+});
+
+describe("composer blocking", () => {
+  const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+
+  it("lets tells to ChatTerror friends through while the game is offline", () => {
+    expect(blockedReason("gameOffline", [contact], "tell", "Bob Smith@Lich")).toBeNull();
+  });
+
+  it("blocks everything else while the game is offline", () => {
+    expect(blockedReason("gameOffline", [contact], "tell", "Cid Garlond@Lich")).not.toBeNull();
+    expect(blockedReason("gameOffline", [contact], "party", undefined)).not.toBeNull();
+    expect(blockedReason("relayOffline", [contact], "tell", "Bob Smith@Lich")).not.toBeNull();
   });
 });

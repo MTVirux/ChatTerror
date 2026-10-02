@@ -23,6 +23,10 @@ export interface Meta {
   lastSettings: SettingsPayload | null;
   approved: boolean;
   pushEnabled: boolean;
+  // Key for relayed tells, separate from the pairing key whose private half is not kept.
+  tellKey: { privateKey: CryptoKey; publicKey: string } | null;
+  // Install key first seen for each friend's character hash.
+  tellPins: Record<string, string>;
 }
 
 export const DEFAULT_CACHE_LIMIT = 2000;
@@ -38,6 +42,8 @@ const META_DEFAULTS: Meta = {
   lastSettings: null,
   approved: false,
   pushEnabled: false,
+  tellKey: null,
+  tellPins: {},
 };
 
 const STORES = ["pairing", "messages", "meta"] as const;

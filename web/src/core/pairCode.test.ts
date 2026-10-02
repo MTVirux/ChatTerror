@@ -66,7 +66,7 @@ describe("pairDevice", () => {
       deleteDevice: fail,
       putPush: fail,
       deletePush: fail,
-      getVapid: fail,
+      getVapid: fail, getTellBundle: fail,
     };
 
     const result = await pairDevice(api, "abcd-efgh-2345-6789", "Phone");
@@ -85,7 +85,7 @@ describe("pairDevice", () => {
     const api: Api = {
       lookupPairing: () => Promise.resolve({ installId: "inst", pluginPublicKey }),
       claimPairing: () => { claimed = true; return fail(); },
-      getMe: fail, deleteDevice: fail, putPush: fail, deletePush: fail, getVapid: fail,
+      getMe: fail, deleteDevice: fail, putPush: fail, deletePush: fail, getVapid: fail, getTellBundle: fail,
     };
     await expect(pairDevice(api, "ABCD-EFGH-2345-6789", "Phone", [pluginPublicKey])).rejects.toMatchObject({ status: 409, code: "alreadyPaired" });
     expect(claimed).toBe(false);

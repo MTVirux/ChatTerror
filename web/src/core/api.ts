@@ -1,3 +1,4 @@
+import type { SignedBundle } from "./protocol";
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -20,6 +21,7 @@ export interface Api {
   putPush(token: string, subscription: PushSubscriptionBody): Promise<void>;
   deletePush(token: string): Promise<void>;
   getVapid(): Promise<{ publicKey: string }>;
+  getTellBundle(token: string, hash: string): Promise<SignedBundle>;
 }
 
 const FALLBACK_CODES: Record<number, string> = { 401: "unauthorized", 403: "forbidden", 404: "notFound", 409: "conflict", 429: "rateLimited" };
@@ -47,5 +49,6 @@ export function createApi(base = ""): Api {
     putPush: (token, subscription) => call("PUT", "/api/devices/me/push", token, subscription),
     deletePush: (token) => call("DELETE", "/api/devices/me/push", token),
     getVapid: () => call("GET", "/api/vapid"),
+    getTellBundle: (token, hash) => call("GET", `/api/tells/bundles/${encodeURIComponent(hash)}`, token),
   };
 }

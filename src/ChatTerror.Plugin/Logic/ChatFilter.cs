@@ -29,13 +29,15 @@ public static class ChatFilter
         return new FilterResult(true, notify, true);
     }
 
-    private static bool IsIgnored(IncomingChat chat, RelaySettings s)
+    private static bool IsIgnored(IncomingChat chat, RelaySettings s) => IsIgnored(chat.Sender, chat.SenderWorld, s);
+
+    public static bool IsIgnored(string sender, string? world, RelaySettings s)
     {
-        var withWorld = chat.SenderWorld is null ? null : $"{chat.Sender}@{chat.SenderWorld}";
+        var withWorld = world is null ? null : $"{sender}@{world}";
         foreach (var entry in s.IgnoredSenders)
         {
             var name = entry.Trim();
-            var target = name.Contains('@') ? withWorld : chat.Sender;
+            var target = name.Contains('@') ? withWorld : sender;
             if (target is not null && string.Equals(name, target, StringComparison.OrdinalIgnoreCase))
                 return true;
         }

@@ -1,0 +1,30 @@
+{
+  "recipient": {
+    "jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "IBPiFRtJqHMwdaniiBwflELsHM0QvxjMnjRB-vjNMR8",
+      "y": "MwPtVrreSSr4ckJSEPMVZTMaFScFuEVMKeqF_304dxQ",
+      "d": "01qtHguc5be1_t-6mEtag4QwSDzJzBJb5_y4DIJGJvA"
+    },
+    "publicRaw": "BCAT4hUbSahzMHWp4ogcH5RC7BzNEL8YzJ40Qfr4zTEfMwPtVrreSSr4ckJSEPMVZTMaFScFuEVMKeqF_304dxQ"
+  },
+  "ephemeral": {
+    "jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "bWRT9hlgL-2wov7TCRBqtSPXrszEBVwKs-8b72VVFk4",
+      "y": "nuWj8LKesv7HD34kZ7HiyNDO9tQ6CJfIyyYwjoMPcQM",
+      "d": "-d-lREUmBbZWjJFi3wHOOCGg22U_62rqEbavhYRDinU"
+    },
+    "publicRaw": "BG1kU_YZYC_tsKL-0wkQarUj167MxAVcCrPvG-9lVRZOnuWj8LKesv7HD34kZ7HiyNDO9tQ6CJfIyyYwjoMPcQM"
+  },
+  "hash": "Y1dnojx0cBfxn2dj0zNI64PxJdc910ShUnes1w5QG5I",
+  "nonce": "AAECAwQFBgcICQoL",
+  "plaintext": "{\"id\":\"0123456789abcdef0123456789abcdef\",\"fromHash\":\"LTMZPcnppBlyP2TWVHAt7yRIPaL4KghgEJ76XFFf1X8\",\"fromName\":\"Y'shtola Rhul\",\"fromWorld\":\"Twintania\",\"toHash\":\"wKjW6VUaqVlzzqNsY2TXM-fOHLfBAN-QxJuRNIisBJU\",\"toName\":\"Alpha Beta\",\"toWorld\":\"Lich\",\"text\":\"hello <3\",\"ts\":1700000000000}",
+  "envelope": "AgRtZFP2GWAv7bCi_tMJEGq1I9euzMQFXAqz7xvvZVUWTp7lo_CynrL-xw9-JGex4sjQzvbUOgiXyMsmMI6DD3EDAAECAwQFBgcICQoLpen3YqUuQvdJun1wvDO-hVKtQXcrNiLuB6DK0rx0kIOXpWxxGTcnQ7vZK7kNyZeG9ysxkSvLvvfy-5TTD5dMVKgZpIW87u9ATTUTxYgzaOlAY1jhxVzSsxtbywr7xroQIm9bWpVfKofFENmf3D4IoxsdpmdTsUOB5s82M3B_6MUfrEXamlB6wpuoJtsR88l9cNpNHZ3R35KS_hqLlDSwyUFbc2Gj1NaeIWQfLvZl2kUJsv9E3vjlWJawNGvc6LrKNaXI-hyzerA7kjdIcnphZ-wTJnfvkvX4vefIvdJ5WjrMvZdKFwZqYfY_7qHmoHqahLPEPm022z5DDpVOviCFRA7VB8NAS8vJA7nId1teJ2qrbN1Me9T4DcDqOiy4GuoLyXaCyNpkuRA",
+  "bundle": {
+    "bundle": "eyJpbnN0YWxsUHVibGljS2V5IjoiQkNBVDRoVWJTYWh6TUhXcDRvZ2NINVJDN0J6TkVMOFl6SjQwUWZyNHpURWZNd1B0VnJyZVNTcjRja0pTRVBNVlpUTWFGU2NGdUVWTUtlcUZfMzA0ZHhRIiwiZW50cmllcyI6W3sidGFyZ2V0IjoicGx1Z2luIiwia2V5IjoiQkNBVDRoVWJTYWh6TUhXcDRvZ2NINVJDN0J6TkVMOFl6SjQwUWZyNHpURWZNd1B0VnJyZVNTcjRja0pTRVBNVlpUTWFGU2NGdUVWTUtlcUZfMzA0ZHhRIiwicHVzaCI6ZmFsc2V9LHsidGFyZ2V0IjoiZGV2aWNlMSIsImtleSI6IkJDQVQ0aFViU2Foek1IV3A0b2djSDVSQzdCek5FTDhZeko0MFFmcjR6VEVmTXdQdFZycmVTU3I0Y2tKU0VQTVZaVE1hRlNjRnVFVk1LZXFGXzMwNGR4USIsInB1c2giOnRydWV9XSwiaXNzdWVkQXQiOjE3MDAwMDAwMDAwMDB9",
+    "signature": "RekLZ_r1Ln7sItB9j3sZniS9fuMAlfEY9_wUfvgjxyyTBZab86dDsYR0FHPyy31gFSNah-3ZIMyQeZPkCKYv9w"
+  }
+}

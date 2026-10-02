@@ -30,6 +30,8 @@ public sealed class RelayOptions
 
     public int PushSubscriptionsPerMinute { get; set; } = 10;
 
+    public int TellRequestsPerMinute { get; set; } = 60;
+
     // "*.example.com" matches any subdomain of example.com, but not example.com itself.
     public string PushServiceHosts { get; set; } = "fcm.googleapis.com,*.push.services.mozilla.com,*.push.apple.com,*.notify.windows.com";
 

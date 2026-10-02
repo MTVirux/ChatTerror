@@ -37,6 +37,7 @@ builder.Services.AddRateLimiter(limiter =>
     limiter.AddPolicy(RequestLimits.PairingPolicy, context => PerClient(context, relay => relay.PairingRequestsPerMinute, TimeSpan.FromMinutes(1)));
     limiter.AddPolicy(RequestLimits.InstallPolicy, context => PerClient(context, relay => relay.InstallsPerHour, TimeSpan.FromHours(1), RequestLimits.InstallPartitionKey));
     limiter.AddPolicy(RequestLimits.SocketPolicy, context => PerClient(context, relay => relay.SocketConnectsPerMinute, TimeSpan.FromMinutes(1)));
+    limiter.AddPolicy(RequestLimits.TellPolicy, context => PerClient(context, relay => relay.TellRequestsPerMinute, TimeSpan.FromMinutes(1)));
     limiter.AddPolicy(RequestLimits.PushPolicy, context => PerClient(context, relay => relay.PushSubscriptionsPerMinute, TimeSpan.FromMinutes(1)));
 });
 
@@ -94,6 +95,7 @@ app.UseRateLimiter();
 app.MapInstallEndpoints();
 app.MapPairingEndpoints();
 app.MapDeviceEndpoints();
+app.MapTellEndpoints();
 app.Map("/ws", (HttpContext context, RelaySocketHandler handler) => handler.HandleAsync(context)).RequireRateLimiting(RequestLimits.SocketPolicy);
 
 app.Run();

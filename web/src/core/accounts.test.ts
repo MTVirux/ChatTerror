@@ -34,7 +34,7 @@ function fakeDeps(api: Partial<Api> = {}) {
       deleteDevice: vi.fn(async () => {}),
       putPush: async () => {},
       deletePush: vi.fn(async () => {}),
-      getVapid: fail,
+      getVapid: fail, getTellBundle: fail,
       ...api,
     },
     connect: (token, h) => {

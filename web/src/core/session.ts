@@ -1,12 +1,13 @@
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaults, type ChannelPrefs } from "./channelPrefs";
-import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, openPayload, sealPayload } from "./crypto";
-import { isValidSettings, isValidTs, parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame } from "./protocol";
+import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, generateTellKey, openPayload, sealPayload, verifyBundle } from "./crypto";
+import { isValidSettings, isValidTs, parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
 import type { PushControl } from "./push";
 import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
 import { DEFAULT_CACHE_LIMIT, type AccountStore, type Pairing } from "./storage";
+import { buildCopies, findContact, openTellFrame, tellToItem } from "./tells";
 
 export type SessionStatus = "unpaired" | "pending" | "connecting" | "online" | "gameOffline" | "relayOffline" | "revoked";
 
@@ -17,6 +18,7 @@ export interface SessionState {
   relayChannels: ChatChannel[];
   sendChannels: ChatChannel[];
   maxLength: number;
+  contacts: TellContact[];
   mutedChannels: ChatChannel[];
   channelPrefs: ChannelPrefs;
   pushEnabled: boolean;
@@ -62,7 +64,7 @@ const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{16}$/;
 export const SEND_TIMEOUT_MS = 45_000;
 
 function emptyState(status: SessionStatus, cacheLimit = DEFAULT_CACHE_LIMIT): SessionState {
-  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], channelPrefs: EMPTY_CHANNEL_PREFS, pushEnabled: false, cacheLimit };
+  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, contacts: [], mutedChannels: [], channelPrefs: EMPTY_CHANNEL_PREFS, pushEnabled: false, cacheLimit };
 }
 
 export interface PairCode {
@@ -106,6 +108,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
   const stateListeners = new Set<(s: SessionState) => void>();
   const messageListeners = new Set<(items: ChatItem[]) => void>();
   const pendingSends = new Map<string, (result: SendResult) => void>();
+  const pendingTells = new Map<string, (result: SendResult) => void>();
   // Ids already handed to the UI. The service worker may have stored a message the open page never showed.
   const shownIds = new Set<string>();
 
@@ -148,7 +151,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     connection?.close();
     connection = null;
     authed = false;
-    for (const finish of [...pendingSends.values()]) finish({ ok: false, error: "offline" });
+    for (const finish of [...pendingSends.values(), ...pendingTells.values()]) finish({ ok: false, error: "offline" });
   }
 
   async function start() {
@@ -187,6 +190,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       relayChannels: settings?.relayChannels ?? [],
       sendChannels: settings?.sendChannels ?? [],
       maxLength: settings?.maxLength ?? DEFAULT_MAX_LENGTH,
+      contacts: settings?.contacts ?? [],
       mutedChannels: muted,
       channelPrefs: withDefaults(channelPrefs),
       pushEnabled: push,
@@ -233,6 +237,17 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     deferredTs = 0;
     await sendPayload({ type: "hello", sinceTs: syncTs });
     await sendPrefs();
+    await sendTellKey();
+  }
+
+  async function sendTellKey() {
+    let tellKey = await deps.store.getMeta("tellKey");
+    if (!tellKey) {
+      const pair = await generateTellKey();
+      tellKey = { privateKey: pair.privateKey, publicKey: encode(await exportPublicRaw(pair.publicKey)) };
+      await deps.store.setMeta("tellKey", tellKey);
+    }
+    await sendPayload({ type: "tellKey", publicKey: tellKey.publicKey });
   }
 
   function sendPrefs() {
@@ -289,6 +304,15 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       case "msg":
         await handleMsg(frame.payload);
         return;
+      case "tell": {
+        const item = pairing ? await openTellFrame(deps.store, frame.from, frame.id, frame.envelope, frame.fromKey) : null;
+        if (item) await receiveItems([item], false);
+        connection?.send({ t: "tellAck", ids: [frame.id] });
+        return;
+      }
+      case "tellResult":
+        pendingTells.get(frame.id)?.({ ok: frame.ok, ...(frame.error ? { error: frame.error } : {}) });
+        return;
     }
   }
 
@@ -336,9 +360,57 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
           relayChannels: payload.relayChannels,
           sendChannels: payload.sendChannels,
           maxLength: payload.maxLength,
+          contacts: payload.contacts ?? [],
         });
         return;
     }
+  }
+
+  async function sendRelayedTell(contact: TellContact, text: string): Promise<SendResult> {
+    if (!pairing) return { ok: false, error: "offline" };
+    const { token, deviceId, pluginPublicKey } = pairing;
+    const pins = await deps.store.getMeta("tellPins");
+    let recipient: TellBundle | null;
+    let own: TellBundle | null;
+    try {
+      const [theirs, mine] = await Promise.all([
+        deps.api.getTellBundle(token, contact.hash),
+        deps.api.getTellBundle(token, "self").catch(() => null),
+      ]);
+      // The plugin's pin wins, so forgetting a friend in the plugin also fixes the phones.
+      const expected = contact.key ?? pins[contact.hash];
+      recipient = await verifyBundle(theirs, expected);
+      if (!recipient) return { ok: false, error: expected && (await verifyBundle(theirs)) ? "keyChanged" : "notChatTerror" };
+      own = mine && (await verifyBundle(mine, pluginPublicKey));
+    } catch (error) {
+      return { ok: false, error: error instanceof ApiError && error.status === 404 ? "notChatTerror" : "offline" };
+    }
+    if (pins[contact.hash] !== recipient.installPublicKey) await deps.store.setMeta("tellPins", { ...pins, [contact.hash]: recipient.installPublicKey });
+
+    const body: TellBody = {
+      id: crypto.randomUUID().replace(/-/g, ""),
+      fromHash: contact.characterHash,
+      fromName: contact.character,
+      fromWorld: contact.characterWorld,
+      toHash: contact.hash,
+      toName: contact.name,
+      toWorld: contact.world,
+      text,
+      ts: Date.now(),
+    };
+    const copies = await buildCopies(body, recipient, own, deviceId);
+    return new Promise((resolve) => {
+      const finish = (result: SendResult) => {
+        clearTimeout(timer);
+        pendingTells.delete(body.id);
+        const item = result.ok ? tellToItem(body, body.fromHash, state.contacts) : null;
+        if (item) void receiveItems([item], false);
+        resolve(result);
+      };
+      const timer = setTimeout(() => finish({ ok: false, error: "timeout" }), sendTimeoutMs);
+      pendingTells.set(body.id, finish);
+      if (!connection?.send({ t: "tellSend", id: body.id, from: body.fromHash, to: body.toHash, copies })) finish({ ok: false, error: "offline" });
+    });
   }
 
   async function advanceSync(ts: number) {
@@ -384,7 +456,11 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
 
     send(channel, text, target) {
       if (!authed || !approved) return Promise.resolve({ ok: false, error: "offline" });
-      if (pluginOnline === false) return Promise.resolve({ ok: false, error: "gameOffline" });
+      if (pluginOnline === false) {
+        // Tells to ChatTerror friends still go out through the relay while the game is closed.
+        const contact = channel === "tell" && target ? findContact(state.contacts, target) : undefined;
+        return contact ? sendRelayedTell(contact, text) : Promise.resolve({ ok: false, error: "gameOffline" });
+      }
       const requestId = crypto.randomUUID();
       return new Promise((resolve) => {
         const finish = (result: SendResult) => {

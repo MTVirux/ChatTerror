@@ -67,6 +67,7 @@ export interface SettingsPayload {
   relayChannels: ChatChannel[];
   sendChannels: ChatChannel[];
   maxLength: number;
+  contacts?: TellContact[];
 }
 
 export interface HelloPayload { type: "hello"; seq: number; sinceTs: number }
@@ -75,7 +76,27 @@ export interface ChannelNotifyPref { character: string; channel: ChatChannel; pa
 export interface PrefsPayload { type: "prefs"; seq: number; mutedChannels: ChatChannel[]; channels: ChannelNotifyPref[] }
 
 export type PluginPayload = ChatPayload | BacklogPayload | SendResultPayload | SettingsPayload;
-export type DevicePayload = HelloPayload | SendChatPayload | PrefsPayload;
+export interface TellBody {
+  id: string;
+  fromHash: string;
+  fromName: string;
+  fromWorld: string;
+  toHash: string;
+  toName: string;
+  toWorld: string;
+  text: string;
+  ts: number;
+}
+export interface TellBundleEntry { target: string; key: string; push: boolean }
+export interface TellBundle { installPublicKey: string; entries: TellBundleEntry[]; issuedAt: number }
+export interface SignedBundle { bundle: string; signature: string }
+// A registered ChatTerror friend of one of the plugin's characters.
+// key is the friend's install key the plugin trusts.
+export interface TellContact { character: string; characterWorld: string; characterHash: string; name: string; world: string; hash: string; key?: string }
+export interface TellCopy { self: boolean; target: string; envelope: string }
+export interface TellKeyPayload { type: "tellKey"; seq: number; publicKey: string }
+
+export type DevicePayload = HelloPayload | SendChatPayload | PrefsPayload | TellKeyPayload;
 export type Payload = PluginPayload | DevicePayload;
 
 export interface AuthFrame { t: "auth"; token: string }
@@ -94,8 +115,13 @@ export interface RevokedFrame { t: "revoked" }
 export interface ErrorFrame { t: "error"; code: "rateLimited" | "tooLarge" | "unknownDevice" | "notApproved" | "badFrame" }
 
 // What a device sends and receives; plugin-only frames are listed for completeness.
-export type ClientFrame = AuthFrame | SendFrame;
-export type ServerFrame = AuthOkFrame | AuthFailFrame | MsgFrame | PluginStatusFrame | PairedFrame | RevokedFrame | ErrorFrame;
+export interface TellSendFrame { t: "tellSend"; id: string; from: string; to: string; copies: TellCopy[] }
+export interface TellAckFrame { t: "tellAck"; ids: string[] }
+export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string }
+export interface TellResultFrame { t: "tellResult"; id: string; ok: boolean; error?: string }
+
+export type ClientFrame = AuthFrame | SendFrame | TellSendFrame | TellAckFrame;
+export type ServerFrame = AuthOkFrame | AuthFailFrame | MsgFrame | PluginStatusFrame | PairedFrame | RevokedFrame | ErrorFrame | TellFrame | TellResultFrame;
 export type RelayFrame =
   | ClientFrame
   | ServerFrame
@@ -154,8 +180,32 @@ export function isValidSettings(value: unknown): value is Omit<SettingsPayload, 
     isChannelList(value.sendChannels) &&
     Number.isInteger(value.maxLength) &&
     (value.maxLength as number) >= 1 &&
-    (value.maxLength as number) <= MAX_SEND_LENGTH
+    (value.maxLength as number) <= MAX_SEND_LENGTH &&
+    (value.contacts === undefined || (Array.isArray(value.contacts) && value.contacts.every(isTellContact)))
   );
+}
+
+function hasStrings(value: unknown, keys: string[]): value is Record<string, unknown> {
+  return isObject(value) && keys.every((k) => typeof value[k] === "string");
+}
+
+function isTellContact(value: unknown): value is TellContact {
+  return hasStrings(value, ["character", "characterWorld", "characterHash", "name", "world", "hash"]) && (value.key === undefined || typeof value.key === "string");
+}
+
+export function isTellBundle(value: unknown): value is TellBundle {
+  return (
+    isObject(value) &&
+    typeof value.installPublicKey === "string" &&
+    typeof value.issuedAt === "number" &&
+    Array.isArray(value.entries) &&
+    value.entries.every((e) => hasStrings(e, ["target", "key"]) && typeof e.push === "boolean")
+  );
+}
+
+export function parseTellBody(value: unknown): TellBody | null {
+  const strings = ["id", "fromHash", "fromName", "fromWorld", "toHash", "toName", "toWorld", "text"];
+  return hasStrings(value, strings) && typeof value.ts === "number" ? (value as unknown as TellBody) : null;
 }
 
 export function parsePluginPayload(value: unknown): PluginPayload | null {
@@ -180,7 +230,7 @@ export function parsePluginPayload(value: unknown): PluginPayload | null {
   }
 }
 
-const SERVER_FRAME_TYPES = ["authOk", "authFail", "msg", "pluginStatus", "paired", "revoked", "error"];
+const SERVER_FRAME_TYPES = ["authOk", "authFail", "msg", "pluginStatus", "paired", "revoked", "error", "tell", "tellResult"];
 
 export function parseServerFrame(text: string): ServerFrame | null {
   try {
@@ -188,6 +238,8 @@ export function parseServerFrame(text: string): ServerFrame | null {
     if (!isObject(value) || !SERVER_FRAME_TYPES.includes(value.t as string)) return null;
     if (value.t === "msg" && typeof value.payload !== "string") return null;
     if (value.t === "pluginStatus" && typeof value.online !== "boolean") return null;
+    if (value.t === "tell" && !hasStrings(value, ["id", "from", "envelope", "fromKey"])) return null;
+    if (value.t === "tellResult" && (typeof value.id !== "string" || typeof value.ok !== "boolean")) return null;
     return value as unknown as ServerFrame;
   } catch {
     return null;

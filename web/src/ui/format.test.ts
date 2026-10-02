@@ -6,6 +6,12 @@ describe("sendErrorText", () => {
     expect(sendErrorText("gameOffline")).toBe("The game is offline");
   });
 
+  it("explains relayed tell failures", () => {
+    for (const code of ["notFriend", "notChatTerror", "notOwner", "keyChanged"]) {
+      expect(sendErrorText(code)).not.toBe("Message failed to send");
+    }
+  });
+
   it("falls back for unknown codes, including inherited object keys", () => {
     for (const code of ["nope", "constructor", "__proto__", "toString"]) {
       expect(sendErrorText(code)).toBe("Message failed to send");

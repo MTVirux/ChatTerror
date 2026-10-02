@@ -40,6 +40,10 @@ public sealed class ChatCapture : IDisposable
         if (ChannelMap.FromXivChatType(type) is not { } channel)
             return;
 
+        // Relayed tells are printed and published by TellRelay with their own id.
+        if (channel == ChatChannel.Tell && message.Message.TextValue.StartsWith(TellMarker.Prefix, StringComparison.Ordinal))
+            return;
+
         var me = playerState.IsLoaded ? playerState.CharacterName : null;
 
         // For outgoing tells the sender string holds the recipient, which is what the phone groups by.
