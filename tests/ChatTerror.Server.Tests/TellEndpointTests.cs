@@ -101,4 +101,48 @@ public class TellEndpointTests
         Assert.Equal(byHash, self);
         Assert.Equal(HttpStatusCode.NotFound, (await app.Client(device.DeviceToken).GetAsync($"/api/tells/bundles/{B}")).StatusCode);
     }
+
+    [Fact]
+    public async Task PutCharacter_CapsCharactersPerInstall()
+    {
+        using var app = new RelayApp();
+        var a = await app.RegisterInstallAsync();
+        for (var i = 0; i < Limits.MaxTellCharacters; i++)
+            await app.PutTellCharacterAsync(a.InstallToken, TellHash.Compute((ulong)i + 100));
+
+        var extra = await app.Client(a.InstallToken).PutAsJsonAsync($"/api/tells/characters/{TellHash.Compute(5000)}", new { friends = Array.Empty<string>() });
+
+        Assert.Equal(HttpStatusCode.Conflict, extra.StatusCode);
+        Assert.Empty(await app.PutTellCharacterAsync(a.InstallToken, TellHash.Compute(100)));
+    }
+
+    [Fact]
+    public async Task GetBundle_OnlyForFriendsOfTheCallersCharacters()
+    {
+        using var app = new RelayApp();
+        using var keyA = P256.Generate();
+        var a = await app.RegisterInstallAsync(keyA);
+        var b = await app.RegisterInstallAsync();
+        await app.PutTellCharacterAsync(a.InstallToken, A);
+        await app.PutTellBundleAsync(a.InstallToken, keyA);
+        await app.PutTellCharacterAsync(b.InstallToken, B);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+
+        await app.PutTellCharacterAsync(b.InstallToken, B, A);
+        Assert.Equal(HttpStatusCode.OK, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task TellEndpoints_AreRateLimited()
+    {
+        using var app = new RelayApp(new() { ["Relay:TellRequestsPerMinute"] = "2" });
+        var a = await app.RegisterInstallAsync();
+        var client = app.Client(a.InstallToken);
+
+        await client.GetAsync("/api/tells/bundles/self");
+        await client.GetAsync("/api/tells/bundles/self");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await client.GetAsync("/api/tells/bundles/self")).StatusCode);
+    }
 }

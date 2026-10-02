@@ -19,11 +19,13 @@ public static class TellEndpoints
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidHash");
             if (body?.Friends is not { Count: <= Limits.MaxFriends } friends || !friends.All(TellHash.IsValid))
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidFriends");
+            if (store.TellCharacterOwner(hash) != install.Id && store.CountTellCharacters(install.Id) >= Limits.MaxTellCharacters)
+                return AuthHelpers.Error(StatusCodes.Status409Conflict, "tooManyCharacters");
 
             var distinct = friends.Distinct().ToList();
             store.SetTellCharacter(install.Id, hash, distinct);
             return Results.Ok(new TellCharacterResponse(store.RegisteredTellCharacters(distinct)));
-        });
+        }).RequireRateLimiting(RequestLimits.TellPolicy);
 
         app.MapDelete("/api/tells/characters", (HttpContext context, RelayStore store) =>
         {
@@ -32,7 +34,7 @@ public static class TellEndpoints
 
             store.DeleteTellCharacters(install.Id);
             return Results.NoContent();
-        });
+        }).RequireRateLimiting(RequestLimits.TellPolicy);
 
         app.MapPut("/api/tells/bundle", (SignedTellBundle? body, HttpContext context, RelayStore store) =>
         {
@@ -43,7 +45,7 @@ public static class TellEndpoints
 
             store.SetTellBundle(install.Id, body);
             return Results.NoContent();
-        });
+        }).RequireRateLimiting(RequestLimits.TellPolicy);
 
         app.MapGet("/api/tells/bundles/{hash}", (string hash, HttpContext context, RelayStore store) =>
         {
@@ -51,11 +53,11 @@ public static class TellEndpoints
             if (callerInstall == null)
                 return AuthHelpers.Unauthorized();
 
-            var owner = hash == "self" ? callerInstall : store.TellCharacterOwner(hash);
+            var owner = hash == "self" ? callerInstall : store.CanSeeTellCharacter(callerInstall, hash) ? store.TellCharacterOwner(hash) : null;
             return owner != null && store.FindTellBundle(owner) is { } bundle
                 ? Results.Json(bundle, ProtocolJson.Options)
                 : AuthHelpers.Error(StatusCodes.Status404NotFound, TellErrors.NotChatTerror);
-        });
+        }).RequireRateLimiting(RequestLimits.TellPolicy);
     }
 
     private static bool HasOwnTargets(TellBundle bundle, string installId, RelayStore store)

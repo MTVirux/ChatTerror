@@ -35,6 +35,18 @@ public sealed partial class RelayStore
             """,
             ("$hash", hash), ("$install", installId), ("$friends", JsonSerializer.Serialize(friends)), ("$now", Now));
 
+    public int CountTellCharacters(string installId) =>
+        QuerySingle("SELECT COUNT(*) FROM tell_characters WHERE install_id = $install", reader => reader.GetInt32(0), ("$install", installId));
+
+    // Bundles are only handed out for the install's own characters and their friends, so the relay can't be used to probe content ids.
+    public bool CanSeeTellCharacter(string installId, string hash)
+    {
+        if (TellCharacterOwner(hash) == installId)
+            return true;
+        var lists = Query("SELECT friends FROM tell_characters WHERE install_id = $install", reader => reader.GetString(0), ("$install", installId));
+        return lists.Any(friends => (JsonSerializer.Deserialize<List<string>>(friends) ?? []).Contains(hash));
+    }
+
     public void DeleteTellCharacters(string installId) =>
         Execute("DELETE FROM tell_characters WHERE install_id = $install", ("$install", installId));
 

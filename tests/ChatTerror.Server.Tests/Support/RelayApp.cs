@@ -27,6 +27,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
     private readonly Dictionary<string, string> settings = new()
     {
         ["Relay:PairingRequestsPerMinute"] = "1000",
+        ["Relay:TellRequestsPerMinute"] = "1000",
         ["Relay:InstallsPerHour"] = "1000",
         ["Relay:PairingsPerInstallPerHour"] = "1000",
         ["Relay:MaxSocketsPerClient"] = "1000",

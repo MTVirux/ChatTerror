@@ -127,7 +127,11 @@ public sealed partial class RelaySocketHandler(
 
         if (!bucket.TryTake())
         {
-            conn.Send(new ErrorFrame(RelayErrors.RateLimited));
+            // Senders wait for a tellResult, so a dropped tell must still get one.
+            if (Parse(message) is TellSendFrame tell)
+                conn.Send(new TellResultFrame(tell.Id, false, TellErrors.RateLimited));
+            else
+                conn.Send(new ErrorFrame(RelayErrors.RateLimited));
         }
         else if (Parse(message) is not { } frame)
         {

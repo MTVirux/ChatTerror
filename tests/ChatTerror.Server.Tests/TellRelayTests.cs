@@ -130,4 +130,18 @@ public class TellRelayTests
         Assert.Contains("toPhoneB", body);
         Assert.DoesNotContain(await phoneASocket.BarrierAsync(), f => f is TellFrame);
     }
+
+    [Fact]
+    public async Task Tell_RateLimitedGetsATellResult()
+    {
+        using var app = new RelayApp(new() { ["Relay:FramesPerSecond"] = "0.001", ["Relay:FrameBurst"] = "1" });
+        var (a, _) = await FriendsAsync(app);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+
+        await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t2", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+
+        Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+        Assert.Equal(new TellResultFrame("t2", false, TellErrors.RateLimited), await pluginA.ReceiveAsync<TellResultFrame>());
+    }
 }

@@ -181,4 +181,5 @@ public static class TellErrors
     public const string NotFriend = "notFriend";
     public const string BadCopies = "badCopies";
     public const string KeyChanged = "keyChanged";
+    public const string RateLimited = "rateLimited";
 }

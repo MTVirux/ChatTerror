@@ -9,6 +9,7 @@ public static class Limits
     public const int DefaultHistory = 500;
     public const int MaxTellEnvelopeChars = 2048;
     public const int MaxFriends = 200;
+    public const int MaxTellCharacters = 40;
     public const int MaxQueuedTells = 200;
     public const long TellEchoTimeoutMs = 3000;
     public static readonly TimeSpan TellTtl = TimeSpan.FromDays(7);
