@@ -39,7 +39,23 @@ public sealed class StringListEditor(string id, string hint)
             }
 
             ImGui.SameLine();
-            ImGui.TextUnformatted(items[i]);
+            ImGui.SetNextItemWidth(250);
+            var item = items[i];
+            if (ImGui.InputText("##item", ref item, 64))
+                items[i] = item;
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                changed = true;
+                if (items[i].Trim() is { Length: > 0 } trimmed)
+                    items[i] = trimmed;
+                else
+                {
+                    items.RemoveAt(i);
+                    ImGui.PopID();
+                    break;
+                }
+            }
+
             ImGui.PopID();
         }
 
