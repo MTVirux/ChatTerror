@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
 import { AccountSettings } from "./AccountSettings";
 import { AppSettings } from "./AppSettings";
@@ -76,6 +76,8 @@ export function App({ manager }: { manager: AccountManager }) {
   const nav = validNav(saved, accounts);
   const go = (server: Server) => setNav(navTo(server, last.current));
   const [pairingAgain, setPairingAgain] = useState(false);
+  const [notified, setNotified] = useState(0);
+  const beforeAdd = useRef<Server | null>(null);
 
   useEffect(() => {
     if (location.hash.startsWith("#account=")) history.replaceState(null, "", location.pathname + location.search);
@@ -88,7 +90,9 @@ export function App({ manager }: { manager: AccountManager }) {
 
   useEffect(() => {
     manager.setViewing(nav.server === "add" ? null : nav.server === "home" ? "all" : nav.server);
-    if (nav.server !== "add") setPairingAgain(false);
+    if (nav.server === "add") return;
+    setPairingAgain(false);
+    beforeAdd.current = nav.server;
   }, [manager, nav.server]);
 
   useEffect(() => {
@@ -103,7 +107,9 @@ export function App({ manager }: { manager: AccountManager }) {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === "openAccount" && typeof event.data.deviceId === "string") go(event.data.deviceId);
+      if (event.data?.type !== "openAccount" || typeof event.data.deviceId !== "string") return;
+      go(event.data.deviceId);
+      setNotified((n) => n + 1);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
@@ -116,7 +122,7 @@ export function App({ manager }: { manager: AccountManager }) {
 
   if (accounts.length === 0) return <PairScreen onPair={pair} />;
   if (nav.server === "add") {
-    return <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => go(accounts[0].deviceId)} />;
+    return <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => go(beforeAdd.current ?? accounts[0].deviceId)} />;
   }
 
   return (
@@ -129,6 +135,7 @@ export function App({ manager }: { manager: AccountManager }) {
       sends={sends}
       pending={pending}
       unread={unread}
+      notified={notified}
       onPairAgain={() => {
         setPairingAgain(true);
         setNav({ server: "add", channel: null });
@@ -137,7 +144,7 @@ export function App({ manager }: { manager: AccountManager }) {
   );
 }
 
-function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread, onPairAgain }: {
+function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread, notified, onPairAgain }: {
   manager: AccountManager;
   accounts: AccountView[];
   nav: Nav;
@@ -146,6 +153,7 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
   sends: PendingSends;
   pending: PendingSend[];
   unread: UnreadTracker;
+  notified: number;
   onPairAgain: () => void;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -177,6 +185,12 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
 
   useEffect(() => () => unread.setOpen(null), [unread]);
 
+  // A notification tap lands in the chat, not behind a drawer or sheet.
+  useEffect(() => {
+    setDrawerOpen(false);
+    setSettings(null);
+  }, [notified]);
+
   function selectServer(server: Server) {
     if (server !== nav.server) go(server);
   }
@@ -184,6 +198,7 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
   function openChannel(ref: ChannelRef) {
     setNav({ server: nav.server, channel: channelKey(ref) });
     setDrawerOpen(false);
+    setSettings(null);
   }
 
   function openSettings(next: Settings) {
@@ -278,15 +293,18 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
     </div>
   );
 
+  // The sheet sits outside the drawer so its inert never covers it.
   return (
-    <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} drawer={drawer}>
-      {!chatPane && (
-        <button class="icon-btn menu-btn floating" aria-label="Open navigation" onClick={() => setDrawerOpen(true)}>
-          <MenuIcon />
-        </button>
-      )}
-      {chat()}
+    <>
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} swipe={!settings} drawer={drawer}>
+        {!chatPane && (
+          <button class="icon-btn menu-btn floating" aria-label="Open navigation" onClick={() => setDrawerOpen(true)}>
+            <MenuIcon />
+          </button>
+        )}
+        {chat()}
+      </Drawer>
       {settingsSheet()}
-    </Drawer>
+    </>
   );
 }
