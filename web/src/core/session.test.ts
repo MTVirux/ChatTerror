@@ -517,6 +517,22 @@ describe("relayed tells", () => {
     expect(relay.sent.some((f) => f.t === "tellSend")).toBe(false);
   });
 
+  it("follows the key the plugin trusts over its own old pin", async () => {
+    const { signed, installKey } = await signedBundle();
+    await store.setMeta("tellPins", { bob: "some-other-key" });
+    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: ["tell"], sendChannels: ["tell"], maxLength: 500, contacts: [{ ...contact, key: installKey }] });
+    const { session, relay } = await setup({ api: { getTellBundle: () => Promise.resolve(signed) } });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: false });
+    await vi.waitFor(() => expect(session.getState().status).toBe("gameOffline"));
+
+    const done = session.send("tell", "hi", "Bob Smith@Lich");
+    await vi.waitFor(() => expect(relay.sent.some((f) => f.t === "tellSend")).toBe(true));
+    const frame = relay.sent.find((f) => f.t === "tellSend") as TellSendFrame;
+    relay.deliver({ t: "tellResult", id: frame.id, ok: true });
+    expect(await done).toEqual({ ok: true });
+  });
+
   it("still reports gameOffline for players that are not ChatTerror friends", async () => {
     const { session } = await offlineSession({});
     expect(await session.send("tell", "hi", "Cid Garlond@Lich")).toEqual({ ok: false, error: "gameOffline" });

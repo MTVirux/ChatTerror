@@ -9,14 +9,16 @@ function same(a: string, b: string): boolean {
   return a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
 }
 
-// The sender's name comes from our own friend list, the sealed body could claim anything.
-export function tellToItem(body: TellBody, from: string, contacts: TellContact[]): ChatItem | null {
+// The sender's name comes from our own friend list, the sealed body could claim anything. The sender also sets ts,
+// which must not pass our clock or it would move the sync point.
+export function tellToItem(body: TellBody, from: string, contacts: TellContact[], now = Date.now()): ChatItem | null {
+  const ts = Math.min(body.ts, now);
   if (contacts.some((c) => c.characterHash === from)) {
-    return { id: body.id, ts: body.ts, channel: "tell", sender: body.toName, senderWorld: body.toWorld, text: body.text, character: body.fromName, outgoing: true };
+    return { id: body.id, ts, channel: "tell", sender: body.toName, senderWorld: body.toWorld, text: body.text, character: body.fromName, outgoing: true };
   }
   const contact = contacts.find((c) => c.hash === from && c.characterHash === body.toHash);
   if (!contact) return null;
-  return { id: body.id, ts: body.ts, channel: "tell", sender: contact.name, senderWorld: contact.world, text: body.text, character: contact.character, outgoing: false };
+  return { id: body.id, ts, channel: "tell", sender: contact.name, senderWorld: contact.world, text: body.text, character: contact.character, outgoing: false };
 }
 
 export function findContact(contacts: TellContact[], target: string, preferCharacter?: string): TellContact | undefined {

@@ -91,7 +91,8 @@ export interface TellBundleEntry { target: string; key: string; push: boolean }
 export interface TellBundle { installPublicKey: string; entries: TellBundleEntry[]; issuedAt: number }
 export interface SignedBundle { bundle: string; signature: string }
 // A registered ChatTerror friend of one of the plugin's characters.
-export interface TellContact { character: string; characterWorld: string; characterHash: string; name: string; world: string; hash: string }
+// key is the friend's install key the plugin trusts.
+export interface TellContact { character: string; characterWorld: string; characterHash: string; name: string; world: string; hash: string; key?: string }
 export interface TellCopy { self: boolean; target: string; envelope: string }
 export interface TellKeyPayload { type: "tellKey"; seq: number; publicKey: string }
 
@@ -189,7 +190,7 @@ function hasStrings(value: unknown, keys: string[]): value is Record<string, unk
 }
 
 function isTellContact(value: unknown): value is TellContact {
-  return hasStrings(value, ["character", "characterWorld", "characterHash", "name", "world", "hash"]);
+  return hasStrings(value, ["character", "characterWorld", "characterHash", "name", "world", "hash"]) && (value.key === undefined || typeof value.key === "string");
 }
 
 export function isTellBundle(value: unknown): value is TellBundle {

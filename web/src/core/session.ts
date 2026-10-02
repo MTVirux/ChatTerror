@@ -377,13 +377,15 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
         deps.api.getTellBundle(token, contact.hash),
         deps.api.getTellBundle(token, "self").catch(() => null),
       ]);
-      recipient = await verifyBundle(theirs, pins[contact.hash]);
-      if (!recipient) return { ok: false, error: pins[contact.hash] && (await verifyBundle(theirs)) ? "keyChanged" : "notChatTerror" };
+      // The plugin's pin wins, so forgetting a friend in the plugin also fixes the phones.
+      const expected = contact.key ?? pins[contact.hash];
+      recipient = await verifyBundle(theirs, expected);
+      if (!recipient) return { ok: false, error: expected && (await verifyBundle(theirs)) ? "keyChanged" : "notChatTerror" };
       own = mine && (await verifyBundle(mine, pluginPublicKey));
     } catch (error) {
       return { ok: false, error: error instanceof ApiError && error.status === 404 ? "notChatTerror" : "offline" };
     }
-    if (!pins[contact.hash]) await deps.store.setMeta("tellPins", { ...pins, [contact.hash]: recipient.installPublicKey });
+    if (pins[contact.hash] !== recipient.installPublicKey) await deps.store.setMeta("tellPins", { ...pins, [contact.hash]: recipient.installPublicKey });
 
     const body: TellBody = {
       id: crypto.randomUUID().replace(/-/g, ""),

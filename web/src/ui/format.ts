@@ -54,7 +54,7 @@ const SEND_ERRORS: Record<string, string> = {
   notFriend: "You are not on their friend list",
   notChatTerror: "They don't use ChatTerror",
   notOwner: "This character is registered to another ChatTerror install",
-  keyChanged: "Their ChatTerror key changed. Re-trust them in the plugin",
+  keyChanged: "Their ChatTerror key changed. Forget them under Trusted ChatTerror friends in the plugin",
 };
 
 export function sendErrorText(code?: string): string {

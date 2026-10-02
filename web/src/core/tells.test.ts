@@ -14,6 +14,11 @@ describe("tells", () => {
     });
   });
 
+  it("never dates a tell past the receiver's clock", () => {
+    expect(tellToItem({ ...body, ts: 9_999_999 }, "bob", [contact], 5000)?.ts).toBe(5000);
+    expect(tellToItem({ ...body, ts: 1000 }, "bob", [contact], 5000)?.ts).toBe(1000);
+  });
+
   it("drops tells from unknown senders", () => {
     expect(tellToItem(body, "stranger", [contact])).toBeNull();
   });
