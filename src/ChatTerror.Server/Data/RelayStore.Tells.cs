@@ -21,19 +21,38 @@ public sealed partial class RelayStore
             install_id TEXT NOT NULL,
             target TEXT NOT NULL,
             sender TEXT NOT NULL,
+            sender_key TEXT NOT NULL,
             envelope TEXT NOT NULL,
             created INTEGER NOT NULL,
             PRIMARY KEY(id, install_id, target));
         CREATE INDEX IF NOT EXISTS tell_queue_target ON tell_queue(install_id, target, created);
         """;
 
-    // A character logged in on another PC moves to that install.
-    public void SetTellCharacter(string installId, string hash, IReadOnlyCollection<string> friends) =>
-        Execute("""
-            INSERT INTO tell_characters(hash, install_id, friends, updated) VALUES($hash, $install, $friends, $now)
-            ON CONFLICT(hash) DO UPDATE SET install_id = excluded.install_id, friends = excluded.friends, updated = excluded.updated
-            """,
-            ("$hash", hash), ("$install", installId), ("$friends", JsonSerializer.Serialize(friends)), ("$now", Now));
+    // The relay can't prove who is logged in as a character, so a character only moves to another install once its
+    // current install has been gone for TellOwnerTtl. Returns false when it belongs to an active install.
+    public bool SetTellCharacter(string installId, string hash, IReadOnlyCollection<string> friends)
+    {
+        lock (tellOwnerLock)
+        {
+            var owner = TellCharacterOwner(hash);
+            if (owner != null && owner != installId)
+            {
+                var ownerSeen = QuerySingle<long?>("SELECT last_seen FROM installs WHERE id = $id", reader => reader.GetInt64(0), ("$id", owner));
+                if (ownerSeen > Now - (long)Limits.TellOwnerTtl.TotalMilliseconds)
+                    return false;
+            }
+
+            Execute("""
+                INSERT INTO tell_characters(hash, install_id, friends, updated) VALUES($hash, $install, $friends, $now)
+                ON CONFLICT(hash) DO UPDATE SET install_id = excluded.install_id, friends = excluded.friends, updated = excluded.updated
+                """,
+                ("$hash", hash), ("$install", installId), ("$friends", JsonSerializer.Serialize(friends)), ("$now", Now));
+            return true;
+        }
+    }
+
+    public string? InstallPublicKey(string installId) =>
+        QuerySingle("SELECT public_key FROM installs WHERE id = $id", reader => reader.GetString(0), ("$id", installId));
 
     public int CountTellCharacters(string installId) =>
         QuerySingle("SELECT COUNT(*) FROM tell_characters WHERE install_id = $install", reader => reader.GetInt32(0), ("$install", installId));
@@ -74,13 +93,14 @@ public sealed partial class RelayStore
             reader => new SignedTellBundle(reader.GetString(0), reader.GetString(1)), ("$install", installId));
 
     // Only the newest copies per target are kept, so a flood can't grow the queue without bound.
-    public void EnqueueTell(string id, string installId, string target, string sender, string envelope)
+    public void EnqueueTell(string id, string installId, string target, string sender, string senderKey, string envelope)
     {
         Execute("""
-            INSERT OR IGNORE INTO tell_queue(id, install_id, target, sender, envelope, created)
-            VALUES($id, $install, $target, $sender, $envelope, $now)
+            INSERT OR IGNORE INTO tell_queue(id, install_id, target, sender, sender_key, envelope, created)
+            VALUES($id, $install, $target, $sender, $senderKey, $envelope, $now)
             """,
-            ("$id", id), ("$install", installId), ("$target", target), ("$sender", sender), ("$envelope", envelope), ("$now", Now));
+            ("$id", id), ("$install", installId), ("$target", target), ("$sender", sender), ("$senderKey", senderKey),
+            ("$envelope", envelope), ("$now", Now));
         Execute("""
             DELETE FROM tell_queue WHERE install_id = $install AND target = $target AND rowid NOT IN (
                 SELECT rowid FROM tell_queue WHERE install_id = $install AND target = $target ORDER BY created DESC, rowid DESC LIMIT $max)
@@ -89,8 +109,8 @@ public sealed partial class RelayStore
     }
 
     public List<TellFrame> PendingTells(string installId, string target) =>
-        Query("SELECT id, sender, envelope FROM tell_queue WHERE install_id = $install AND target = $target ORDER BY created, rowid",
-            reader => new TellFrame(reader.GetString(0), reader.GetString(1), reader.GetString(2)),
+        Query("SELECT id, sender, envelope, sender_key FROM tell_queue WHERE install_id = $install AND target = $target ORDER BY created, rowid",
+            reader => new TellFrame(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)),
             ("$install", installId), ("$target", target));
 
     public void AckTells(string installId, string target, IEnumerable<string> ids)

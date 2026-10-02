@@ -28,22 +28,23 @@ public sealed partial class RelaySocketHandler
             return;
         }
 
+        var senderKey = store.InstallPublicKey(conn.InstallId)!;
         foreach (var copy in frame.Copies)
         {
             var install = copy.Self ? conn.InstallId : recipientInstall!;
             if (copy.Self && copy.Target == TellTarget(conn))
                 continue;
 
-            store.EnqueueTell(frame.Id, install, copy.Target, frame.From, copy.Envelope);
+            store.EnqueueTell(frame.Id, install, copy.Target, frame.From, senderKey, copy.Envelope);
             if (Online(install, copy.Target) is { } online)
             {
-                online.Send(new TellFrame(frame.Id, frame.From, copy.Envelope));
+                online.Send(new TellFrame(frame.Id, frame.From, copy.Envelope, senderKey));
             }
             else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
                 && device.InstallId == install)
             {
-                var body = JsonSerializer.Serialize(new { t = "tell", i = frame.Id, f = frame.From, e = copy.Envelope, d = device.Id });
+                var body = JsonSerializer.Serialize(new { t = "tell", i = frame.Id, f = frame.From, e = copy.Envelope, k = senderKey, d = device.Id });
                 _ = PushAsync(device, subscription, body);
             }
         }

@@ -45,15 +45,22 @@ export async function buildCopies(body: TellBody, recipient: TellBundle, own: Te
   return copies;
 }
 
-// Shared by the session and the service worker. Null when the tell can't be opened or the sender is unknown.
-export async function openTellFrame(store: AccountStore, from: string, id: string, envelope: string): Promise<ChatItem | null> {
-  const [key, settings] = await Promise.all([store.getMeta("tellKey"), store.getMeta("lastSettings")]);
+// Shared by the session and the service worker. Null when the tell can't be opened, the sender is unknown, or the
+// sender's character now sends from another install than the one trusted for it.
+export async function openTellFrame(store: AccountStore, from: string, id: string, envelope: string, fromKey: string): Promise<ChatItem | null> {
+  const [key, settings, pins] = await Promise.all([store.getMeta("tellKey"), store.getMeta("lastSettings"), store.getMeta("tellPins")]);
+  const contacts = settings?.contacts ?? [];
+  const own = contacts.some((c) => c.characterHash === from);
+  const trusted = contacts.find((c) => c.hash === from)?.key ?? pins[from];
+  if (!own && trusted !== undefined && trusted !== fromKey) return null;
   if (!key) return null;
   try {
     const plain = await openTell(key.privateKey, decode(key.publicKey), decode(envelope));
     const body = parseTellBody(JSON.parse(new TextDecoder().decode(plain)));
     if (!body || body.id !== id || body.fromHash !== from) return null;
-    return tellToItem(body, from, settings?.contacts ?? []);
+    const item = tellToItem(body, from, contacts);
+    if (item && !own && trusted === undefined) await store.setMeta("tellPins", { ...pins, [from]: fromKey });
+    return item;
   } catch {
     return null;
   }

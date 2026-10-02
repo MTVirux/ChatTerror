@@ -117,7 +117,7 @@ export interface ErrorFrame { t: "error"; code: "rateLimited" | "tooLarge" | "un
 // What a device sends and receives; plugin-only frames are listed for completeness.
 export interface TellSendFrame { t: "tellSend"; id: string; from: string; to: string; copies: TellCopy[] }
 export interface TellAckFrame { t: "tellAck"; ids: string[] }
-export interface TellFrame { t: "tell"; id: string; from: string; envelope: string }
+export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string }
 export interface TellResultFrame { t: "tellResult"; id: string; ok: boolean; error?: string }
 
 export type ClientFrame = AuthFrame | SendFrame | TellSendFrame | TellAckFrame;
@@ -238,7 +238,7 @@ export function parseServerFrame(text: string): ServerFrame | null {
     if (!isObject(value) || !SERVER_FRAME_TYPES.includes(value.t as string)) return null;
     if (value.t === "msg" && typeof value.payload !== "string") return null;
     if (value.t === "pluginStatus" && typeof value.online !== "boolean") return null;
-    if (value.t === "tell" && !hasStrings(value, ["id", "from", "envelope"])) return null;
+    if (value.t === "tell" && !hasStrings(value, ["id", "from", "envelope", "fromKey"])) return null;
     if (value.t === "tellResult" && (typeof value.id !== "string" || typeof value.ok !== "boolean")) return null;
     return value as unknown as ServerFrame;
   } catch {

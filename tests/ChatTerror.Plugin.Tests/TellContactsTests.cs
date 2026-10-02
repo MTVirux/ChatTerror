@@ -64,4 +64,16 @@ public class TellContactsTests
         var settings = new RelaySettings { IgnoredSenders = ["Cid Garlond@Lich"] };
         Assert.Equal([Bob.Hash], TellContacts.Uploadable(Alt, settings));
     }
+
+    [Fact]
+    public void Sender_IsPinnedOnFirstTellAndRefusedWhenItsKeyChanges()
+    {
+        var pins = new Dictionary<string, string>();
+
+        Assert.Equal(SenderTrust.Pinned, TellContacts.TrustSender(pins, "bob", "key1"));
+        Assert.Equal("key1", pins["bob"]);
+        Assert.Equal(SenderTrust.Trusted, TellContacts.TrustSender(pins, "bob", "key1"));
+        Assert.Equal(SenderTrust.KeyChanged, TellContacts.TrustSender(pins, "bob", "key2"));
+        Assert.Equal("key1", pins["bob"]);
+    }
 }

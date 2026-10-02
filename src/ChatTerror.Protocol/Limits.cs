@@ -13,5 +13,6 @@ public static class Limits
     public const int MaxQueuedTells = 200;
     public const long TellEchoTimeoutMs = 3000;
     public static readonly TimeSpan TellTtl = TimeSpan.FromDays(7);
+    public static readonly TimeSpan TellOwnerTtl = TimeSpan.FromDays(30);
     public static readonly TimeSpan PairingTtl = TimeSpan.FromMinutes(10);
 }

@@ -25,6 +25,8 @@ public sealed class TellCharacter
 
 public sealed record TellRoute(TellCharacter From, TellFriend To);
 
+public enum SenderTrust { Trusted, Pinned, KeyChanged }
+
 public static class TellContacts
 {
     // The logged-in character sends when it is friends with the target, otherwise an alt that is.
@@ -48,6 +50,17 @@ public static class TellContacts
                 .Where(f => c.Registered.Contains(f.Hash))
                 .Select(f => new TellContact(c.Name, c.World, c.Hash, f.Name, f.World, f.Hash, pins.GetValueOrDefault(f.Hash))))
             .ToList();
+
+    // The same pins guard both directions: a friend's character must keep sending from the install we first saw.
+    public static SenderTrust TrustSender(IDictionary<string, string> pins, string fromHash, string fromKey)
+    {
+        if (!pins.TryGetValue(fromHash, out var pinned))
+        {
+            pins[fromHash] = fromKey;
+            return SenderTrust.Pinned;
+        }
+        return pinned == fromKey ? SenderTrust.Trusted : SenderTrust.KeyChanged;
+    }
 
     public static List<string> Uploadable(TellCharacter character, RelaySettings settings) =>
         character.Friends.Where(f => !ChatFilter.IsIgnored(f.Name, f.World, settings)).Select(f => f.Hash).Distinct().ToList();

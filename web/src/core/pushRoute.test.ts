@@ -119,7 +119,7 @@ describe("routePush for relayed tells", () => {
     const body = { id: "t1", fromHash: "bob", fromName: "Bob Smith", fromWorld: "Lich", toHash: "me", toName: "Me", toWorld: "Lich", text: "hi", ts: 5 };
     const envelope = encode(await sealTell(decode(publicKey), new TextEncoder().encode(JSON.stringify(body))));
 
-    const routed = await routePush({ t: "tell", i: "t1", f: "bob", e: envelope, d: "b" });
+    const routed = await routePush({ t: "tell", i: "t1", f: "bob", e: envelope, k: "bob-install", d: "b" });
 
     expect(routed).toMatchObject({ deviceId: "b", item: { id: "t1", sender: "Bob Smith", channel: "tell" } });
     expect((await store.loadMessages(10)).map((i) => i.id)).toEqual(["t1"]);
@@ -127,6 +127,6 @@ describe("routePush for relayed tells", () => {
 
   it("returns null for a tell it can't open", async () => {
     await seed("b");
-    expect(await routePush({ t: "tell", i: "t1", f: "bob", e: "garbage", d: "b" })).toBeNull();
+    expect(await routePush({ t: "tell", i: "t1", f: "bob", e: "garbage", k: "bob-install", d: "b" })).toBeNull();
   });
 });

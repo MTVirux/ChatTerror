@@ -145,4 +145,31 @@ public class TellEndpointTests
 
         Assert.Equal(HttpStatusCode.TooManyRequests, (await client.GetAsync("/api/tells/bundles/self")).StatusCode);
     }
+
+    [Fact]
+    public async Task PutCharacter_StaysWithAnActiveInstall()
+    {
+        using var app = new RelayApp();
+        var owner = await app.RegisterInstallAsync();
+        var other = await app.RegisterInstallAsync();
+        await app.PutTellCharacterAsync(owner.InstallToken, A);
+
+        var taken = await app.Client(other.InstallToken).PutAsJsonAsync($"/api/tells/characters/{A}", new { friends = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.Conflict, taken.StatusCode);
+
+        app.Time.Advance(Limits.TellOwnerTtl + TimeSpan.FromMinutes(1));
+        Assert.Empty(await app.PutTellCharacterAsync(other.InstallToken, A));
+    }
+
+    [Fact]
+    public async Task PutCharacter_FreedAfterTheOwnerUnregisters()
+    {
+        using var app = new RelayApp();
+        var owner = await app.RegisterInstallAsync();
+        var other = await app.RegisterInstallAsync();
+        await app.PutTellCharacterAsync(owner.InstallToken, A);
+        await app.Client(owner.InstallToken).DeleteAsync("/api/tells/characters");
+
+        Assert.Empty(await app.PutTellCharacterAsync(other.InstallToken, A));
+    }
 }

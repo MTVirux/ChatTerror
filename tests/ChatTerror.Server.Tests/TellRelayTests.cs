@@ -39,7 +39,7 @@ public class TellRelayTests
         await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
 
         Assert.Equal(new TellResultFrame("t1", true), await pluginA.ReceiveAsync<TellResultFrame>());
-        Assert.Equal(new TellFrame("t1", A, "env"), await pluginB.ReceiveAsync<TellFrame>());
+        Assert.Equal(new TellFrame("t1", A, "env", Base64Url.Encode(P256.PublicRaw(a.Key))), await pluginB.ReceiveAsync<TellFrame>());
     }
 
     [Fact]
@@ -128,6 +128,7 @@ public class TellRelayTests
         var (_, body) = Assert.Single(app.Push.Calls);
         Assert.Contains("\"t\":\"tell\"", body);
         Assert.Contains("toPhoneB", body);
+        Assert.Contains($"\"k\":\"{Base64Url.Encode(P256.PublicRaw(a.Key))}\"", body);
         Assert.DoesNotContain(await phoneASocket.BarrierAsync(), f => f is TellFrame);
     }
 
@@ -143,5 +144,20 @@ public class TellRelayTests
 
         Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
         Assert.Equal(new TellResultFrame("t2", false, TellErrors.RateLimited), await pluginA.ReceiveAsync<TellResultFrame>());
+    }
+
+    [Fact]
+    public async Task QueuedTell_CarriesTheSendersInstallKey()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using (var pluginA = await app.ConnectAsync(a.Install.InstallToken))
+        {
+            await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+            await pluginA.ReceiveAsync<TellResultFrame>();
+        }
+
+        await using var pluginB = await app.ConnectAsync(b.Install.InstallToken);
+        Assert.Equal(Base64Url.Encode(P256.PublicRaw(a.Key)), (await pluginB.ReceiveAsync<TellFrame>()).FromKey);
     }
 }

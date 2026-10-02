@@ -477,16 +477,23 @@ describe("relayed tells", () => {
 
     const body = { id: "t1", fromHash: "bob", fromName: "Forged", fromWorld: "Lich", toHash: "me", toName: "Main Char", toWorld: "Twintania", text: "hi", ts: 5 };
     const envelope = encode(await sealTell(decode(tellKey.publicKey), utf8.encode(JSON.stringify(body))));
-    relay.deliver({ t: "tell", id: "t1", from: "bob", envelope });
+    relay.deliver({ t: "tell", id: "t1", from: "bob", envelope, fromKey: "bob-install" });
 
     await vi.waitFor(() => expect(seen).toEqual([expect.objectContaining({ id: "t1", sender: "Bob Smith", channel: "tell", outgoing: false })]));
     expect(relay.sent).toContainEqual({ t: "tellAck", ids: ["t1"] });
+    expect((await store.getMeta("tellPins")).bob).toBe("bob-install");
+
+    const forged = { ...body, id: "t2" };
+    const forgedEnvelope = encode(await sealTell(decode(tellKey.publicKey), utf8.encode(JSON.stringify(forged))));
+    relay.deliver({ t: "tell", id: "t2", from: "bob", envelope: forgedEnvelope, fromKey: "impostor-install" });
+    await vi.waitFor(() => expect(relay.sent).toContainEqual({ t: "tellAck", ids: ["t2"] }));
+    expect(seen.map((i) => i.id)).toEqual(["t1"]);
   });
 
   it("acks tells it cannot open", async () => {
     const { relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
-    relay.deliver({ t: "tell", id: "x", from: "f", envelope: "garbage" });
+    relay.deliver({ t: "tell", id: "x", from: "f", envelope: "garbage", fromKey: "k" });
     await vi.waitFor(() => expect(relay.sent).toContainEqual({ t: "tellAck", ids: ["x"] }));
   });
 

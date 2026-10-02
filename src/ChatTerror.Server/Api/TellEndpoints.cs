@@ -22,8 +22,10 @@ public static class TellEndpoints
             if (store.TellCharacterOwner(hash) != install.Id && store.CountTellCharacters(install.Id) >= Limits.MaxTellCharacters)
                 return AuthHelpers.Error(StatusCodes.Status409Conflict, "tooManyCharacters");
 
+            store.TouchInstall(install.Id);
             var distinct = friends.Distinct().ToList();
-            store.SetTellCharacter(install.Id, hash, distinct);
+            if (!store.SetTellCharacter(install.Id, hash, distinct))
+                return AuthHelpers.Error(StatusCodes.Status409Conflict, "characterTaken");
             return Results.Ok(new TellCharacterResponse(store.RegisteredTellCharacters(distinct)));
         }).RequireRateLimiting(RequestLimits.TellPolicy);
 

@@ -11,13 +11,13 @@ public class TellStoreTests
     private static readonly string B = TellHash.Compute(2);
 
     [Fact]
-    public void Character_RegistrationMovesToTheLatestInstall()
+    public void Character_MovesWhenTheOwnerInstallIsUnknown()
     {
         using var app = new RelayApp();
         var store = app.Services.GetRequiredService<RelayStore>();
 
         store.SetTellCharacter("install1", A, [B]);
-        store.SetTellCharacter("install2", A, []);
+        Assert.True(store.SetTellCharacter("install2", A, []));
 
         Assert.Equal("install2", store.TellCharacterOwner(A));
         Assert.False(store.IsTellFriend(A, B));
@@ -49,13 +49,13 @@ public class TellStoreTests
         for (var i = 0; i < Limits.MaxQueuedTells + 5; i++)
         {
             app.Time.Advance(TimeSpan.FromMilliseconds(1));
-            store.EnqueueTell($"id{i}", "install1", TellTargets.Plugin, A, $"env{i}");
+            store.EnqueueTell($"id{i}", "install1", TellTargets.Plugin, A, "key", $"env{i}");
         }
-        store.EnqueueTell("other", "install1", "device1", A, "env");
+        store.EnqueueTell("other", "install1", "device1", A, "key", "env");
 
         var pending = store.PendingTells("install1", TellTargets.Plugin);
         Assert.Equal(Limits.MaxQueuedTells, pending.Count);
-        Assert.Equal(new TellFrame("id5", A, "env5"), pending[0]);
+        Assert.Equal(new TellFrame("id5", A, "env5", "key"), pending[0]);
 
         store.AckTells("install1", TellTargets.Plugin, ["id5", "other"]);
         Assert.Equal(Limits.MaxQueuedTells - 1, store.PendingTells("install1", TellTargets.Plugin).Count);
@@ -67,7 +67,7 @@ public class TellStoreTests
     {
         using var app = new RelayApp();
         var store = app.Services.GetRequiredService<RelayStore>();
-        store.EnqueueTell("id", "install1", TellTargets.Plugin, A, "env");
+        store.EnqueueTell("id", "install1", TellTargets.Plugin, A, "key", "env");
 
         app.Time.Advance(Limits.TellTtl - TimeSpan.FromMinutes(1));
         app.Services.GetRequiredService<ExpiryService>().Sweep();

@@ -124,7 +124,17 @@ public sealed class TellDirectory : IDisposable
 
     private async Task UploadCharacter(string token, TellCharacter character, List<string> friends, string friendsKey, long now)
     {
-        var registered = await api.PutTellCharacter(token, character.Hash, friends);
+        List<string> registered;
+        try
+        {
+            registered = await api.PutTellCharacter(token, character.Hash, friends);
+        }
+        catch (RelayApiException ex) when (ex.StatusCode == 409)
+        {
+            await framework.RunOnFrameworkThread(() =>
+                Status = "This character is registered to another ChatTerror install that was used in the last 30 days.");
+            throw;
+        }
         await framework.RunOnFrameworkThread(() =>
         {
             uploaded[character.Hash] = (friendsKey, now);

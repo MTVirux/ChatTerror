@@ -33,7 +33,8 @@ describe("sealed tells", () => {
   });
 
   it("parses tell frames and bodies", () => {
-    expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c"}')).toEqual({ t: "tell", id: "a", from: "b", envelope: "c" });
+    expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c","fromKey":"k"}')).toEqual({ t: "tell", id: "a", from: "b", envelope: "c", fromKey: "k" });
+    expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c"}')).toBeNull();
     expect(parseServerFrame('{"t":"tell","id":"a"}')).toBeNull();
     expect(parseServerFrame('{"t":"tellResult","id":"a","ok":false,"error":"notFriend"}')).not.toBeNull();
     expect(parseTellBody(JSON.parse(vector.plaintext))?.text).toBe("hello <3");

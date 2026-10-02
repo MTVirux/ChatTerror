@@ -17,7 +17,7 @@ public class TellInboxTests
     public void Inbox_HoldsTellsUntilLoggedIn()
     {
         var inbox = new TellInbox();
-        inbox.Add(new TellFrame("a", "f", "e"));
+        inbox.Add(new TellFrame("a", "f", "e", "k"));
 
         Assert.Empty(inbox.Drain(loggedIn: false));
         Assert.Equal(["a"], inbox.Drain(loggedIn: true).Select(f => f.Id));

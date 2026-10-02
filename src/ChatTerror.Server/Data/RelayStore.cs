@@ -77,6 +77,7 @@ public sealed partial class RelayStore
     private readonly TimeSpan inactiveDeviceTtl;
     private readonly int maxInstallsPerDay;
     private readonly Lock claimLock = new();
+    private readonly Lock tellOwnerLock = new();
     private readonly Lock installLock = new();
 
     public RelayStore(IOptions<RelayOptions> options, TimeProvider time)

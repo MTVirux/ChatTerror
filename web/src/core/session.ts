@@ -305,7 +305,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
         await handleMsg(frame.payload);
         return;
       case "tell": {
-        const item = pairing ? await openTellFrame(deps.store, frame.from, frame.id, frame.envelope) : null;
+        const item = pairing ? await openTellFrame(deps.store, frame.from, frame.id, frame.envelope, frame.fromKey) : null;
         if (item) await receiveItems([item], false);
         connection?.send({ t: "tellAck", ids: [frame.id] });
         return;

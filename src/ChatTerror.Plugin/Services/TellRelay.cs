@@ -221,6 +221,15 @@ public sealed class TellRelay : IDisposable
 
         if (!config.TellsEnabled || TellItems.Incoming(body, tell.From, config.TellCharacters, Now()) is not { } item)
             return;
+        switch (TellContacts.TrustSender(config.TellPins, tell.From, tell.FromKey))
+        {
+            case SenderTrust.KeyChanged:
+                chatGui.PrintError($"[ChatTerror] Dropped a relayed tell from {item.Sender}@{item.SenderWorld}: their ChatTerror key changed. Forget them in the Advanced tab if they reinstalled.");
+                return;
+            case SenderTrust.Pinned:
+                saveConfig();
+                break;
+        }
         chatGui.Print(new XivChatEntry
         {
             Type = XivChatType.TellIncoming,

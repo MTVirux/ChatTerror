@@ -60,8 +60,8 @@ public sealed record TellSendFrame(string Id, string From, string To, IReadOnlyL
 
 public sealed record TellResultFrame(string Id, bool Ok, string? Error = null) : RelayFrame;
 
-// From is checked by the relay to belong to the sending install.
-public sealed record TellFrame(string Id, string From, string Envelope) : RelayFrame;
+// From is checked by the relay to belong to the sending install, FromKey is that install's key so recipients can pin it.
+public sealed record TellFrame(string Id, string From, string Envelope, string FromKey) : RelayFrame;
 
 public sealed record TellAckFrame(IReadOnlyList<string> Ids) : RelayFrame;
 

@@ -13,13 +13,13 @@ export interface RoutedPush {
   item: ChatItem;
 }
 
-async function routeTell(tell: { i?: unknown; f?: unknown; e?: unknown; d?: unknown }): Promise<RoutedPush | null> {
-  if (typeof tell.i !== "string" || typeof tell.f !== "string" || typeof tell.e !== "string") return null;
+async function routeTell(tell: { i?: unknown; f?: unknown; e?: unknown; k?: unknown; d?: unknown }): Promise<RoutedPush | null> {
+  if (typeof tell.i !== "string" || typeof tell.f !== "string" || typeof tell.e !== "string" || typeof tell.k !== "string") return null;
   const accounts = (await listAccounts()).filter((a) => a.status === "active");
   const account = accounts.find((a) => a.deviceId === tell.d);
   if (!account) return null;
   const store = openAccountStore(account.dbName);
-  const item = await openTellFrame(store, tell.f, tell.i, tell.e);
+  const item = await openTellFrame(store, tell.f, tell.i, tell.e, tell.k);
   if (!item) return null;
   await store.addMessages([item], await getCacheLimit());
   const index = accounts.indexOf(account);
@@ -27,7 +27,7 @@ async function routeTell(tell: { i?: unknown; f?: unknown; e?: unknown; d?: unkn
 }
 
 export async function routePush(body: unknown): Promise<RoutedPush | null> {
-  const tell = (body ?? {}) as { t?: unknown; i?: unknown; f?: unknown; e?: unknown; d?: unknown };
+  const tell = (body ?? {}) as { t?: unknown; i?: unknown; f?: unknown; e?: unknown; k?: unknown; d?: unknown };
   if (tell.t === "tell") return routeTell(tell);
   const { p, d } = (body ?? {}) as { p?: unknown; d?: unknown };
   if (typeof p !== "string") return null;
