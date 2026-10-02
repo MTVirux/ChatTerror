@@ -1423,7 +1423,8 @@ p {
 }
 
 button.settings-row,
-label.settings-row {
+label.settings-row,
+a.settings-row {
   cursor: pointer;
 }
 
@@ -1433,13 +1434,15 @@ label.settings-row {
 }
 
 @media (hover: hover) {
-  button.settings-row:hover {
+  button.settings-row:hover,
+  a.settings-row:hover {
     background: var(--hover);
   }
 }
 
 .settings-row.accent {
   color: var(--accent);
+  text-decoration: none;
   font-weight: 600;
 }
 

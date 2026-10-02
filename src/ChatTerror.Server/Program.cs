@@ -71,6 +71,7 @@ app.UseApiBodyLimit(options.MaxRequestBodyBytes);
 
 var contentTypes = new FileExtensionContentTypeProvider();
 contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+contentTypes.Mappings[".apk"] = "application/vnd.android.package-archive";
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {

@@ -2,10 +2,13 @@ import { render } from "preact";
 import { openAccounts } from "./core/accounts";
 import { requestPersistentStorage } from "./core/storage";
 import { App } from "./ui/App";
+import { offerAndroidApp } from "./ui/format";
 import { applyTheme, loadTheme } from "./ui/theme";
 import "./ui/styles.css";
 
 applyTheme(loadTheme());
+// Remember being opened by the APK before a reload clears the referrer.
+offerAndroidApp();
 
 const root = document.getElementById("app")!;
 

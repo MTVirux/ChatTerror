@@ -100,6 +100,21 @@ export function defaultDeviceName(): string {
   return "Browser";
 }
 
+// The APK opens the site with this referrer; sessionStorage keeps the answer across reloads.
+function isAndroidApp(): boolean {
+  const fromApp = document.referrer.startsWith("android-app://app.mtvirux.chatterror");
+  try {
+    if (fromApp) sessionStorage.setItem("androidApp", "1");
+    return sessionStorage.getItem("androidApp") === "1";
+  } catch {
+    return fromApp;
+  }
+}
+
+export function offerAndroidApp(): boolean {
+  return /Android/.test(navigator.userAgent) && !isAndroidApp();
+}
+
 export function isIos(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 }

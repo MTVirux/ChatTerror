@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
-import { STATUS_LABELS } from "./format";
+import { offerAndroidApp, STATUS_LABELS } from "./format";
 import { ChevronRightIcon } from "./icons";
 import { initials, senderColor } from "./identity";
 import { SettingsGroup, SettingsSheet } from "./SettingsSheet";
@@ -50,6 +50,14 @@ export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAc
           <span class="settings-text">Add account</span>
         </button>
       </SettingsGroup>
+
+      {offerAndroidApp() && (
+        <SettingsGroup label="Android app" note={<p class="settings-note">Keeps your accounts linked more reliably than the browser.</p>}>
+          <a class="settings-row accent" href="/ChatTerror.apk" download>
+            <span class="settings-text">Download app</span>
+          </a>
+        </SettingsGroup>
+      )}
 
       <SettingsGroup label="Appearance">
         <div role="radiogroup" aria-label="Theme">
