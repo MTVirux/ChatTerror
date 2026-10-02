@@ -1,3 +1,4 @@
+import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "./channelPrefs";
 import type { ChatChannel, ChatItem, SettingsPayload } from "./protocol";
 
 export interface Pairing {
@@ -16,6 +17,7 @@ export interface Meta {
   // Newest ts received over the socket. Push-only messages do not count, so hello still backfills around them.
   syncTs: number;
   mutedChannels: ChatChannel[];
+  channelPrefs: ChannelPrefs;
   // Only read when adopting a database from before multiple accounts.
   cacheLimit: number;
   lastSettings: SettingsPayload | null;
@@ -31,6 +33,7 @@ const META_DEFAULTS: Meta = {
   lastSeqSent: 0,
   syncTs: 0,
   mutedChannels: [],
+  channelPrefs: EMPTY_CHANNEL_PREFS,
   cacheLimit: DEFAULT_CACHE_LIMIT,
   lastSettings: null,
   approved: false,

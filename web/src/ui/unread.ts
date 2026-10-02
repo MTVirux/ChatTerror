@@ -17,7 +17,11 @@ export interface UnreadTracker {
   close(): void;
 }
 
-export function createUnreadTracker(manager: Pick<AccountManager, "onMessages">): UnreadTracker {
+// Muted channels still count, so unmuting shows what was missed, but stay out of the summaries.
+export function createUnreadTracker(
+  manager: Pick<AccountManager, "onMessages">,
+  isMuted: (deviceId: string, key: string) => boolean = () => false,
+): UnreadTracker {
   const counts = new Map<string, Map<string, number>>();
   const listeners = new Set<() => void>();
   let open: OpenChannel = null;
@@ -28,11 +32,11 @@ export function createUnreadTracker(manager: Pick<AccountManager, "onMessages">)
     return m;
   };
   const notify = () => listeners.forEach((l) => l());
-  const summarize = (m: Map<string, number>): UnreadSummary => {
+  const summarize = (deviceId: string): UnreadSummary => {
     let unread = false;
     let tells = 0;
-    for (const [key, n] of m) {
-      if (n <= 0) continue;
+    for (const [key, n] of counts.get(deviceId) ?? []) {
+      if (n <= 0 || isMuted(deviceId, key)) continue;
       unread = true;
       if (key.startsWith("t|")) tells += n;
     }
@@ -55,12 +59,12 @@ export function createUnreadTracker(manager: Pick<AccountManager, "onMessages">)
 
   return {
     count: (deviceId, key) => counts.get(deviceId)?.get(key) ?? 0,
-    summary: (deviceId) => summarize(counts.get(deviceId) ?? new Map()),
+    summary: summarize,
     total(deviceIds) {
       let unread = false;
       let tells = 0;
       for (const deviceId of deviceIds) {
-        const s = summarize(counts.get(deviceId) ?? new Map());
+        const s = summarize(deviceId);
         unread ||= s.unread;
         tells += s.tells;
       }

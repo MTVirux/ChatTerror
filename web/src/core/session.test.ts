@@ -325,6 +325,28 @@ describe("session", () => {
     await vi.waitFor(async () => expect((await relay.payloads()).some((p) => p.type === "prefs" && p.mutedChannels[0] === "shout")).toBe(true));
   });
 
+  it("sends channel prefs with hello and when they change", async () => {
+    await store.setMeta("channelPrefs", { pinned: [], muted: ["c|Alpha Beta|say"], notify: {} });
+    const { session, relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () =>
+      expect((await relay.payloads()).find((p) => p.type === "prefs")).toMatchObject({
+        mutedChannels: [],
+        channels: [{ character: "Alpha Beta", channel: "say", notify: "none" }],
+      }),
+    );
+
+    const prefs = { pinned: ["c|Alpha Beta|say"], muted: [], notify: { "t|Alpha Beta|Foo Bar@World": "all" as const } };
+    await session.setChannelPrefs(prefs);
+    expect(session.getState().channelPrefs).toEqual(prefs);
+    expect(await store.getMeta("channelPrefs")).toEqual(prefs);
+    const sent = (await relay.payloads()).filter((p) => p.type === "prefs");
+    expect(sent[sent.length - 1]).toMatchObject({
+      channels: [{ character: "Alpha Beta", channel: "tell", partner: "Foo Bar@World", notify: "all" }],
+    });
+  });
+
   it("revoked frame wipes storage", async () => {
     const { session, relay } = await setup();
     await store.addMessages([item("a", 1)], 100);

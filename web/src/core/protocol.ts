@@ -71,7 +71,8 @@ export interface SettingsPayload {
 
 export interface HelloPayload { type: "hello"; seq: number; sinceTs: number }
 export interface SendChatPayload { type: "sendChat"; seq: number; requestId: string; channel: ChatChannel; target?: string; text: string }
-export interface PrefsPayload { type: "prefs"; seq: number; mutedChannels: ChatChannel[] }
+export interface ChannelNotifyPref { character: string; channel: ChatChannel; partner?: string; notify: "all" | "none" }
+export interface PrefsPayload { type: "prefs"; seq: number; mutedChannels: ChatChannel[]; channels: ChannelNotifyPref[] }
 
 export type PluginPayload = ChatPayload | BacklogPayload | SendResultPayload | SettingsPayload;
 export type DevicePayload = HelloPayload | SendChatPayload | PrefsPayload;
