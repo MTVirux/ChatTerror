@@ -189,6 +189,19 @@ describe("session", () => {
     expect(await store.getMeta("approved")).toBe(true);
   });
 
+  it("turns notifications on without prompting once paired", async () => {
+    const prompts: (boolean | undefined)[] = [];
+    await store.setPairing({ deviceId: "dev", token: "d.dev.secret", aesKey: key, pluginPublicKey: "p", devicePublicKey: "d", fingerprint: "123 456" });
+    const relay = fakeRelay();
+    const push = { enable: async (_token: string, prompt?: boolean) => (prompts.push(prompt), true), disable: async () => {} };
+    const session = await createSession({ api: fakeApi({ getMe: async () => ({ deviceId: "dev", status: "pending" }) }), connect: relay.connect, push, store, cacheLimit: DEFAULT_CACHE_LIMIT });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "paired" });
+    await vi.waitFor(() => expect(session.getState().pushEnabled).toBe(true));
+    expect(prompts).toEqual([false]);
+    expect(await store.getMeta("pushEnabled")).toBe(true);
+  });
+
   it("pending device that was approved while away recovers through getMe", async () => {
     const { session, relay } = await setup({ approved: false });
     relay.deliver({ t: "authOk", role: "device", id: "dev" });

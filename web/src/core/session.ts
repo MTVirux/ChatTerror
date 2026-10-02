@@ -243,6 +243,17 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     await deps.store.setMeta("approved", true);
     refreshStatus();
     if (pluginOnline) await sendHello();
+    // Permission is asked when Pair is tapped, so a new account starts with notifications on.
+    await enablePush(false);
+  }
+
+  async function enablePush(prompt: boolean) {
+    if (!pairing) return false;
+    const enabled = await guarded(deps.push.enable(pairing.token, prompt)).catch(() => false);
+    if (!pairing) return false;
+    await deps.store.setMeta("pushEnabled", enabled);
+    setState({ pushEnabled: enabled });
+    return enabled;
   }
 
   async function handleFrame(frame: ServerFrame) {
@@ -400,14 +411,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       await sendPrefs();
     },
 
-    async enablePush() {
-      if (!pairing) return false;
-      const enabled = await guarded(deps.push.enable(pairing.token)).catch(() => false);
-      if (!pairing) return false;
-      await deps.store.setMeta("pushEnabled", enabled);
-      setState({ pushEnabled: enabled });
-      return enabled;
-    },
+    enablePush: () => enablePush(true),
 
     async disablePush() {
       if (!pairing) return;
