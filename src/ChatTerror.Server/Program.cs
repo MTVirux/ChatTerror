@@ -63,6 +63,8 @@ if (trustedProxies.Length > 0)
     app.UseForwardedHeaders(forwarded);
 }
 
+app.UseSecurityHeaders();
+
 var allowedOrigins = options.GetAllowedOrigins();
 app.UseOriginCheck(allowedOrigins);
 if (allowedOrigins.Length > 0)
