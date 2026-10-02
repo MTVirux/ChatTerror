@@ -35,7 +35,20 @@ public sealed record HelloPayload(long SinceTs) : Payload;
 
 public sealed record SendChatPayload(string RequestId, ChatChannel Channel, [Optional, DefaultParameterValue(null)] string? Target, string Text) : Payload;
 
-public sealed record PrefsPayload(IReadOnlyList<ChatChannel> MutedChannels) : Payload;
+public sealed record PrefsPayload(IReadOnlyList<ChatChannel> MutedChannels, IReadOnlyList<ChannelPref>? Channels = null) : Payload;
+
+public enum NotifyMode
+{
+    All,
+    None,
+}
+
+// Partner is only set for tells and is "Name@World" when the world is known.
+public sealed record ChannelPref(
+    string Character,
+    ChatChannel Channel,
+    [Optional, DefaultParameterValue(null)] string? Partner,
+    NotifyMode Notify);
 
 public static class SendErrors
 {

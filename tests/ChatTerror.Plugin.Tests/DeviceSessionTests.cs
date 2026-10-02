@@ -21,6 +21,13 @@ public class DeviceSessionTests
     private static ChatItem Item(long ts, ChatChannel channel = ChatChannel.Say, string text = "hi") =>
         new(Guid.NewGuid().ToString("N"), ts, channel, "Bob Smith", Text: text, Character: "Alex Doe", Outgoing: false);
 
+    private static readonly FilterResult Notify = new(true, true, true);
+    private static readonly FilterResult Silent = new(true, false, true);
+    private static readonly FilterResult Blocked = new(true, false, false);
+
+    private DeviceSession WithOverride(ChatChannel channel, NotifyMode mode, string? partner = null, string character = "Alex Doe") =>
+        new("dev1", pluginKey, [], overrides: [new ChannelPref(character, channel, partner, mode)]);
+
     private static int JsonBytes(ChatItem item) => System.Text.Encoding.UTF8.GetByteCount(ProtocolJson.Serialize(item));
 
     [Fact]
@@ -100,12 +107,75 @@ public class DeviceSessionTests
     {
         var session = new DeviceSession("dev1", pluginKey, [ChatChannel.FreeCompany]);
 
-        Assert.False(session.ShouldNotify(Item(1, ChatChannel.FreeCompany), true));
-        Assert.True(session.ShouldNotify(Item(1, ChatChannel.Tell), true));
-        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Tell), false));
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.FreeCompany), Notify));
+        Assert.True(session.ShouldNotify(Item(1, ChatChannel.Tell), Notify));
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Tell), Silent));
 
         session.Muted.Add(ChatChannel.Tell);
-        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Tell), true));
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Tell), Notify));
+    }
+
+    [Fact]
+    public void OverrideNone_Suppresses()
+    {
+        var session = WithOverride(ChatChannel.Say, NotifyMode.None);
+
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Say), Notify));
+        Assert.True(session.ShouldNotify(Item(1, ChatChannel.Party), Notify));
+    }
+
+    [Fact]
+    public void OverrideAll_PushesChannelWithPushOff()
+    {
+        var session = WithOverride(ChatChannel.Say, NotifyMode.All);
+
+        Assert.True(session.ShouldNotify(Item(1, ChatChannel.Say), Silent));
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Party), Silent));
+    }
+
+    [Fact]
+    public void OverrideAll_SilentWhenFilterCannotNotify()
+    {
+        var session = WithOverride(ChatChannel.Say, NotifyMode.All);
+
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Say), Blocked));
+    }
+
+    [Fact]
+    public void Override_BeatsTypeMute()
+    {
+        var session = new DeviceSession(
+            "dev1", pluginKey, [ChatChannel.Say], overrides: [new ChannelPref("Alex Doe", ChatChannel.Say, null, NotifyMode.All)]);
+
+        Assert.True(session.ShouldNotify(Item(1, ChatChannel.Say), Silent));
+    }
+
+    [Fact]
+    public void Override_OtherCharacter_NotMatched()
+    {
+        var session = WithOverride(ChatChannel.Say, NotifyMode.None, character: "Someone Else");
+
+        Assert.True(session.ShouldNotify(Item(1, ChatChannel.Say), Notify));
+    }
+
+    [Fact]
+    public void Override_TellMatchesPartner()
+    {
+        var session = WithOverride(ChatChannel.Tell, NotifyMode.None, "Bob Smith@Twintania");
+        var tell = Item(1, ChatChannel.Tell);
+
+        Assert.False(session.ShouldNotify(tell with { SenderWorld = "Twintania" }, Notify));
+        Assert.False(session.ShouldNotify(tell with { Sender = "Bob Smith@Twintania" }, Notify));
+        Assert.True(session.ShouldNotify(tell with { SenderWorld = "Gilgamesh" }, Notify));
+        Assert.True(session.ShouldNotify(tell, Notify));
+    }
+
+    [Fact]
+    public void Override_TellWithoutWorld_MatchesBareName()
+    {
+        var session = WithOverride(ChatChannel.Tell, NotifyMode.None, "Bob Smith");
+
+        Assert.False(session.ShouldNotify(Item(1, ChatChannel.Tell), Notify));
     }
 
     [Fact]
