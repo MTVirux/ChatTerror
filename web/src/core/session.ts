@@ -1,6 +1,6 @@
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
-import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "./channelPrefs";
+import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaults, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, openPayload, sealPayload } from "./crypto";
 import { parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame } from "./protocol";
 import type { PushControl } from "./push";
@@ -186,7 +186,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       sendChannels: settings?.sendChannels ?? [],
       maxLength: settings?.maxLength ?? DEFAULT_MAX_LENGTH,
       mutedChannels: muted,
-      channelPrefs,
+      channelPrefs: withDefaults(channelPrefs),
       pushEnabled: push,
     };
     setState({});

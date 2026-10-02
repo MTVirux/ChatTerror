@@ -4,13 +4,20 @@ import type { SessionState } from "../core/session";
 import { channelSlug } from "./channels";
 import { byteLength, channelColor, channelLabel, sendBlockedReason, sendPrefix, TELL_TARGET } from "./format";
 
-export type Tab = { kind: "all" } | { kind: "channel"; channel: ChatChannel } | { kind: "tell"; partner: string };
+// latest is the channel of the newest message in a custom channel, its default target.
+export type Tab = { kind: "all" } | { kind: "custom"; channels: ChatChannel[]; latest?: ChatChannel } | { kind: "tell"; partner: string };
 
-function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current: ChatChannel | undefined): ChatChannel | undefined {
+export function pickable(tab: Tab, sendChannels: ChatChannel[]): ChatChannel[] {
+  if (tab.kind === "custom") return sendChannels.filter((c) => tab.channels.includes(c));
+  return tab.kind === "all" ? sendChannels : [];
+}
+
+export function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current: ChatChannel | undefined): ChatChannel | undefined {
   if (tab.kind === "tell") return "tell";
-  if (tab.kind === "channel") return tab.channel;
-  if (current && sendChannels.includes(current)) return current;
-  return sendChannels.find((c) => c !== "tell") ?? sendChannels[0];
+  const options = pickable(tab, sendChannels);
+  if (current && options.includes(current)) return current;
+  if (tab.kind === "custom" && tab.latest && options.includes(tab.latest)) return tab.latest;
+  return options.find((c) => c !== "tell") ?? options[0];
 }
 
 export interface AccountPicker {
@@ -49,8 +56,10 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
   // The plugin limits the whole chat line, so the channel prefix counts too.
   const bytes = channel ? byteLength(sendPrefix(channel, effectiveTarget) + trimmed) : byteLength(trimmed);
 
+  const options = pickable(tab, state.sendChannels);
   let blocked = blockedBy ?? sendBlockedReason(state.status);
   if (!blocked && state.sendChannels.length === 0) blocked = "Sending from your phone is turned off in the plugin";
+  if (!blocked && tab.kind === "custom" && options.length === 0) blocked = "Sending to these channels is disabled in the plugin";
   if (!blocked && channel && !state.sendChannels.includes(channel)) blocked = "Sending to this channel is disabled in the plugin";
   if (!blocked && fixedTarget && !TELL_TARGET.test(fixedTarget)) blocked = "Can't reply here because this player's world is unknown";
 
@@ -88,7 +97,7 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
 
   return (
     <form class={`composer${blocked ? " blocked" : ""}`} style={{ "--c": color }} onSubmit={submit}>
-      {tab.kind === "all" && (
+      {tab.kind !== "tell" && (
         <div class="composer-meta">
           {account && (
             <select class="account-select" aria-label="Send as" value={account.value} onChange={(e) => account.onChange(e.currentTarget.value)}>
@@ -99,10 +108,10 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
             class="channel-select"
             aria-label="Channel"
             value={channel}
-            disabled={state.sendChannels.length === 0}
+            disabled={options.length === 0}
             onChange={(e) => setChannel(e.currentTarget.value as ChatChannel)}
           >
-            {state.sendChannels.map((c) => <option value={c}>{channelLabel(c)}</option>)}
+            {options.map((c) => <option value={c}>{channelLabel(c)}</option>)}
           </select>
           {needsTarget && (
             <input
@@ -132,7 +141,7 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
             onInput={(e) => setText(e.currentTarget.value.replace(/[\r\n]+/g, " "))}
             onKeyDown={onKeyDown}
           />
-          {tab.kind !== "all" && text && counter}
+          {tab.kind === "tell" && text && counter}
           <button type="submit" class="send-btn" disabled={!canSend} aria-label="Send">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M3.4 20.4 21 12 3.4 3.6l-.01 6.53L15 12 3.39 13.87z" />

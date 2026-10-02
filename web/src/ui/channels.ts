@@ -1,94 +1,83 @@
-import { ALL_CHANNELS, type ChatChannel, type ChatItem } from "../core/protocol";
+import { channelIncludes, customKey, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
+import type { ChatChannel, ChatItem } from "../core/protocol";
 import { channelLabel, tellPartner } from "./format";
 
 export type ChannelRef =
-  | { kind: "chat"; character: string; channel: ChatChannel }
+  | { kind: "custom"; character: string; id: string }
   | { kind: "tell"; character: string; partner: string };
-
-export interface TellEntry {
-  partner: string;
-  ts: number;
-}
 
 export interface Category {
   character: string;
   active: boolean;
-  chats: ChatChannel[];
-  tells: TellEntry[];
+  // Rows in display order, custom channels before tells unless reordered.
+  refs: ChannelRef[];
   lastTs: number;
 }
 
 export function channelKey(ref: ChannelRef): string {
-  return ref.kind === "chat" ? `c|${ref.character}|${ref.channel}` : `t|${ref.character}|${ref.partner}`;
+  return ref.kind === "custom" ? customKey(ref) : `t|${ref.character}|${ref.partner}`;
 }
 
 export function parseChannelKey(key: string): ChannelRef | null {
   const [kind, character, rest] = key.split("|");
   if (!character || !rest) return null;
-  if (kind === "c" && (ALL_CHANNELS as string[]).includes(rest)) return { kind: "chat", character, channel: rest as ChatChannel };
+  if (kind === "x") return { kind: "custom", character, id: rest };
   if (kind === "t") return { kind: "tell", character, partner: rest };
   return null;
 }
 
-export function itemChannelRef(item: ChatItem): ChannelRef {
-  return item.channel === "tell"
-    ? { kind: "tell", character: item.character, partner: tellPartner(item) }
-    : { kind: "chat", character: item.character, channel: item.channel };
+// Messages are keyed by their in-game channel: "c|character|channel" or "t|character|partner".
+export function itemKey(item: ChatItem): string {
+  return item.channel === "tell" ? `t|${item.character}|${tellPartner(item)}` : `c|${item.character}|${item.channel}`;
 }
 
-export function inChannel(item: ChatItem, ref: ChannelRef): boolean {
-  return channelKey(itemChannelRef(item)) === channelKey(ref);
+export function inChannel(item: ChatItem, ref: ChannelRef, prefs: ChannelPrefs): boolean {
+  return channelIncludes(prefs, channelKey(ref), itemKey(item));
+}
+
+export function findCustom(prefs: ChannelPrefs, ref: ChannelRef): CustomChannel | undefined {
+  return ref.kind === "custom" ? prefs.custom.find((c) => c.character === ref.character && c.id === ref.id) : undefined;
 }
 
 export function channelSlug(channel: ChatChannel): string {
   return channelLabel(channel).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-// Plugin order first, then everything else in protocol order.
-function ordered(channels: Set<ChatChannel>, relay: ChatChannel[]): ChatChannel[] {
-  const order = [...relay, ...ALL_CHANNELS.filter((c) => !relay.includes(c))];
-  return order.filter((c) => channels.has(c));
+// Saved order first, then rows it doesn't know yet in their default place; pins lead.
+export function arrange(refs: ChannelRef[], order: string[] = [], pinned: string[] = []): ChannelRef[] {
+  const byKey = new Map(refs.map((r) => [channelKey(r), r]));
+  const ordered = order.flatMap((key) => byKey.get(key) ?? []);
+  return pinFirst([...ordered, ...refs.filter((r) => !order.includes(channelKey(r)))], pinned);
 }
 
-export function buildChannelTree(items: ChatItem[], active: { character?: string; relayChannels: ChatChannel[]; showEmpty?: boolean }): Category[] {
-  const seen = new Map<string, { chats: Set<ChatChannel>; tells: Map<string, number>; lastTs: number }>();
-  const entry = (character: string) => {
-    let e = seen.get(character);
-    if (!e) seen.set(character, (e = { chats: new Set(), tells: new Map(), lastTs: 0 }));
+export function buildChannelTree(items: ChatItem[], { character, prefs }: { character?: string; prefs: ChannelPrefs }): Category[] {
+  const seen = new Map<string, { tells: Map<string, number>; lastTs: number }>();
+  const entry = (name: string) => {
+    let e = seen.get(name);
+    if (!e) seen.set(name, (e = { tells: new Map(), lastTs: 0 }));
     return e;
   };
-  if (active.character) entry(active.character);
+  if (character) entry(character);
+  for (const c of prefs.custom) entry(c.character);
   for (const item of items) {
     const e = entry(item.character);
     e.lastTs = Math.max(e.lastTs, item.ts);
     if (item.channel === "tell") {
       const partner = tellPartner(item);
       e.tells.set(partner, Math.max(e.tells.get(partner) ?? 0, item.ts));
-    } else {
-      e.chats.add(item.channel);
     }
   }
 
-  const categories = [...seen.entries()].map(([character, e]): Category => {
-    const isActive = character === active.character;
-    if (isActive && active.showEmpty) for (const c of active.relayChannels) if (c !== "tell") e.chats.add(c);
-    return {
-      character,
-      active: isActive,
-      chats: ordered(e.chats, active.relayChannels),
-      tells: [...e.tells.entries()].map(([partner, ts]) => ({ partner, ts })).sort((a, b) => b.ts - a.ts),
-      lastTs: e.lastTs,
-    };
+  const categories = [...seen.entries()].map(([name, e]): Category => {
+    const customs: ChannelRef[] = prefs.custom.filter((c) => c.character === name).map((c) => ({ kind: "custom", character: name, id: c.id }));
+    const tells: ChannelRef[] = [...e.tells.entries()].sort((a, b) => b[1] - a[1]).map(([partner]) => ({ kind: "tell", character: name, partner }));
+    return { character: name, active: name === character, refs: arrange([...customs, ...tells], prefs.order[name], prefs.pinned), lastTs: e.lastTs };
   });
   return categories.sort((a, b) => Number(b.active) - Number(a.active) || b.lastTs - a.lastTs);
 }
 
 export function firstChannel(categories: Category[]): ChannelRef | null {
-  const first = categories[0];
-  if (!first) return null;
-  if (first.chats.length > 0) return { kind: "chat", character: first.character, channel: first.chats[0] };
-  if (first.tells.length > 0) return { kind: "tell", character: first.character, partner: first.tells[0].partner };
-  return null;
+  return categories[0]?.refs[0] ?? null;
 }
 
 // Characters listed in toggled are flipped from the default, where only the logged-in one is expanded.

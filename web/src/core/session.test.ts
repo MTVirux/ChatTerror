@@ -339,7 +339,8 @@ describe("session", () => {
   });
 
   it("sends channel prefs with hello and when they change", async () => {
-    await store.setMeta("channelPrefs", { pinned: [], muted: ["c|Alpha Beta|say"], notify: {} });
+    const custom = [{ id: "s", character: "Alpha Beta", name: "Say", channels: ["say" as const] }];
+    await store.setMeta("channelPrefs", { pinned: [], muted: ["x|Alpha Beta|s"], notify: {}, custom, order: {} });
     const { session, relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
     relay.deliver({ t: "pluginStatus", online: true });
@@ -350,7 +351,7 @@ describe("session", () => {
       }),
     );
 
-    const prefs = { pinned: ["c|Alpha Beta|say"], muted: [], notify: { "t|Alpha Beta|Foo Bar@World": "all" as const } };
+    const prefs = { pinned: ["x|Alpha Beta|s"], muted: [], notify: { "t|Alpha Beta|Foo Bar@World": "all" as const }, custom, order: {} };
     await session.setChannelPrefs(prefs);
     expect(session.getState().channelPrefs).toEqual(prefs);
     expect(await store.getMeta("channelPrefs")).toEqual(prefs);

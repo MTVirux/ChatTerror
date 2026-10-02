@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
 import { AccountSettings } from "./AccountSettings";
 import { AppSettings } from "./AppSettings";
+import { channelIncludes, isItemMuted } from "../core/channelPrefs";
 import { buildChannelTree, channelKey, type ChannelRef } from "./channels";
 import { ChannelList, HomeList } from "./ChannelList";
 import { ChatPane } from "./ChatPane";
@@ -9,7 +10,6 @@ import { Drawer } from "./Drawer";
 import { GearIcon, MenuIcon } from "./icons";
 import { initialNav, legacyNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
 import { PairScreen } from "./PairScreen";
-import { loadShowEmpty, saveShowEmpty } from "./prefs";
 import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
@@ -54,7 +54,10 @@ function usePendingSends(sends: PendingSends): PendingSend[] {
 
 function useUnreadTracker(manager: AccountManager): UnreadTracker {
   const [tracker] = useState(() =>
-    createUnreadTracker(manager, (deviceId, key) => manager.session(deviceId)?.getState().channelPrefs.muted.includes(key) ?? false),
+    createUnreadTracker(manager, (deviceId, key) => {
+      const prefs = manager.session(deviceId)?.getState().channelPrefs;
+      return !!prefs && isItemMuted(prefs, key);
+    }),
   );
   const [, setVersion] = useState(0);
   useEffect(() => {
@@ -162,25 +165,26 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [epoch, setEpoch] = useState(0);
-  const [showEmpty, setShowEmpty] = useState(loadShowEmpty);
   const home = nav.server === "home";
   const account = home ? undefined : accounts.find((a) => a.deviceId === nav.server);
   const { items, loaded } = useFeed(manager, home ? null : nav.server, epoch);
 
   const tree = useMemo(
-    () => (account ? buildChannelTree(items, { character: account.character, relayChannels: account.state.relayChannels, showEmpty }) : []),
-    [items, account?.character, account?.state.relayChannels, showEmpty],
+    () => (account ? buildChannelTree(items, { character: account.character, prefs: account.state.channelPrefs }) : []),
+    [items, account?.character, account?.state.channelPrefs],
   );
   const channel = home ? null : resolveChannel(nav.channel, tree);
   const openKey = channel && channelKey(channel);
 
   // Before history loads the channel can resolve to a fallback, which must not be cleared or pinned.
   const shownKey = loaded ? openKey : null;
-  const unreadCount = useMemo(() => (home || !shownKey ? 0 : unread.count(nav.server, shownKey)), [home, nav.server, shownKey]);
+  const prefs = account?.state.channelPrefs;
+  const includes = useMemo(() => (shownKey && prefs ? (key: string) => channelIncludes(prefs, shownKey, key) : null), [shownKey, prefs]);
+  const unreadCount = useMemo(() => (home || !includes ? 0 : unread.count(nav.server, includes)), [home, nav.server, includes]);
 
   useEffect(() => {
-    unread.setOpen(home ? "home" : shownKey ? { deviceId: nav.server, key: shownKey } : null);
-  }, [unread, home, nav.server, shownKey]);
+    unread.setOpen(home ? "home" : includes ? { deviceId: nav.server, includes } : null);
+  }, [unread, home, nav.server, includes]);
 
   // Pin the resolved channel so new messages don't move the view.
   useEffect(() => {
@@ -227,8 +231,6 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
           onClose={() => setSettings(null)}
           onOpenAccount={openAccountFromApp}
           onAddAccount={() => go("add")}
-          showEmpty={showEmpty}
-          onShowEmptyChange={(show) => { setShowEmpty(show); saveShowEmpty(show); }}
         />
       );
     }

@@ -790,6 +790,38 @@ p {
   cursor: pointer;
 }
 
+.category-row {
+  display: flex;
+  align-items: center;
+}
+
+.category-row .category-head {
+  min-width: 0;
+}
+
+.category-add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.category-add:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.channel.add-channel {
+  --c: var(--muted);
+  font-style: italic;
+}
+
 .category-head:hover {
   color: var(--text);
 }
@@ -1624,6 +1656,26 @@ a.settings-row {
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.custom-name {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+
+.custom-name:focus {
+  outline: none;
+}
+
+.custom-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .channel-menu-label {
