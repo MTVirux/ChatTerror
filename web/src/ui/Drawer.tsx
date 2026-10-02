@@ -1,10 +1,11 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef } from "preact/hooks";
-import { swipeResult } from "./swipe";
+import { ignoresSwipe, swipeResult } from "./swipe";
 
-export function Drawer({ open, onOpenChange, drawer, children }: {
+export function Drawer({ open, onOpenChange, swipe = true, drawer, children }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  swipe?: boolean;
   drawer: ComponentChildren;
   children: ComponentChildren;
 }) {
@@ -54,7 +55,8 @@ export function Drawer({ open, onOpenChange, drawer, children }: {
 
   function onTouchStart(e: TouchEvent) {
     const t = e.touches[0];
-    touch.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+    const fromField = e.target instanceof Element && ignoresSwipe(e.target.tagName);
+    touch.current = swipe && e.touches.length === 1 && !fromField ? { x: t.clientX, y: t.clientY } : null;
   }
 
   function onTouchEnd(e: TouchEvent) {
@@ -62,7 +64,7 @@ export function Drawer({ open, onOpenChange, drawer, children }: {
     touch.current = null;
     const t = e.changedTouches[0];
     if (!start || !t) return;
-    const result = swipeResult({ startX: start.x, dx: t.clientX - start.x, dy: t.clientY - start.y, open });
+    const result = swipeResult({ dx: t.clientX - start.x, dy: t.clientY - start.y, open });
     if (!result) return;
     if (result === "open") swiped.current = true;
     onOpenChange(result === "open");
