@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace ChatTerror.Server.Relay;
 
-public sealed class RelaySocketHandler(
+public sealed partial class RelaySocketHandler(
     RelayStore store,
     ConnectionRegistry registry,
     IPushSender push,
@@ -210,6 +210,7 @@ public sealed class RelaySocketHandler(
             registry.Add(conn);
             store.TouchInstall(install.Id);
             OnPluginConnected(conn);
+            DeliverQueuedTells(conn);
         }
         else if (store.FindDeviceByToken(token) is { } device)
         {
@@ -219,6 +220,7 @@ public sealed class RelaySocketHandler(
             conn.Send(new AuthOkFrame(conn.Role, conn.Id));
             registry.Add(conn);
             OnDeviceConnected(conn, device);
+            DeliverQueuedTells(conn);
         }
         else
         {
@@ -279,7 +281,15 @@ public sealed class RelaySocketHandler(
                 else if (registry.Device(to) is { } online)
                     online.SendEncoded(msg);
                 else if (send.Notify && target.Push is { } subscription)
-                    _ = PushAsync(target, subscription, send.Payload);
+                    _ = PushAsync(target, subscription, JsonSerializer.Serialize(new { p = send.Payload, d = target.Id }));
+                break;
+
+            case TellSendFrame tell:
+                HandleTellSend(plugin, tell);
+                break;
+
+            case TellAckFrame ack:
+                AckTells(plugin, ack);
                 break;
 
             case PairDecisionFrame decision:
@@ -313,7 +323,7 @@ public sealed class RelaySocketHandler(
 
     private void HandleDeviceFrame(Conn conn, RelayFrame frame)
     {
-        if (frame is not SendFrame send)
+        if (frame is not (SendFrame or TellSendFrame or TellAckFrame))
         {
             conn.Send(new ErrorFrame(RelayErrors.BadFrame));
             return;
@@ -324,18 +334,28 @@ public sealed class RelaySocketHandler(
         {
             conn.Send(new RevokedFrame());
             conn.Close(WebSocketCloseStatus.NormalClosure, "Revoked");
+            return;
         }
-        else if (device.Status != DeviceStatus.Active)
+        if (device.Status != DeviceStatus.Active)
         {
             conn.Send(new ErrorFrame(RelayErrors.NotApproved));
+            return;
         }
-        else if (Encode(new MsgFrame(conn.Id, send.Payload)) is not { } msg)
+
+        switch (frame)
         {
-            conn.Send(new ErrorFrame(RelayErrors.TooLarge));
-        }
-        else
-        {
-            registry.Plugin(conn.InstallId)?.SendEncoded(msg);
+            case TellSendFrame tell:
+                HandleTellSend(conn, tell);
+                break;
+            case TellAckFrame ack:
+                AckTells(conn, ack);
+                break;
+            case SendFrame send when Encode(new MsgFrame(conn.Id, send.Payload)) is { } msg:
+                registry.Plugin(conn.InstallId)?.SendEncoded(msg);
+                break;
+            default:
+                conn.Send(new ErrorFrame(RelayErrors.TooLarge));
+                break;
         }
     }
 
@@ -349,9 +369,8 @@ public sealed class RelaySocketHandler(
     private DeviceRecord? OwnDevice(Conn plugin, string deviceId) =>
         store.FindDevice(deviceId) is { } device && device.InstallId == plugin.InstallId ? device : null;
 
-    private async Task PushAsync(DeviceRecord device, PushSubscriptionRecord subscription, string payload)
+    private async Task PushAsync(DeviceRecord device, PushSubscriptionRecord subscription, string body)
     {
-        var body = JsonSerializer.Serialize(new { p = payload, d = device.Id });
         var bodyBytes = Encoding.UTF8.GetByteCount(body);
         if (bodyBytes > MaxPushBodyBytes)
         {
