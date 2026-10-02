@@ -35,7 +35,7 @@ builder.Services.AddRateLimiter(limiter =>
     limiter.OnRejected = (context, ct) =>
         new ValueTask(context.HttpContext.Response.WriteAsJsonAsync(new ErrorBody("rateLimited"), ct));
     limiter.AddPolicy(RequestLimits.PairingPolicy, context => PerClient(context, relay => relay.PairingRequestsPerMinute, TimeSpan.FromMinutes(1)));
-    limiter.AddPolicy(RequestLimits.InstallPolicy, context => PerClient(context, relay => relay.InstallsPerHour, TimeSpan.FromHours(1)));
+    limiter.AddPolicy(RequestLimits.InstallPolicy, context => PerClient(context, relay => relay.InstallsPerHour, TimeSpan.FromHours(1), RequestLimits.InstallPartitionKey));
     limiter.AddPolicy(RequestLimits.SocketPolicy, context => PerClient(context, relay => relay.SocketConnectsPerMinute, TimeSpan.FromMinutes(1)));
     limiter.AddPolicy(RequestLimits.PushPolicy, context => PerClient(context, relay => relay.PushSubscriptionsPerMinute, TimeSpan.FromMinutes(1)));
 });
@@ -98,10 +98,11 @@ app.Map("/ws", (HttpContext context, RelaySocketHandler handler) => handler.Hand
 
 app.Run();
 
-static RateLimitPartition<string> PerClient(HttpContext context, Func<RelayOptions, int> permits, TimeSpan window)
+static RateLimitPartition<string> PerClient(HttpContext context, Func<RelayOptions, int> permits, TimeSpan window, Func<IPAddress?, string>? partitionKey = null)
 {
     var relay = context.RequestServices.GetRequiredService<IOptions<RelayOptions>>().Value;
-    return RateLimitPartition.GetFixedWindowLimiter(RequestLimits.PartitionKey(context.Connection.RemoteIpAddress), _ => new FixedWindowRateLimiterOptions
+    var key = (partitionKey ?? RequestLimits.PartitionKey)(context.Connection.RemoteIpAddress);
+    return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
     {
         PermitLimit = permits(relay),
         Window = window,

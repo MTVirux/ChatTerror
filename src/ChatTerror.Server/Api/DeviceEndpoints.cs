@@ -15,7 +15,7 @@ public sealed record PushRequest(string? Endpoint, PushKeys? Keys);
 
 public static class DeviceEndpoints
 {
-    private const int MaxEndpointLength = 2048;
+    public const int MaxEndpointLength = 1024;
     private const int MaxKeyLength = 256;
 
     public static void MapDeviceEndpoints(this IEndpointRouteBuilder app)
