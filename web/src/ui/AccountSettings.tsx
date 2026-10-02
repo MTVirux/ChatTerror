@@ -3,12 +3,8 @@ import type { AccountManager, AccountView } from "../core/accounts";
 import type { ChatChannel } from "../core/protocol";
 import { findAccount } from "../core/registry";
 import type { Session } from "../core/session";
-import { channelColor, channelLabel, isIos } from "./format";
+import { channelColor, channelLabel, needsHomeScreen } from "./format";
 import { SettingsGroup, SettingsSheet } from "./SettingsSheet";
-
-function needsHomeScreen(): boolean {
-  return isIos() && (navigator as Navigator & { standalone?: boolean }).standalone === false;
-}
 
 export function AccountSettings({ manager, account, session, onClose, onCacheCleared }: {
   manager: AccountManager;

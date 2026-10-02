@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { formatPairCode, parsePairCode } from "../core/session";
-import { defaultDeviceName, offerAndroidApp } from "./format";
+import { defaultDeviceName, needsHomeScreen, offerAndroidApp } from "./format";
 import { CloseIcon } from "./icons";
 
 const MISSING_SECRET = "This code is missing its second half. Enter all 16 characters shown in the plugin, like ABCD-EFGH-JKMN-PQRS.";
@@ -154,6 +154,12 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
             {busy ? "Pairing..." : revoked || pairAgain ? "Pair again" : onBack ? "Add account" : "Pair this device"}
           </button>
         </form>
+
+        {!onBack && needsHomeScreen() && (
+          <p class="hint pair-app">
+            On iPhone or iPad, tap Share, then Add to Home Screen, and pair from there. It stays paired more reliably and can show notifications.
+          </p>
+        )}
 
         {!onBack && offerAndroidApp() && (
           <p class="hint pair-app">

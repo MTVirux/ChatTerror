@@ -118,3 +118,7 @@ export function offerAndroidApp(): boolean {
 export function isIos(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 }
+
+export function needsHomeScreen(): boolean {
+  return isIos() && (navigator as Navigator & { standalone?: boolean }).standalone === false;
+}
