@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using ChatTerror.Protocol;
 using ChatTerror.Server.Push;
 using Microsoft.AspNetCore.Hosting;
@@ -18,6 +19,7 @@ public record DeviceInfo(string DeviceId, string Name, string Status, long LastS
 public record DeviceMe(string DeviceId, string Status);
 public record ErrorResponse(string Error);
 public record VapidResponse(string PublicKey);
+public record TellCharacterResponse(List<string> Registered);
 
 public sealed class RelayApp : WebApplicationFactory<Program>
 {
@@ -91,6 +93,29 @@ public sealed class RelayApp : WebApplicationFactory<Program>
         if (origin != null)
             client.DefaultRequestHeaders.Add("Origin", origin);
         return client;
+    }
+
+    public async Task<InstallResponse> RegisterInstallAsync(ECDiffieHellman key)
+    {
+        var response = await Client().PostAsJsonAsync("/api/installs", new { publicKey = Base64Url.Encode(P256.PublicRaw(key)) });
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<InstallResponse>())!;
+    }
+
+    public async Task<List<string>> PutTellCharacterAsync(string installToken, string hash, params string[] friends)
+    {
+        var response = await Client(installToken).PutAsJsonAsync($"/api/tells/characters/{hash}", new { friends });
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TellCharacterResponse>())!.Registered;
+    }
+
+    // The bundle always lists the plugin itself with the install key.
+    public async Task PutTellBundleAsync(string installToken, ECDiffieHellman key, params TellBundleEntry[] devices)
+    {
+        var publicKey = Base64Url.Encode(P256.PublicRaw(key));
+        var bundle = new TellBundle(publicKey, [new TellBundleEntry(TellTargets.Plugin, publicKey, false), .. devices], 1);
+        var response = await Client(installToken).PutAsJsonAsync("/api/tells/bundle", TellBundles.Sign(key, bundle), ProtocolJson.Options);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<InstallResponse> RegisterInstallAsync()

@@ -94,6 +94,7 @@ app.UseRateLimiter();
 app.MapInstallEndpoints();
 app.MapPairingEndpoints();
 app.MapDeviceEndpoints();
+app.MapTellEndpoints();
 app.Map("/ws", (HttpContext context, RelaySocketHandler handler) => handler.HandleAsync(context)).RequireRateLimiting(RequestLimits.SocketPolicy);
 
 app.Run();
