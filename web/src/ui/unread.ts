@@ -11,7 +11,7 @@ export type OpenChannel = { deviceId: string; key: string } | "home" | null;
 export interface UnreadTracker {
   count(deviceId: string, key: string): number;
   summary(deviceId: string): UnreadSummary;
-  total(): UnreadSummary;
+  total(deviceIds: string[]): UnreadSummary;
   setOpen(open: OpenChannel): void;
   subscribe(cb: () => void): () => void;
   close(): void;
@@ -56,11 +56,11 @@ export function createUnreadTracker(manager: Pick<AccountManager, "onMessages">)
   return {
     count: (deviceId, key) => counts.get(deviceId)?.get(key) ?? 0,
     summary: (deviceId) => summarize(counts.get(deviceId) ?? new Map()),
-    total() {
+    total(deviceIds) {
       let unread = false;
       let tells = 0;
-      for (const m of counts.values()) {
-        const s = summarize(m);
+      for (const deviceId of deviceIds) {
+        const s = summarize(counts.get(deviceId) ?? new Map());
         unread ||= s.unread;
         tells += s.tells;
       }

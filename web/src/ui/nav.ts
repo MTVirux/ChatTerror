@@ -59,6 +59,12 @@ export function initialNav(accounts: AccountView[], hash: string, stored: string
   return validNav({ server: accounts[0]?.deviceId ?? "add", channel: null }, accounts);
 }
 
+// The old UI stored "all" or a deviceId.
+export function legacyNav(stored: string | null): string | null {
+  if (!stored) return null;
+  return serializeNav({ server: stored === "all" ? "home" : stored, channel: null });
+}
+
 export function serializeNav(nav: Nav): string {
   return JSON.stringify({ server: nav.server, channel: nav.channel });
 }

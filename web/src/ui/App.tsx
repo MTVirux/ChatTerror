@@ -7,7 +7,7 @@ import { ChannelList, HomeList } from "./ChannelList";
 import { ChatPane } from "./ChatPane";
 import { Drawer } from "./Drawer";
 import { GearIcon, MenuIcon } from "./icons";
-import { initialNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
+import { initialNav, legacyNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
 import { PairScreen } from "./PairScreen";
 import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
@@ -18,6 +18,7 @@ import { useFeed } from "./useFeed";
 
 const NAV_KEY = "chatterror.nav";
 const LAST_KEY = "chatterror.lastChannels";
+const LEGACY_KEY = "chatterror.account";
 
 function stored(key: string): string | null {
   try {
@@ -71,13 +72,18 @@ export function App({ manager }: { manager: AccountManager }) {
   const pending = usePendingSends(sends);
   const unread = useUnreadTracker(manager);
   const [last] = useState(() => ({ current: parseLastChannels(stored(LAST_KEY)) }));
-  const [saved, setNav] = useState<Nav>(() => initialNav(manager.list(), location.hash, stored(NAV_KEY), last.current));
+  const [saved, setNav] = useState<Nav>(() => initialNav(manager.list(), location.hash, stored(NAV_KEY) ?? legacyNav(stored(LEGACY_KEY)), last.current));
   const nav = validNav(saved, accounts);
   const go = (server: Server) => setNav(navTo(server, last.current));
   const [pairingAgain, setPairingAgain] = useState(false);
 
   useEffect(() => {
     if (location.hash.startsWith("#account=")) history.replaceState(null, "", location.pathname + location.search);
+    try {
+      localStorage.removeItem(LEGACY_KEY);
+    } catch {
+      // Blocked storage; the old key is simply ignored once the new one exists.
+    }
   }, []);
 
   useEffect(() => {

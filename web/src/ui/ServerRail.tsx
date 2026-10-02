@@ -14,7 +14,7 @@ export function ServerRail({ accounts, server, unread, onSelect }: {
     <nav class="rail" aria-label="Servers">
       {accounts.length > 1 && (
         <>
-          <RailItem label="Home" selected={server === "home"} summary={unread.total()} onClick={() => onSelect("home")}>
+          <RailItem label="Home" selected={server === "home"} summary={unread.total(accounts.map((a) => a.deviceId))} onClick={() => onSelect("home")}>
             <HomeIcon />
           </RailItem>
           <div class="rail-sep" aria-hidden="true" />

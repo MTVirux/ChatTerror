@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AccountView } from "../core/accounts";
 import type { Category } from "./channels";
-import { initialNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav } from "./nav";
+import { initialNav, legacyNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav } from "./nav";
 
 const acct = (deviceId: string) => ({ deviceId, label: deviceId, status: "active", unread: 0, state: {} }) as unknown as AccountView;
 
@@ -33,6 +33,12 @@ describe("nav", () => {
     expect(initialNav([acct("a"), acct("b")], "", stored)).toEqual({ server: "b", channel: "c|X|party" });
     expect(initialNav([acct("a")], "", "{nope")).toEqual({ server: "a", channel: null });
     expect(initialNav([acct("a")], "", '"just a string"')).toEqual({ server: "a", channel: null });
+  });
+  it("falls back to the old UI's account key", () => {
+    expect(initialNav([acct("a"), acct("b")], "", legacyNav("all"))).toEqual({ server: "home", channel: null });
+    expect(initialNav([acct("a"), acct("b")], "", legacyNav("b"))).toEqual({ server: "b", channel: null });
+    expect(initialNav([acct("a")], "", legacyNav("gone"))).toEqual({ server: "a", channel: null });
+    expect(legacyNav(null)).toBeNull();
   });
   it("starts on the first account without a stored nav", () => {
     expect(initialNav([acct("a"), acct("b")], "", null)).toEqual({ server: "a", channel: null });

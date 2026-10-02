@@ -44,9 +44,17 @@ describe("unread tracker", () => {
     const t = createUnreadTracker(m);
     m.push([item("a", { channel: "tell", sender: "C D", senderWorld: "W" })]);
     expect(t.summary("a")).toEqual({ unread: true, tells: 1 });
-    expect(t.total()).toEqual({ unread: true, tells: 1 });
+    expect(t.total(["a"])).toEqual({ unread: true, tells: 1 });
     t.setOpen({ deviceId: "a", key: channelKey({ kind: "tell", character: "Alpha Beta", partner: "C D@W" }) });
     expect(t.summary("a")).toEqual({ unread: false, tells: 0 });
+  });
+
+  it("only totals the given accounts so removed ones drop out", () => {
+    const m = fakeManager();
+    const t = createUnreadTracker(m);
+    m.push([item("gone", { channel: "tell", sender: "C D", senderWorld: "W" })]);
+    expect(t.total(["gone"])).toEqual({ unread: true, tells: 1 });
+    expect(t.total(["a"])).toEqual({ unread: false, tells: 0 });
   });
 
   it("counts nothing while Home is open", () => {
@@ -54,7 +62,7 @@ describe("unread tracker", () => {
     const t = createUnreadTracker(m);
     t.setOpen("home");
     m.push([item("a")]);
-    expect(t.total().unread).toBe(false);
+    expect(t.total(["a"]).unread).toBe(false);
   });
 
   it("notifies subscribers and stops listening on close", () => {
