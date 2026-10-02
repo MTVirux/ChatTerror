@@ -260,8 +260,12 @@ p {
   min-height: 100%;
   display: flex;
   justify-content: center;
-  padding: calc(56px + var(--safe-top)) 16px calc(32px + var(--safe-bottom));
+  padding: calc(24px + var(--safe-top)) 16px calc(32px + var(--safe-bottom));
   background: var(--page);
+}
+
+.pair-page.has-close {
+  padding-top: calc(56px + var(--safe-top));
 }
 
 .pair-close {

@@ -92,7 +92,7 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
   }
 
   return (
-    <main class="pair-page">
+    <main class={`pair-page${onBack ? " has-close" : ""}`}>
       {onBack && (
         <button class="icon-btn pair-close" aria-label="Close" onClick={onBack}>
           <CloseIcon />
