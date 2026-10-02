@@ -7,6 +7,7 @@ import type { ChatItem } from "./protocol";
 import { notificationTitle, routePush } from "./pushRoute";
 import { addAccount, resetRegistryForTests, updateAccount } from "./registry";
 import { LEGACY_DB_NAME, openAccountStore, resetStorageForTests } from "./storage";
+import { TELL_TTL_MS } from "./tells";
 
 function newKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
@@ -107,22 +108,55 @@ describe("notificationTitle", () => {
 });
 
 describe("routePush for relayed tells", () => {
-  it("opens a tell with the account's tell key and stores it", async () => {
-    await seed("a");
-    await seed("b");
-    const store = openAccountStore("chatterror-b");
+  const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+
+  async function tellAccount(deviceId: string) {
+    const store = openAccountStore(`chatterror-${deviceId}`);
     const pair = await generateTellKey();
     const publicKey = encode(await exportPublicRaw(pair.publicKey));
     await store.setMeta("tellKey", { privateKey: pair.privateKey, publicKey });
-    const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
     await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: [], sendChannels: [], maxLength: 500, contacts: [contact] });
-    const body = { id: "t1", fromHash: "bob", fromName: "Bob Smith", fromWorld: "Lich", toHash: "me", toName: "Me", toWorld: "Lich", text: "hi", ts: 5 };
-    const envelope = encode(await sealTell(decode(publicKey), new TextEncoder().encode(JSON.stringify(body))));
+    const push = async (ts = Date.now()) => {
+      const body = { id: "t1", fromHash: "bob", fromName: "Bob Smith", fromWorld: "Lich", toHash: "me", toName: "Me", toWorld: "Lich", text: "hi", ts };
+      const envelope = encode(await sealTell(decode(publicKey), new TextEncoder().encode(JSON.stringify(body))));
+      return { t: "tell", i: "t1", f: "bob", e: envelope, k: "bob-install", d: deviceId };
+    };
+    return { store, push };
+  }
 
-    const routed = await routePush({ t: "tell", i: "t1", f: "bob", e: envelope, k: "bob-install", d: "b" });
+  it("opens a tell with the account's tell key and stores it", async () => {
+    await seed("a");
+    await seed("b");
+    const { store, push } = await tellAccount("b");
+
+    const routed = await routePush(await push());
 
     expect(routed).toMatchObject({ deviceId: "b", item: { id: "t1", sender: "Bob Smith", channel: "tell" } });
     expect((await store.loadMessages(10)).map((i) => i.id)).toEqual(["t1"]);
+  });
+
+  it("numbers a label another account already uses", async () => {
+    await seed("a");
+    await seed("b");
+    await updateAccount("a", { label: "Alpha" });
+    await updateAccount("b", { label: "Alpha" });
+    const { push } = await tellAccount("b");
+    expect(await routePush(await push())).toMatchObject({ deviceId: "b", label: "Alpha (2)" });
+  });
+
+  it("does not notify again for a tell it already stored", async () => {
+    await seed("b");
+    const { push } = await tellAccount("b");
+    const body = await push();
+    expect(await routePush(body)).toMatchObject({ item: { id: "t1" } });
+    expect(await routePush(body)).toBe("duplicate");
+  });
+
+  it("drops a tell older than the relay keeps tells", async () => {
+    await seed("b");
+    const { store, push } = await tellAccount("b");
+    expect(await routePush(await push(Date.now() - TELL_TTL_MS - 1000))).toBeNull();
+    expect(await store.loadMessages(10)).toEqual([]);
   });
 
   it("returns null for a tell it can't open", async () => {

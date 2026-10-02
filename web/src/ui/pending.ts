@@ -7,6 +7,7 @@ export interface PendingSend {
   deviceId: string;
   channel: ChatChannel;
   target?: string;
+  character?: string;
   text: string;
   error?: string;
 }
@@ -14,7 +15,7 @@ export interface PendingSend {
 export interface PendingSends {
   list(): PendingSend[];
   subscribe(cb: (list: PendingSend[]) => void): () => void;
-  send(deviceId: string, channel: ChatChannel, text: string, target?: string): Promise<void>;
+  send(deviceId: string, channel: ChatChannel, text: string, target?: string, character?: string): Promise<void>;
   retry(p: PendingSend): Promise<void>;
   dismiss(localId: number): void;
 }
@@ -33,7 +34,7 @@ export function createPendingSends(manager: AccountManager): PendingSends {
   async function run(entry: PendingSend) {
     let result;
     try {
-      result = await manager.session(entry.deviceId)!.send(entry.channel, entry.text, entry.target);
+      result = await manager.session(entry.deviceId)!.send(entry.channel, entry.text, entry.target, entry.character);
     } catch {
       result = { ok: false, error: undefined };
     }
@@ -49,14 +50,14 @@ export function createPendingSends(manager: AccountManager): PendingSends {
       return () => listeners.delete(cb);
     },
 
-    send(deviceId, channel, text, target) {
-      const entry: PendingSend = { localId: nextLocalId++, deviceId, channel, text, target };
+    send(deviceId, channel, text, target, character) {
+      const entry: PendingSend = { localId: nextLocalId++, deviceId, channel, text, target, character };
       set([...list, entry]);
       return run(entry);
     },
 
     retry(p) {
-      const entry: PendingSend = { localId: p.localId, deviceId: p.deviceId, channel: p.channel, text: p.text, target: p.target };
+      const entry: PendingSend = { localId: p.localId, deviceId: p.deviceId, channel: p.channel, text: p.text, target: p.target, character: p.character };
       set(list.map((q) => (q.localId === p.localId ? entry : q)));
       return run(entry);
     },

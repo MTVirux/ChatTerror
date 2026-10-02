@@ -23,12 +23,17 @@ describe("composer blocking", () => {
   const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
 
   it("lets tells to ChatTerror friends through while the game is offline", () => {
-    expect(blockedReason("gameOffline", [contact], "tell", "Bob Smith@Lich")).toBeNull();
+    expect(blockedReason("gameOffline", [contact], "tell", "Bob Smith@Lich", "Me")).toBeNull();
+  });
+
+  it("only relays from the conversation's own character", () => {
+    expect(blockedReason("gameOffline", [contact], "tell", "Bob Smith@Lich", "My Alt")).not.toBeNull();
+    expect(blockedReason("gameOffline", [contact], "tell", "Bob Smith@Lich", undefined)).not.toBeNull();
   });
 
   it("blocks everything else while the game is offline", () => {
     expect(blockedReason("gameOffline", [contact], "tell", "Cid Garlond@Lich")).not.toBeNull();
     expect(blockedReason("gameOffline", [contact], "party", undefined)).not.toBeNull();
-    expect(blockedReason("relayOffline", [contact], "tell", "Bob Smith@Lich")).not.toBeNull();
+    expect(blockedReason("relayOffline", [contact], "tell", "Bob Smith@Lich", "Me")).not.toBeNull();
   });
 });

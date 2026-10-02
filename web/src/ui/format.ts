@@ -55,6 +55,7 @@ const SEND_ERRORS: Record<string, string> = {
   notChatTerror: "They don't use ChatTerror",
   notOwner: "This character is registered to another ChatTerror install",
   keyChanged: "Their ChatTerror key changed. Forget them under Trusted ChatTerror friends in the plugin",
+  staleBundle: "The relay sent an outdated copy of their ChatTerror keys",
 };
 
 export function sendErrorText(code?: string): string {

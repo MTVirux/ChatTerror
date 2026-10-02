@@ -59,12 +59,14 @@ self.addEventListener("fetch", (event) => {
 });
 
 async function handlePush(data: PushMessageData | null) {
-  let routed: RoutedPush | null = null;
+  let routed: RoutedPush | "duplicate" | null = null;
   try {
     routed = await routePush(data?.json());
   } catch {
     routed = null;
   }
+  // A replay of something already shown. Browsers allow the odd push without a notification.
+  if (routed === "duplicate") return;
 
   // Browsers penalise push events that do not show a notification, so failures still show one.
   if (!routed) {
