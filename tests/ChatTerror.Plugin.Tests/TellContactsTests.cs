@@ -28,11 +28,13 @@ public class TellContactsTests
     }
 
     [Fact]
-    public void Route_FallsBackToAnAltThatIsFriends()
+    public void Route_NeverSendsFromAnAlt()
     {
         var other = new TellCharacter { Hash = TellHash.Compute(3), Name = "Other", World = "Lich" };
-        var route = TellContacts.Route([other, Main], other.Hash, new TellTarget("bob smith", "lich"));
-        Assert.Equal(Main.Hash, route!.From.Hash);
+
+        Assert.Null(TellContacts.Route([other, Main], other.Hash, new TellTarget("bob smith", "lich")));
+        Assert.Null(TellContacts.Route([Main], null, new TellTarget("Bob Smith", "Lich")));
+        Assert.Equal(Main.Hash, TellContacts.Route([other, Main], Main.Hash, new TellTarget("bob smith", "lich"))!.From.Hash);
     }
 
     [Fact]
@@ -63,6 +65,19 @@ public class TellContactsTests
     {
         var settings = new RelaySettings { IgnoredSenders = ["Cid Garlond@Lich"] };
         Assert.Equal([Bob.Hash], TellContacts.Uploadable(Alt, settings));
+    }
+
+    [Fact]
+    public void AcceptBundle_RefusesOlderBundles()
+    {
+        var issued = new Dictionary<string, long>();
+
+        Assert.True(TellContacts.AcceptBundle(issued, "bob", 100));
+        Assert.True(TellContacts.AcceptBundle(issued, "bob", 100));
+        Assert.True(TellContacts.AcceptBundle(issued, "bob", 200));
+        Assert.False(TellContacts.AcceptBundle(issued, "bob", 150));
+        Assert.Equal(200, issued["bob"]);
+        Assert.True(TellContacts.AcceptBundle(issued, "cid", 1));
     }
 
     [Fact]

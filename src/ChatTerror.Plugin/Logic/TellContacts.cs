@@ -29,16 +29,12 @@ public enum SenderTrust { Trusted, Pinned, KeyChanged }
 
 public static class TellContacts
 {
-    // The logged-in character sends when it is friends with the target, otherwise an alt that is.
+    // Only the logged-in character sends, a tell typed on one character must never go out from an alt.
     public static TellRoute? Route(IReadOnlyList<TellCharacter> characters, string? currentHash, TellTarget target)
     {
-        foreach (var character in characters.OrderBy(c => c.Hash == currentHash ? 0 : 1))
-        {
-            var friend = character.Friends.FirstOrDefault(f => character.Registered.Contains(f.Hash) && target.Matches(f.Name, f.World));
-            if (friend != null)
-                return new TellRoute(character, friend);
-        }
-        return null;
+        var character = characters.FirstOrDefault(c => c.Hash == currentHash);
+        var friend = character?.Friends.FirstOrDefault(f => character.Registered.Contains(f.Hash) && target.Matches(f.Name, f.World));
+        return friend == null ? null : new TellRoute(character!, friend);
     }
 
     public static TellFriend? Friend(IReadOnlyList<TellCharacter> characters, string ownHash, string friendHash) =>
@@ -60,6 +56,15 @@ public static class TellContacts
             return SenderTrust.Pinned;
         }
         return pinned == fromKey ? SenderTrust.Trusted : SenderTrust.KeyChanged;
+    }
+
+    // Refuses a bundle older than the newest one accepted for that character, so the relay can't roll back to dropped keys.
+    public static bool AcceptBundle(IDictionary<string, long> issued, string hash, long issuedAt)
+    {
+        if (issued.TryGetValue(hash, out var newest) && issuedAt < newest)
+            return false;
+        issued[hash] = issuedAt;
+        return true;
     }
 
     public static List<string> Uploadable(TellCharacter character, RelaySettings settings) =>

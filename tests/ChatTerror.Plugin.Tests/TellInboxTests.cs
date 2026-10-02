@@ -16,12 +16,33 @@ public class TellInboxTests
     [Fact]
     public void Inbox_HoldsTellsUntilLoggedIn()
     {
-        var inbox = new TellInbox();
+        var inbox = new TellInbox(10);
         inbox.Add(new TellFrame("a", "f", "e", "k"));
 
-        Assert.Empty(inbox.Drain(loggedIn: false));
-        Assert.Equal(["a"], inbox.Drain(loggedIn: true).Select(f => f.Id));
-        Assert.Empty(inbox.Drain(loggedIn: true));
+        Assert.Empty(inbox.Drain(loggedIn: false, max: 5));
+        Assert.Equal(["a"], inbox.Drain(loggedIn: true, max: 5).Select(f => f.Id));
+        Assert.Empty(inbox.Drain(loggedIn: true, max: 5));
+    }
+
+    [Fact]
+    public void Inbox_DropsNewTellsWhenFullAndDrainsAFewAtATime()
+    {
+        var inbox = new TellInbox(3);
+        foreach (var id in new[] { "a", "b", "c", "d" })
+            inbox.Add(new TellFrame(id, "f", "e", "k"));
+
+        Assert.Equal(["a", "b"], inbox.Drain(loggedIn: true, max: 2).Select(f => f.Id));
+        Assert.Equal(["c"], inbox.Drain(loggedIn: true, max: 2).Select(f => f.Id));
+    }
+
+    [Fact]
+    public void IsExpired_RefusesTellsOlderThanTheRelayKeepsThem()
+    {
+        var now = (long)Limits.TellTtl.TotalMilliseconds + 10_000;
+
+        Assert.False(TellItems.IsExpired(Body(ts: 10_000), now));
+        Assert.True(TellItems.IsExpired(Body(ts: 9_999), now));
+        Assert.False(TellItems.IsExpired(Body(ts: now + 5000), now));
     }
 
     [Fact]

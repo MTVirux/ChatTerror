@@ -31,7 +31,7 @@ public static class SendValidator
         return null;
     }
 
-    private static bool IsLineBreakOrControl(char c) => char.IsControl(c) || c is '\u2028' or '\u2029';
+    public static bool IsLineBreakOrControl(char c) => char.IsControl(c) || c is '\u2028' or '\u2029';
 
     public static string BuildLine(SendChatPayload p) => Prefix(p) + p.Text.Trim();
 

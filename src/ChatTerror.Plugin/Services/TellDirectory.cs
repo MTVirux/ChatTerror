@@ -127,7 +127,8 @@ public sealed class TellDirectory : IDisposable
         List<string> registered;
         try
         {
-            registered = await api.PutTellCharacter(token, character.Hash, friends);
+            // Only friends we uploaded count, so the relay can't grow our pins with arbitrary hashes.
+            registered = (await api.PutTellCharacter(token, character.Hash, friends)).Intersect(friends).ToList();
         }
         catch (RelayApiException ex) when (ex.StatusCode == 409)
         {
@@ -151,7 +152,8 @@ public sealed class TellDirectory : IDisposable
                 continue;
             await framework.RunOnFrameworkThread(() =>
             {
-                config.TellPins.TryAdd(hash, bundle.InstallPublicKey);
+                if (!config.TellPins.ContainsKey(hash) && TellContacts.AcceptBundle(config.TellBundleIssuedAt, hash, bundle.IssuedAt))
+                    config.TellPins[hash] = bundle.InstallPublicKey;
                 saveConfig();
             });
         }

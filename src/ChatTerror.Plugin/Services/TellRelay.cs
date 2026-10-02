@@ -16,12 +16,16 @@ namespace ChatTerror.Plugin.Services;
 
 public static class TellMarker
 {
-    public const string Prefix = " ";
+    // Only marks relayed tells in the log, ChatCapture.Printed is what recognizes them.
+    public const string Prefix = "\uE0BB ";
 }
 
 // Sends tells the game dropped through the relay and shows relayed tells in game. Framework thread only.
 public sealed class TellRelay : IDisposable
 {
+    private const int SeenCapacity = 500;
+    private const int TellsPerFrame = 5;
+
     private readonly Configuration config;
     private readonly Action saveConfig;
     private readonly KeyStore keys;
@@ -29,20 +33,22 @@ public sealed class TellRelay : IDisposable
     private readonly RelayClient relay;
     private readonly DeviceHub hub;
     private readonly TellDirectory directory;
+    private readonly ChatCapture capture;
     private readonly IChatGui chatGui;
     private readonly IFramework framework;
     private readonly IPlayerState playerState;
     private readonly IPluginLog log;
     private readonly TellFallback fallback = new();
     private readonly ReplyTracker reply = new();
-    private readonly SeenIds seen = new(1000);
+    private readonly SeenIds seen;
     private readonly InFlightTells<SentTell> inFlight = new();
-    private readonly TellInbox inbox = new();
+    private readonly TellInbox inbox = new(Limits.MaxQueuedTells);
+    private readonly HashSet<string> keyChangeReported = new();
 
     private sealed record SentTell(TellBody Body, TellFriend To);
 
     public TellRelay(Configuration config, Action saveConfig, KeyStore keys, RelayApi api, RelayClient relay, DeviceHub hub,
-        TellDirectory directory, IChatGui chatGui, IFramework framework, IPlayerState playerState, IPluginLog log)
+        TellDirectory directory, ChatCapture capture, IChatGui chatGui, IFramework framework, IPlayerState playerState, IPluginLog log)
     {
         this.config = config;
         this.saveConfig = saveConfig;
@@ -51,20 +57,22 @@ public sealed class TellRelay : IDisposable
         this.relay = relay;
         this.hub = hub;
         this.directory = directory;
+        this.capture = capture;
         this.chatGui = chatGui;
         this.framework = framework;
         this.playerState = playerState;
         this.log = log;
+        seen = new SeenIds(SeenCapacity, config.SeenTellIds);
         hub.TellFrameReceived += OnFrame;
         relay.StateChanged += OnStateChanged;
-        chatGui.ChatMessage += OnChatMessage;
+        capture.GameTell += OnGameTell;
         framework.Update += OnUpdate;
     }
 
     public void Dispose()
     {
         framework.Update -= OnUpdate;
-        chatGui.ChatMessage -= OnChatMessage;
+        capture.GameTell -= OnGameTell;
         relay.StateChanged -= OnStateChanged;
         hub.TellFrameReceived -= OnFrame;
     }
@@ -84,12 +92,8 @@ public sealed class TellRelay : IDisposable
     private string? CurrentWorld() =>
         playerState.IsLoaded && playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ExtractText() : null;
 
-    private void OnChatMessage(IHandleableChatMessage message)
+    private void OnGameTell(IHandleableChatMessage message)
     {
-        if (message.LogKind is not (XivChatType.TellIncoming or XivChatType.TellOutgoing)
-            || message.Message.TextValue.StartsWith(TellMarker.Prefix, StringComparison.Ordinal))
-            return;
-
         var player = message.Sender.Payloads.OfType<PlayerPayload>().FirstOrDefault();
         var name = player?.PlayerName ?? message.Sender.TextValue;
         var world = player != null && player.World.IsValid && player.World.RowId != 0 ? player.World.Value.Name.ExtractText() : null;
@@ -114,10 +118,16 @@ public sealed class TellRelay : IDisposable
     private void OnUpdate(IFramework unused)
     {
         // Unacked tells are delivered again on reconnect, so holding them until login loses nothing.
-        foreach (var tell in inbox.Drain(playerState.IsLoaded))
+        var tells = inbox.Drain(playerState.IsLoaded, TellsPerFrame);
+        foreach (var tell in tells)
         {
             Receive(tell);
             relay.Send(new TellAckFrame([tell.Id]));
+        }
+        if (tells.Count > 0)
+        {
+            config.SeenTellIds = seen.Ids;
+            saveConfig();
         }
 
         foreach (var pending in fallback.Expired(Environment.TickCount64))
@@ -170,15 +180,15 @@ public sealed class TellRelay : IDisposable
         var bundle = TellBundles.Verify(signed, pin);
         if (bundle == null)
             throw pin != null && TellBundles.Verify(signed, null) != null ? new KeyChangedException() : new InvalidOperationException("Invalid bundle.");
-        if (pin == null)
+        var current = await framework.RunOnFrameworkThread(() =>
         {
-            await framework.RunOnFrameworkThread(() =>
-            {
-                config.TellPins[hash] = bundle.InstallPublicKey;
-                saveConfig();
-            });
-        }
-        return bundle;
+            if (!TellContacts.AcceptBundle(config.TellBundleIssuedAt, hash, bundle.IssuedAt))
+                return false;
+            config.TellPins.TryAdd(hash, bundle.InstallPublicKey);
+            saveConfig();
+            return true;
+        });
+        return current ? bundle : throw new InvalidOperationException("The relay sent an outdated bundle.");
     }
 
     private void OnFrame(RelayFrame frame)
@@ -199,6 +209,8 @@ public sealed class TellRelay : IDisposable
 
     private void Receive(TellFrame tell)
     {
+        if (!config.TellsEnabled)
+            return;
         TellBody body;
         try
         {
@@ -209,47 +221,58 @@ public sealed class TellRelay : IDisposable
             log.Warning("Dropped an undecryptable relayed tell.");
             return;
         }
-        if (body.Id != tell.Id || body.FromHash != tell.From || !seen.Add(body.Id))
+        if (body.Id != tell.Id || body.FromHash != tell.From || TellItems.IsExpired(body, Now()) || !seen.Add(body.Id))
             return;
 
-        // A copy of a tell one of our phones sent.
+        // A copy of a tell one of our phones sent, which only this install can have sent.
         if (config.TellCharacters.Any(c => c.Hash == tell.From))
         {
-            ShowOutgoing(body);
+            if (tell.FromKey == keys.PublicKey)
+                ShowOutgoing(body);
+            else
+                log.Warning("Dropped a relayed tell from one of our characters that another install sent.");
             return;
         }
 
-        if (!config.TellsEnabled || TellItems.Incoming(body, tell.From, config.TellCharacters, Now()) is not { } item)
+        if (TellItems.Incoming(body, tell.From, config.TellCharacters, Now()) is not { } item)
             return;
         switch (TellContacts.TrustSender(config.TellPins, tell.From, tell.FromKey))
         {
             case SenderTrust.KeyChanged:
-                chatGui.PrintError($"[ChatTerror] Dropped a relayed tell from {item.Sender}@{item.SenderWorld}: their ChatTerror key changed. Forget them in the Advanced tab if they reinstalled.");
+                if (keyChangeReported.Add(tell.From))
+                    chatGui.PrintError($"[ChatTerror] Dropped a relayed tell from {item.Sender}@{item.SenderWorld}: their ChatTerror key changed. Forget them in the Advanced tab if they reinstalled.");
                 return;
             case SenderTrust.Pinned:
                 saveConfig();
                 break;
         }
-        chatGui.Print(new XivChatEntry
-        {
-            Type = XivChatType.TellIncoming,
-            Name = new SeStringBuilder().AddText($"{item.Sender}@{item.SenderWorld}").Build(),
-            Message = new SeStringBuilder().AddText(TellMarker.Prefix + body.Text).Build(),
-        });
+        if (TellText.Clean(body.Text, Limits.MaxTextBytes) is not { Length: > 0 } text)
+            return;
+        Print(XivChatType.TellIncoming, $"{item.Sender}@{item.SenderWorld}", text);
         reply.Incoming(new TellTarget(item.Sender, item.SenderWorld!), relayed: true);
-        hub.PublishRelayed(item);
+        hub.PublishRelayed(item with { Text = text });
     }
 
     private void ShowOutgoing(TellBody body)
     {
         seen.Add(body.Id);
+        var name = TellText.Clean(body.ToName, TellText.MaxNameBytes);
+        var world = TellText.Clean(body.ToWorld, TellText.MaxNameBytes);
+        var text = TellText.Clean(body.Text, Limits.MaxTextBytes);
+        Print(XivChatType.TellOutgoing, $"{name}@{world}", text);
+        hub.PublishRelayed(TellItems.Outgoing(body, Now()) with { Text = text });
+    }
+
+    private void Print(XivChatType type, string name, string text)
+    {
+        var message = new SeStringBuilder().AddText(TellMarker.Prefix + text).Build();
+        capture.Printed.Add(PrintedTells.Key(type == XivChatType.TellOutgoing, message.TextValue));
         chatGui.Print(new XivChatEntry
         {
-            Type = XivChatType.TellOutgoing,
-            Name = new SeStringBuilder().AddText($"{body.ToName}@{body.ToWorld}").Build(),
-            Message = new SeStringBuilder().AddText(TellMarker.Prefix + body.Text).Build(),
+            Type = type,
+            Name = new SeStringBuilder().AddText(name).Build(),
+            Message = message,
         });
-        hub.PublishRelayed(TellItems.Outgoing(body, Now()));
     }
 
     private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

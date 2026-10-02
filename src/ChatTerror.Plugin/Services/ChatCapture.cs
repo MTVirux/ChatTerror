@@ -20,6 +20,12 @@ public sealed class ChatCapture : IDisposable
     private readonly Configuration config;
     private readonly DeviceHub hub;
 
+    // Relayed tells TellRelay printed, which TellRelay also publishes itself with their own id.
+    public PrintedTells Printed { get; } = new(50);
+
+    // Tells from the game itself, never ones this plugin printed.
+    public event Action<IHandleableChatMessage>? GameTell;
+
     public ChatCapture(IChatGui chatGui, IPlayerState playerState, Configuration config, DeviceHub hub)
     {
         this.chatGui = chatGui;
@@ -33,15 +39,18 @@ public sealed class ChatCapture : IDisposable
 
     private void OnChatMessage(IHandleableChatMessage message)
     {
+        if (message.LogKind is XivChatType.TellIncoming or XivChatType.TellOutgoing)
+        {
+            if (Printed.Take(PrintedTells.Key(message.LogKind == XivChatType.TellOutgoing, message.Message.TextValue)))
+                return;
+            GameTell?.Invoke(message);
+        }
+
         if (!config.Enabled || config.Devices.Count == 0)
             return;
 
         var type = message.LogKind;
         if (ChannelMap.FromXivChatType(type) is not { } channel)
-            return;
-
-        // Relayed tells are printed and published by TellRelay with their own id.
-        if (channel == ChatChannel.Tell && message.Message.TextValue.StartsWith(TellMarker.Prefix, StringComparison.Ordinal))
             return;
 
         var me = playerState.IsLoaded ? playerState.CharacterName : null;
