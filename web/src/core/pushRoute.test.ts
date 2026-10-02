@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { sealPayload } from "./crypto";
 import type { ChatItem } from "./protocol";
 import { notificationTitle, routePush } from "./pushRoute";
-import { addAccount, resetRegistryForTests } from "./registry";
+import { addAccount, resetRegistryForTests, updateAccount } from "./registry";
 import { LEGACY_DB_NAME, openAccountStore, resetStorageForTests } from "./storage";
 
 function newKey(): Promise<CryptoKey> {
@@ -67,6 +67,13 @@ describe("routePush", () => {
     const routed = await routePush({ p: await seal(aesKey, item("m1"), 5), d: "old" });
     expect(routed).toMatchObject({ deviceId: "old", multiple: false, item: { id: "m1" } });
     expect((await legacy.loadMessages(10)).map((i) => i.id)).toEqual(["m1"]);
+  });
+
+  it("uses the custom name in the label", async () => {
+    await seed("a");
+    const keyB = await seed("b");
+    await updateAccount("b", { name: "Main" });
+    expect(await routePush({ p: await seal(keyB, item("m1"), 5), d: "b" })).toMatchObject({ deviceId: "b", label: "Main" });
   });
 
   it("drops replays", async () => {

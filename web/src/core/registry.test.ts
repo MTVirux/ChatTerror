@@ -54,6 +54,14 @@ describe("registry", () => {
     expect((await listAccounts()).map((a) => a.deviceId)).toEqual(["b"]);
   });
 
+  it("stores a custom name", async () => {
+    await addAccount(record("a"));
+    await updateAccount("a", { name: "Main" });
+    expect(await listAccounts()).toMatchObject([{ deviceId: "a", name: "Main" }]);
+    await updateAccount("a", { name: undefined });
+    expect((await listAccounts())[0].name).toBeUndefined();
+  });
+
   it("stores the cache limit", async () => {
     await setCacheLimit(5000);
     expect(await getCacheLimit()).toBe(5000);
