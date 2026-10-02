@@ -18,6 +18,7 @@ public sealed class RelayClient : IDisposable
 {
     private static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(60);
+    private const int MaxQueuedFrames = 256;
 
     private readonly IPluginLog log;
     private readonly Lock gate = new();
@@ -82,7 +83,7 @@ public sealed class RelayClient : IDisposable
         SetState(RelayState.Disconnected);
     }
 
-    // Frames are dropped while disconnected; devices catch up with hello and backlog.
+    // Frames are dropped while disconnected or while the send queue is full; devices catch up with hello and backlog.
     public bool Send(RelayFrame frame)
     {
         var json = ProtocolJson.Serialize(frame);
@@ -184,7 +185,12 @@ public sealed class RelayClient : IDisposable
 
     private async Task RunConnected(ClientWebSocket socket, CancellationToken ct)
     {
-        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+        // Wait mode makes TryWrite fail when full, so Send reports the drop instead of blocking the game.
+        var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(MaxQueuedFrames)
+        {
+            SingleReader = true,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
         lock (gate)
         {
             if (ct.IsCancellationRequested)

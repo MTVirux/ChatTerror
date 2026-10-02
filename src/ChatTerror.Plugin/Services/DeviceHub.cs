@@ -33,6 +33,7 @@ public sealed class DeviceHub : IDisposable
     private readonly List<PendingPair> pendingPairs = new();
     private readonly HashSet<string> onlineDevices = new();
     private readonly PairingGate pairingGate = new();
+    private readonly HelloThrottle helloThrottle = new();
     private bool seqDirty;
     private long lastSeqSaveAt;
     private long savedHistoryVersion;
@@ -134,6 +135,7 @@ public sealed class DeviceHub : IDisposable
         pendingPairs.RemoveAll(p => p.DeviceId == deviceId);
         pairingGate.Forget(deviceId);
         sessions.Remove(deviceId);
+        helloThrottle.Forget(deviceId);
         onlineDevices.Remove(deviceId);
         if (config.Devices.RemoveAll(d => d.DeviceId == deviceId) > 0)
             saveConfig();
@@ -142,6 +144,7 @@ public sealed class DeviceHub : IDisposable
     public void ClearDevices()
     {
         sessions.Clear();
+        helloThrottle.Clear();
         pendingPairs.Clear();
         pairingGate.Clear();
         onlineDevices.Clear();
@@ -198,6 +201,13 @@ public sealed class DeviceHub : IDisposable
     {
         SaveSeqIfDue();
         var now = Environment.TickCount64;
+        foreach (var (deviceId, sinceTs) in helloThrottle.TakeDue(now))
+        {
+            if (sessions.TryGetValue(deviceId, out var session))
+                ServeHello(session, sinceTs);
+        }
+
+
         if (now - lastHistorySaveAt < HistorySaveIntervalMs)
             return;
         lastHistorySaveAt = now;
@@ -302,9 +312,8 @@ public sealed class DeviceHub : IDisposable
         switch (payload)
         {
             case HelloPayload hello:
-                SendTo(session, BuildSettings(), false);
-                foreach (var chunk in DeviceSession.Backlog(History.Since(hello.SinceTs)))
-                    SendTo(session, chunk, false);
+                if (helloThrottle.TryServe(session.DeviceId, hello.SinceTs, Environment.TickCount64))
+                    ServeHello(session, hello.SinceTs);
                 break;
             case SendChatPayload send when !config.Enabled:
                 RememberSeq(session);
@@ -319,6 +328,13 @@ public sealed class DeviceHub : IDisposable
                 UpdatePrefs(session, prefs.MutedChannels, prefs.Channels ?? []);
                 break;
         }
+    }
+
+    private void ServeHello(DeviceSession session, long sinceTs)
+    {
+        SendTo(session, BuildSettings(), false);
+        foreach (var chunk in DeviceSession.Backlog(History.Since(sinceTs)))
+            SendTo(session, chunk, false);
     }
 
     private void HandlePairRequest(PairRequestFrame request)
