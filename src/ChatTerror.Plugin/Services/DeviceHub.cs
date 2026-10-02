@@ -74,12 +74,12 @@ public sealed class DeviceHub : IDisposable
 
     public IReadOnlySet<string> OnlineDevices => onlineDevices;
 
-    public void Publish(ChatItem item, bool filterNotify)
+    public void Publish(ChatItem item, FilterResult filter)
     {
         item = DeviceSession.Fit(item);
         History.Add(item);
         foreach (var session in sessions.Values)
-            SendTo(session, new ChatPayload(item), session.ShouldNotify(item, filterNotify));
+            SendTo(session, new ChatPayload(item), session.ShouldNotify(item, filter));
     }
 
     public void SendResult(string deviceId, SendResultPayload result)
@@ -316,7 +316,7 @@ public sealed class DeviceHub : IDisposable
                 break;
             case PrefsPayload prefs:
                 RememberSeq(session);
-                UpdateMuted(session, prefs.MutedChannels);
+                UpdatePrefs(session, prefs.MutedChannels, prefs.Channels ?? []);
                 break;
         }
     }
@@ -353,15 +353,18 @@ public sealed class DeviceHub : IDisposable
         PairRequested?.Invoke(pair);
     }
 
-    private void UpdateMuted(DeviceSession session, IReadOnlyList<ChatChannel> muted)
+    private void UpdatePrefs(DeviceSession session, IReadOnlyList<ChatChannel> muted, IReadOnlyList<ChannelPref> overrides)
     {
         session.Muted.Clear();
         session.Muted.UnionWith(muted);
+        session.Overrides.Clear();
+        session.Overrides.AddRange(overrides);
 
         var device = config.Devices.FirstOrDefault(d => d.DeviceId == session.DeviceId);
         if (device == null)
             return;
         device.MutedChannels = muted.Distinct().ToList();
+        device.ChannelOverrides = overrides.ToList();
         saveConfig();
     }
 
@@ -371,7 +374,7 @@ public sealed class DeviceHub : IDisposable
         {
             var devicePublic = Base64Url.Decode(device.PublicKey);
             var key = E2eCrypto.DeriveKey(keys.Key, devicePublic, keys.PublicRaw, devicePublic);
-            sessions[device.DeviceId] = new DeviceSession(device.DeviceId, key, device.MutedChannels, device.LastSeenSeq);
+            sessions[device.DeviceId] = new DeviceSession(device.DeviceId, key, device.MutedChannels, device.LastSeenSeq, device.ChannelOverrides);
         }
         catch (Exception ex) when (ex is FormatException or System.Security.Cryptography.CryptographicException)
         {

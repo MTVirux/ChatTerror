@@ -72,7 +72,7 @@ public sealed class ChatCapture : IDisposable
             Text: text,
             Character: me ?? "",
             Outgoing: outgoing);
-        hub.Publish(item, result.Notify);
+        hub.Publish(item, result);
     }
 
     // Own lines carry no player payload; anyone else with the same name is from another world.

@@ -20,6 +20,30 @@ public class ChatFilterTests
 
         Assert.False(r.Relay);
         Assert.False(r.Notify);
+        Assert.False(r.CanNotify);
+    }
+
+    [Fact]
+    public void PushOffChannel_CanStillNotify()
+    {
+        var s = new RelaySettings { PushOnMention = false };
+
+        var r = ChatFilter.Evaluate(Chat(ChatChannel.Say), s, "Alex Doe", Noon);
+
+        Assert.False(r.Notify);
+        Assert.True(r.CanNotify);
+    }
+
+    [Fact]
+    public void Outgoing_CannotNotify()
+    {
+        var s = new RelaySettings { RelayOwnMessages = true };
+        s.Channels[ChatChannel.Say].Push = true;
+
+        var r = ChatFilter.Evaluate(Chat(ChatChannel.Say, outgoing: true), s, "Alex Doe", Noon);
+
+        Assert.True(r.Relay);
+        Assert.False(r.CanNotify);
     }
 
     [Fact]
@@ -149,6 +173,7 @@ public class ChatFilterTests
 
         Assert.True(r.Relay);
         Assert.False(r.Notify);
+        Assert.False(r.CanNotify);
     }
 }
 

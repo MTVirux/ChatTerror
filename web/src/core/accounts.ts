@@ -82,7 +82,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
   // Only the last account using push may drop the browser subscription, the others share it.
   function pushFor(deviceId: string): PushControl {
     return {
-      enable: (token) => deps.push.enable(token),
+      enable: (token, prompt) => deps.push.enable(token, prompt),
       async disable(token) {
         const shared = ordered().some((e) => e.record.deviceId !== deviceId && e.session.getState().pushEnabled);
         if (!shared) return deps.push.disable(token);

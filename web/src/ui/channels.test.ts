@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../core/protocol";
-import { buildChannelTree, channelKey, channelSlug, firstChannel, inChannel, isCollapsed, itemChannelRef, parseChannelKey, toggleCategory } from "./channels";
+import { buildChannelTree, channelKey, channelSlug, firstChannel, inChannel, isCollapsed, itemChannelRef, parseChannelKey, pinFirst, toggleCategory, type ChannelRef } from "./channels";
 
 function msg(over: Partial<ChatItem>): ChatItem {
   return { id: Math.random().toString(), ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
@@ -89,5 +89,21 @@ describe("category collapse", () => {
   });
   it("toggles back to the default", () => {
     expect(toggleCategory(toggleCategory([], "A"), "A")).toEqual([]);
+  });
+});
+
+describe("pinFirst", () => {
+  const say: ChannelRef = { kind: "chat", character: "A", channel: "say" };
+  const party: ChannelRef = { kind: "chat", character: "A", channel: "party" };
+  const tell: ChannelRef = { kind: "tell", character: "A", partner: "Foo Bar@World" };
+
+  it("keeps the order without pins", () => {
+    expect(pinFirst([party, say, tell], [])).toEqual([party, say, tell]);
+  });
+  it("puts pinned chats and tells first in pin order", () => {
+    expect(pinFirst([party, say, tell], [channelKey(tell), channelKey(say)])).toEqual([tell, say, party]);
+  });
+  it("ignores pins for channels not in the list", () => {
+    expect(pinFirst([party, say], ["c|B|say", channelKey(say)])).toEqual([say, party]);
   });
 });

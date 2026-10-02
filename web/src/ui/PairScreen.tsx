@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { pushSupported } from "../core/push";
 import { formatPairCode, parsePairCode } from "../core/session";
 import { defaultDeviceName, needsHomeScreen, offerAndroidApp } from "./format";
 import { CloseIcon } from "./icons";
@@ -70,6 +71,8 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
     }
     setBusy(true);
     setError("");
+    // Browsers only show the permission prompt from a tap, so ask now and subscribe once approved.
+    if (pushSupported() && Notification.permission === "default") void Notification.requestPermission().catch(() => undefined);
     try {
       await onPair(code, name.trim() || defaultDeviceName());
     } catch (e) {

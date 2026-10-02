@@ -53,7 +53,9 @@ function usePendingSends(sends: PendingSends): PendingSend[] {
 }
 
 function useUnreadTracker(manager: AccountManager): UnreadTracker {
-  const [tracker] = useState(() => createUnreadTracker(manager));
+  const [tracker] = useState(() =>
+    createUnreadTracker(manager, (deviceId, key) => manager.session(deviceId)?.getState().channelPrefs.muted.includes(key) ?? false),
+  );
   const [, setVersion] = useState(0);
   useEffect(() => {
     const off = tracker.subscribe(() => setVersion((v) => v + 1));

@@ -8,7 +8,8 @@ namespace ChatTerror.Plugin.Logic;
 
 public sealed record IncomingChat(ChatChannel Channel, string Sender, string? SenderWorld, string Text, bool Outgoing, long Ts);
 
-public readonly record struct FilterResult(bool Relay, bool Notify);
+// CanNotify is false for outgoing lines and during quiet hours, so no per-device override can push them.
+public readonly record struct FilterResult(bool Relay, bool Notify, bool CanNotify);
 
 public static class ChatFilter
 {
@@ -16,16 +17,16 @@ public static class ChatFilter
     {
         var channel = s.Channels.GetValueOrDefault(chat.Channel);
         if (channel is not { Relay: true } || IsIgnored(chat, s) || (chat.Outgoing && !s.RelayOwnMessages))
-            return new FilterResult(false, false);
+            return new FilterResult(false, false, false);
 
         if (chat.Outgoing || QuietHours.IsQuiet(s, localTime))
-            return new FilterResult(true, false);
+            return new FilterResult(true, false, false);
 
         var notify = channel.Push
             || (s.PushOnTell && chat.Channel == ChatChannel.Tell)
             || (s.PushOnMention && Mentions(chat.Text, localName))
             || HasKeyword(chat.Text, s.PushKeywords);
-        return new FilterResult(true, notify);
+        return new FilterResult(true, notify, true);
     }
 
     private static bool IsIgnored(IncomingChat chat, RelaySettings s)

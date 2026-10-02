@@ -99,3 +99,10 @@ export function isCollapsed(category: Pick<Category, "character" | "active">, to
 export function toggleCategory(toggled: string[], character: string): string[] {
   return toggled.includes(character) ? toggled.filter((c) => c !== character) : [...toggled, character];
 }
+
+// Pinned rows lead in the order they were pinned, the rest keep their place.
+export function pinFirst(refs: ChannelRef[], pinned: string[]): ChannelRef[] {
+  const byKey = new Map(refs.map((r) => [channelKey(r), r]));
+  const top = pinned.flatMap((key) => byKey.get(key) ?? []);
+  return [...top, ...refs.filter((r) => !pinned.includes(channelKey(r)))];
+}

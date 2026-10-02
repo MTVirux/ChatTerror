@@ -2,7 +2,8 @@ import type { Api, PushSubscriptionBody } from "./api";
 import { decode } from "./b64url";
 
 export interface PushControl {
-  enable(token: string): Promise<boolean>;
+  // With prompt false it only subscribes when permission was already granted.
+  enable(token: string, prompt?: boolean): Promise<boolean>;
   // Without a token only the local subscription is dropped (the relay already forgot the device).
   disable(token?: string): Promise<void>;
 }
@@ -22,9 +23,10 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export function createPushControl(api: Api): PushControl {
   return {
-    async enable(token) {
+    async enable(token, prompt = true) {
       if (!pushSupported()) return false;
-      if ((await Notification.requestPermission()) !== "granted") return false;
+      const permission = prompt ? await Notification.requestPermission() : Notification.permission;
+      if (permission !== "granted") return false;
       await registerServiceWorker();
       const registration = await navigator.serviceWorker.ready;
       const { publicKey } = await api.getVapid();

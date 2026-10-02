@@ -44,6 +44,7 @@ public class JsonTests
             new HelloPayload(123) { Seq = 5 },
             new SendChatPayload("r2", ChatChannel.Tell, "Y'shtola Rhul@Twintania", "hi") { Seq = 6 },
             new PrefsPayload(new[] { ChatChannel.Say, ChatChannel.Yell }) { Seq = 7 },
+            new PrefsPayload([], [new ChannelPref("Alex Doe", ChatChannel.Tell, "Foo Bar@World", NotifyMode.None)]) { Seq = 8 },
         };
 
         foreach (var payload in payloads)
@@ -56,6 +57,37 @@ public class JsonTests
             Assert.Equal(payload.Seq, back.Seq);
             Assert.Equal(json, ProtocolJson.Serialize(back));
         }
+    }
+
+    [Fact]
+    public void PrefsPayload_Json_ChannelOverrides()
+    {
+        var prefs = new PrefsPayload(
+            [ChatChannel.FreeCompany],
+            [
+                new ChannelPref("Alex Doe", ChatChannel.Say, null, NotifyMode.All),
+                new ChannelPref("Alex Doe", ChatChannel.Tell, "Foo Bar@World", NotifyMode.None),
+            ]) { Seq = 3 };
+
+        var json = ProtocolJson.Serialize<Payload>(prefs);
+
+        Assert.Contains("\"mutedChannels\":[\"freeCompany\"]", json);
+        Assert.Contains(
+            "\"channels\":[{\"character\":\"Alex Doe\",\"channel\":\"say\",\"notify\":\"all\"},"
+            + "{\"character\":\"Alex Doe\",\"channel\":\"tell\",\"partner\":\"Foo Bar@World\",\"notify\":\"none\"}]",
+            json);
+        var back = Assert.IsType<PrefsPayload>(ProtocolJson.Deserialize<Payload>(json));
+        Assert.Equal(prefs.Channels, back.Channels);
+    }
+
+    [Fact]
+    public void PrefsPayload_Json_WithoutChannels()
+    {
+        var back = ProtocolJson.Deserialize<Payload>("{\"type\":\"prefs\",\"seq\":4,\"mutedChannels\":[\"say\"]}");
+
+        var prefs = Assert.IsType<PrefsPayload>(back);
+        Assert.Equal([ChatChannel.Say], prefs.MutedChannels);
+        Assert.Null(prefs.Channels);
     }
 
     [Fact]

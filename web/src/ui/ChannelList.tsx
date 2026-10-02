@@ -1,8 +1,11 @@
 import { useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
-import { channelKey, channelSlug, isCollapsed, toggleCategory, type Category, type ChannelRef } from "./channels";
+import type { ChannelPrefs } from "../core/channelPrefs";
+import { ChannelMenu } from "./ChannelMenu";
+import { channelKey, channelSlug, isCollapsed, pinFirst, toggleCategory, type Category, type ChannelRef } from "./channels";
 import { channelColor, STATUS_LABELS } from "./format";
 import { initials, senderColor } from "./identity";
+import { useLongPress } from "./longPress";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
 import type { UnreadTracker } from "./unread";
@@ -40,7 +43,9 @@ export function ChannelList({ manager, account, tree, unread, channel, onOpenCha
 }) {
   const id = account.deviceId;
   const [toggled, setToggled] = useState(() => loadToggled(id));
+  const [menu, setMenu] = useState<ChannelRef | null>(null);
   const selected = channel && channelKey(channel);
+  const prefs = account.state.channelPrefs;
 
   function toggle(character: string) {
     const next = toggleCategory(toggled, character);
@@ -62,9 +67,11 @@ export function ChannelList({ manager, account, tree, unread, channel, onOpenCha
         category={category}
         collapsed={isCollapsed(category, toggled)}
         selected={selected}
+        prefs={prefs}
         count={(ref) => unread.count(id, channelKey(ref))}
         onToggle={() => toggle(category.character)}
         onOpen={onOpenChannel}
+        onMenu={setMenu}
       />
     ));
   }
@@ -83,24 +90,35 @@ export function ChannelList({ manager, account, tree, unread, channel, onOpenCha
         </button>
       )}
       <div class="channels">{body()}</div>
+      {menu && (
+        <ChannelMenu
+          channel={menu}
+          prefs={prefs}
+          onChange={(next) => manager.session(id)?.setChannelPrefs(next).catch(() => undefined)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CategoryView({ category, collapsed, selected, count, onToggle, onOpen }: {
+function CategoryView({ category, collapsed, selected, prefs, count, onToggle, onOpen, onMenu }: {
   category: Category;
   collapsed: boolean;
   selected: string | null;
+  prefs: ChannelPrefs;
   count: (ref: ChannelRef) => number;
   onToggle: () => void;
   onOpen: (ref: ChannelRef) => void;
+  onMenu: (ref: ChannelRef) => void;
 }) {
   const { character } = category;
   const chats: ChannelRef[] = category.chats.map((c) => ({ kind: "chat", character, channel: c }));
   const tells: ChannelRef[] = category.tells.map((t) => ({ kind: "tell", character, partner: t.partner }));
-  const refs = [...chats, ...tells];
+  const refs = pinFirst([...chats, ...tells], prefs.pinned);
+  const shownCount = (ref: ChannelRef) => (prefs.muted.includes(channelKey(ref)) ? 0 : count(ref));
   // A collapsed category still shows the open channel and unread ones, like Discord.
-  const shown = collapsed ? refs.filter((r) => channelKey(r) === selected || count(r) > 0) : refs;
+  const shown = collapsed ? refs.filter((r) => channelKey(r) === selected || shownCount(r) > 0) : refs;
 
   return (
     <section class="category">
@@ -111,17 +129,35 @@ function CategoryView({ category, collapsed, selected, count, onToggle, onOpen }
       </button>
       {shown.map((ref) => {
         const key = channelKey(ref);
-        return <ChannelRow key={key} channel={ref} selected={key === selected} count={count(ref)} onClick={() => onOpen(ref)} />;
+        return (
+          <ChannelRow
+            key={key}
+            channel={ref}
+            selected={key === selected}
+            muted={prefs.muted.includes(key)}
+            count={shownCount(ref)}
+            onClick={() => onOpen(ref)}
+            onMenu={() => onMenu(ref)}
+          />
+        );
       })}
     </section>
   );
 }
 
-function ChannelRow({ channel, selected, count, onClick }: { channel: ChannelRef; selected: boolean; count: number; onClick: () => void }) {
-  const cls = `channel${selected ? " selected" : ""}${count > 0 ? " unread" : ""}`;
+function ChannelRow({ channel, selected, muted, count, onClick, onMenu }: {
+  channel: ChannelRef;
+  selected: boolean;
+  muted: boolean;
+  count: number;
+  onClick: () => void;
+  onMenu: () => void;
+}) {
+  const press = useLongPress(onMenu, onClick);
+  const cls = `channel${selected ? " selected" : ""}${count > 0 ? " unread" : ""}${muted ? " muted" : ""}`;
   if (channel.kind === "chat") {
     return (
-      <button class={cls} style={{ "--c": channelColor(channel.channel) }} aria-current={selected ? "page" : undefined} onClick={onClick}>
+      <button class={cls} style={{ "--c": channelColor(channel.channel) }} aria-current={selected ? "page" : undefined} {...press}>
         <span class="hash" aria-hidden="true">#</span>
         <span class="channel-name">{channelSlug(channel.channel)}</span>
       </button>
@@ -129,7 +165,7 @@ function ChannelRow({ channel, selected, count, onClick }: { channel: ChannelRef
   }
   const [name, world] = channel.partner.split("@");
   return (
-    <button class={cls} aria-current={selected ? "page" : undefined} onClick={onClick}>
+    <button class={cls} aria-current={selected ? "page" : undefined} {...press}>
       <span class="dm-avatar" style={{ "--c": senderColor(name) }} aria-hidden="true">{initials(name)}</span>
       <span class="channel-name">
         {name}

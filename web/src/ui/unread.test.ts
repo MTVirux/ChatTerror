@@ -76,4 +76,17 @@ describe("unread tracker", () => {
     m.push([item("a")]);
     expect(t.count("a", party)).toBe(1);
   });
+
+  it("leaves muted channels out of the summaries but keeps counting them", () => {
+    const m = fakeManager();
+    const tell = channelKey({ kind: "tell", character: "Alpha Beta", partner: "C D@W" });
+    const muted = new Set([party, tell]);
+    const t = createUnreadTracker(m, (deviceId, key) => deviceId === "a" && muted.has(key));
+    m.push([item("a"), item("a", { channel: "tell", sender: "C D", senderWorld: "W" })]);
+    expect(t.count("a", party)).toBe(1);
+    expect(t.summary("a")).toEqual({ unread: false, tells: 0 });
+    expect(t.total(["a"])).toEqual({ unread: false, tells: 0 });
+    muted.delete(tell);
+    expect(t.summary("a")).toEqual({ unread: true, tells: 1 });
+  });
 });

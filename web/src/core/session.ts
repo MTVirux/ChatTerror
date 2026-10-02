@@ -1,5 +1,6 @@
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
+import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, openPayload, sealPayload } from "./crypto";
 import { parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame } from "./protocol";
 import type { PushControl } from "./push";
@@ -17,6 +18,7 @@ export interface SessionState {
   sendChannels: ChatChannel[];
   maxLength: number;
   mutedChannels: ChatChannel[];
+  channelPrefs: ChannelPrefs;
   pushEnabled: boolean;
   cacheLimit: number;
 }
@@ -33,6 +35,7 @@ export interface Session {
   loadHistory(limit: number): Promise<ChatItem[]>;
   send(channel: ChatChannel, text: string, target?: string): Promise<SendResult>;
   setMuted(channels: ChatChannel[]): Promise<void>;
+  setChannelPrefs(prefs: ChannelPrefs): Promise<void>;
   enablePush(): Promise<boolean>;
   disablePush(): Promise<void>;
   clearCache(): Promise<void>;
@@ -59,7 +62,7 @@ const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{16}$/;
 export const SEND_TIMEOUT_MS = 45_000;
 
 function emptyState(status: SessionStatus, cacheLimit = DEFAULT_CACHE_LIMIT): SessionState {
-  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], pushEnabled: false, cacheLimit };
+  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, mutedChannels: [], channelPrefs: EMPTY_CHANNEL_PREFS, pushEnabled: false, cacheLimit };
 }
 
 export interface PairCode {
@@ -152,9 +155,10 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     stopConnection();
     pairing = await deps.store.getPairing();
     shownIds.clear();
-    const [settings, muted, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
+    const [settings, muted, channelPrefs, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
       deps.store.getMeta("lastSettings"),
       deps.store.getMeta("mutedChannels"),
+      deps.store.getMeta("channelPrefs"),
       deps.store.getMeta("pushEnabled"),
       deps.store.getMeta("lastSeenWs"),
       deps.store.getMeta("lastSeqSent"),
@@ -182,6 +186,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       sendChannels: settings?.sendChannels ?? [],
       maxLength: settings?.maxLength ?? DEFAULT_MAX_LENGTH,
       mutedChannels: muted,
+      channelPrefs,
       pushEnabled: push,
     };
     setState({});
@@ -225,7 +230,11 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     backlogPending = true;
     deferredTs = 0;
     await sendPayload({ type: "hello", sinceTs: syncTs });
-    await sendPayload({ type: "prefs", mutedChannels: state.mutedChannels });
+    await sendPrefs();
+  }
+
+  function sendPrefs() {
+    return sendPayload({ type: "prefs", mutedChannels: state.mutedChannels, channels: channelNotifyPrefs(state.channelPrefs) });
   }
 
   async function markApproved() {
@@ -234,6 +243,17 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     await deps.store.setMeta("approved", true);
     refreshStatus();
     if (pluginOnline) await sendHello();
+    // Permission is asked when Pair is tapped, so a new account starts with notifications on.
+    await enablePush(false);
+  }
+
+  async function enablePush(prompt: boolean) {
+    if (!pairing) return false;
+    const enabled = await guarded(deps.push.enable(pairing.token, prompt)).catch(() => false);
+    if (!pairing) return false;
+    await deps.store.setMeta("pushEnabled", enabled);
+    setState({ pushEnabled: enabled });
+    return enabled;
   }
 
   async function handleFrame(frame: ServerFrame) {
@@ -382,17 +402,16 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     async setMuted(channels) {
       setState({ mutedChannels: [...channels] });
       await deps.store.setMeta("mutedChannels", [...channels]);
-      await sendPayload({ type: "prefs", mutedChannels: [...channels] });
+      await sendPrefs();
     },
 
-    async enablePush() {
-      if (!pairing) return false;
-      const enabled = await guarded(deps.push.enable(pairing.token)).catch(() => false);
-      if (!pairing) return false;
-      await deps.store.setMeta("pushEnabled", enabled);
-      setState({ pushEnabled: enabled });
-      return enabled;
+    async setChannelPrefs(prefs) {
+      setState({ channelPrefs: prefs });
+      await deps.store.setMeta("channelPrefs", prefs);
+      await sendPrefs();
     },
+
+    enablePush: () => enablePush(true),
 
     async disablePush() {
       if (!pairing) return;

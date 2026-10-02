@@ -834,6 +834,9 @@ p {
   font-weight: 500;
   text-align: left;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .channel:hover {
@@ -849,6 +852,10 @@ p {
 .channel.selected {
   background: var(--selected);
   color: var(--header-text);
+}
+
+.channel.muted:not(.selected) {
+  opacity: 0.45;
 }
 
 .hash {
@@ -1578,4 +1585,70 @@ a.settings-row {
 
 .confirm span {
   flex: 1 1 100%;
+}
+
+/* Channel menu */
+
+.channel-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.5);
+  animation: fade-in 0.15s ease-out;
+}
+
+.channel-menu {
+  width: 100%;
+  max-width: 420px;
+  max-height: 85%;
+  overflow-y: auto;
+  padding: 16px 16px calc(16px + var(--safe-bottom));
+  border-radius: 16px 16px 0 0;
+  background: var(--page);
+  box-shadow: var(--shadow);
+  animation: slide-up 0.2s ease-out;
+}
+
+.channel-menu:focus {
+  outline: none;
+}
+
+.channel-menu-title {
+  margin: 0 4px 12px;
+  overflow: hidden;
+  color: var(--header-text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.channel-menu-label {
+  margin-top: 20px;
+}
+
+@media (min-width: 600px) {
+  .channel-menu-backdrop {
+    align-items: center;
+  }
+
+  .channel-menu {
+    border-radius: 16px;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
 }

@@ -112,7 +112,7 @@ public class EndToEndTests
         var filter = ChatFilter.Evaluate(new IncomingChat(tell.Channel, tell.Sender, tell.SenderWorld, tell.Text, false, tell.Ts), settings, Character, new TimeOnly(12, 0));
         Assert.True(filter.Relay);
         history.Add(tell);
-        var notify = session.ShouldNotify(tell, filter.Notify);
+        var notify = session.ShouldNotify(tell, filter);
         Assert.True(notify);
         await plugin.SendAsync(new SendFrame(claim.DeviceId, session.Seal(new ChatPayload(tell)), notify));
 

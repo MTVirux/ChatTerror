@@ -189,6 +189,19 @@ describe("session", () => {
     expect(await store.getMeta("approved")).toBe(true);
   });
 
+  it("turns notifications on without prompting once paired", async () => {
+    const prompts: (boolean | undefined)[] = [];
+    await store.setPairing({ deviceId: "dev", token: "d.dev.secret", aesKey: key, pluginPublicKey: "p", devicePublicKey: "d", fingerprint: "123 456" });
+    const relay = fakeRelay();
+    const push = { enable: async (_token: string, prompt?: boolean) => (prompts.push(prompt), true), disable: async () => {} };
+    const session = await createSession({ api: fakeApi({ getMe: async () => ({ deviceId: "dev", status: "pending" }) }), connect: relay.connect, push, store, cacheLimit: DEFAULT_CACHE_LIMIT });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "paired" });
+    await vi.waitFor(() => expect(session.getState().pushEnabled).toBe(true));
+    expect(prompts).toEqual([false]);
+    expect(await store.getMeta("pushEnabled")).toBe(true);
+  });
+
   it("pending device that was approved while away recovers through getMe", async () => {
     const { session, relay } = await setup({ approved: false });
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
@@ -323,6 +336,28 @@ describe("session", () => {
     expect(session.getState().mutedChannels).toEqual(["shout"]);
     expect(await store.getMeta("mutedChannels")).toEqual(["shout"]);
     await vi.waitFor(async () => expect((await relay.payloads()).some((p) => p.type === "prefs" && p.mutedChannels[0] === "shout")).toBe(true));
+  });
+
+  it("sends channel prefs with hello and when they change", async () => {
+    await store.setMeta("channelPrefs", { pinned: [], muted: ["c|Alpha Beta|say"], notify: {} });
+    const { session, relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () =>
+      expect((await relay.payloads()).find((p) => p.type === "prefs")).toMatchObject({
+        mutedChannels: [],
+        channels: [{ character: "Alpha Beta", channel: "say", notify: "none" }],
+      }),
+    );
+
+    const prefs = { pinned: ["c|Alpha Beta|say"], muted: [], notify: { "t|Alpha Beta|Foo Bar@World": "all" as const } };
+    await session.setChannelPrefs(prefs);
+    expect(session.getState().channelPrefs).toEqual(prefs);
+    expect(await store.getMeta("channelPrefs")).toEqual(prefs);
+    const sent = (await relay.payloads()).filter((p) => p.type === "prefs");
+    expect(sent[sent.length - 1]).toMatchObject({
+      channels: [{ character: "Alpha Beta", channel: "tell", partner: "Foo Bar@World", notify: "all" }],
+    });
   });
 
   it("revoked frame wipes storage", async () => {
