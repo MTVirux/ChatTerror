@@ -21,7 +21,7 @@ public class PushSenderTests
 
             var first = new VapidKeys(options, NullLogger<VapidKeys>.Instance);
             var second = new VapidKeys(options, NullLogger<VapidKeys>.Instance);
-            using var sender = new WebPushSender(first, NullLogger<WebPushSender>.Instance);
+            using var sender = new WebPushSender(first, options, NullLogger<WebPushSender>.Instance);
 
             Assert.True(File.Exists(Path.Combine(directory, "vapid.json")));
             Assert.Equal(first.PublicKey, second.PublicKey);
@@ -101,6 +101,22 @@ public class PushSenderTests
         Assert.False(contacted);
     }
 
+    [Theory]
+    [InlineData("https://8.8.8.8/sub")]
+    [InlineData("https://1.1.1.1:8443/sub")]
+    public async Task UnknownPushService_NotContacted(string endpoint)
+    {
+        var contacted = false;
+        var result = await SendWithHandlerAsync((_, _) =>
+        {
+            contacted = true;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
+        }, endpoint);
+
+        Assert.Equal(PushResult.Failed, result);
+        Assert.False(contacted);
+    }
+
     [Fact]
     public async Task PublicEndpoint_Delivered()
     {
@@ -115,10 +131,14 @@ public class PushSenderTests
         Directory.CreateDirectory(directory);
         try
         {
-            var options = Options.Create(new RelayOptions { DbPath = Path.Combine(directory, "relay.db") });
+            var options = Options.Create(new RelayOptions
+            {
+                DbPath = Path.Combine(directory, "relay.db"),
+                PushServiceHosts = "1.1.1.1,192.168.1.10",
+            });
             var keys = new VapidKeys(options, NullLogger<VapidKeys>.Instance);
             using var http = new HttpClient(new StubHandler(respond));
-            using var sender = new WebPushSender(keys, NullLogger<WebPushSender>.Instance, http);
+            using var sender = new WebPushSender(keys, options, NullLogger<WebPushSender>.Instance, http);
             using var deviceKey = P256.Generate();
             var subscription = new PushSubscriptionRecord(
                 endpoint,

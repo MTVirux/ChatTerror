@@ -22,7 +22,16 @@ public sealed class RelayOptions
 
     public int FrameBurst { get; set; } = 40;
 
-    public TimeSpan AuthTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public TimeSpan AuthTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    public int MaxSocketsPerClient { get; set; } = 20;
+
+    public int SocketConnectsPerMinute { get; set; } = 60;
+
+    public int PushSubscriptionsPerMinute { get; set; } = 10;
+
+    // "*.example.com" matches any subdomain of example.com, but not example.com itself.
+    public string PushServiceHosts { get; set; } = "fcm.googleapis.com,*.push.services.mozilla.com,*.push.apple.com,*.notify.windows.com";
 
     public int PairingRequestsPerMinute { get; set; } = 10;
 
@@ -50,6 +59,8 @@ public sealed class RelayOptions
     public string[] GetAllowedOrigins() => SplitList(AllowedOrigins).Select(origin => origin.TrimEnd('/')).ToArray();
 
     public string[] GetTrustedProxies() => SplitList(TrustedProxies);
+
+    public string[] GetPushServiceHosts() => SplitList(PushServiceHosts);
 
     private static string[] SplitList(string value) =>
         value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

@@ -5,17 +5,63 @@ namespace ChatTerror.Server.Tests;
 
 public class PushEndpointGuardTests
 {
+    private static readonly string[] DefaultHosts = new RelayOptions().GetPushServiceHosts();
+
+    // Allows the endpoint's own host, so only the address checks decide.
+    private static Task<bool> IsAllowedByAddressAsync(string endpoint)
+    {
+        var uri = new Uri(endpoint);
+        return PushEndpointGuard.IsAllowedAsync(uri, [uri.DnsSafeHost]);
+    }
+
+    [Theory]
+    [InlineData("https://fcm.googleapis.com/fcm/send/abc")]
+    [InlineData("https://FCM.googleapis.com/fcm/send/abc")]
+    [InlineData("https://fcm.googleapis.com:443/fcm/send/abc")]
+    [InlineData("https://updates.push.services.mozilla.com/wpush/v2/abc")]
+    [InlineData("https://web.push.apple.com/abc")]
+    [InlineData("https://wns2-par02p.notify.windows.com/w/?token=abc")]
+    public void KnownPushService_Allowed(string endpoint)
+    {
+        Assert.True(PushEndpointGuard.IsPushService(endpoint, DefaultHosts));
+    }
+
+    [Theory]
+    [InlineData("http://fcm.googleapis.com/fcm/send/abc")]
+    [InlineData("https://fcm.googleapis.com:8443/fcm/send/abc")]
+    [InlineData("https://fcm.googleapis.com.attacker.net/abc")]
+    [InlineData("https://evilfcm.googleapis.com/abc")]
+    [InlineData("https://evil.fcm.googleapis.com/abc")]
+    [InlineData("https://evilpush.apple.com.attacker.net/abc")]
+    [InlineData("https://notpush.apple.com/abc")]
+    [InlineData("https://push.apple.com/abc")]
+    [InlineData("https://apple.com/abc")]
+    [InlineData("https://push.services.mozilla.com.evil.net/abc")]
+    [InlineData("https://attacker.net/notify.windows.com")]
+    [InlineData("https://1.1.1.1/sub")]
+    [InlineData("not a url")]
+    public void UnknownPushService_Rejected(string endpoint)
+    {
+        Assert.False(PushEndpointGuard.IsPushService(endpoint, DefaultHosts));
+    }
+
+    [Fact]
+    public async Task UnknownHost_RejectedBeforeDns()
+    {
+        Assert.False(await PushEndpointGuard.IsAllowedAsync(new Uri("https://tarpit.invalid/sub"), DefaultHosts));
+    }
+
     [Theory]
     [InlineData("https://1.1.1.1/sub")]
-    [InlineData("https://8.8.8.8:8443/sub")]
     [InlineData("https://[2606:4700:4700::1111]/sub")]
     public async Task PublicHttpsEndpoint_Allowed(string endpoint)
     {
-        Assert.True(await PushEndpointGuard.IsAllowedAsync(new Uri(endpoint)));
+        Assert.True(await IsAllowedByAddressAsync(endpoint));
     }
 
     [Theory]
     [InlineData("http://1.1.1.1/sub")]
+    [InlineData("https://8.8.8.8:8443/sub")]
     [InlineData("https://127.0.0.1/sub")]
     [InlineData("https://0.0.0.0/sub")]
     [InlineData("https://10.0.0.1/sub")]
@@ -38,7 +84,7 @@ public class PushEndpointGuardTests
     [InlineData("https://[2001:0:4136:e378::1]/sub")]
     public async Task NonPublicOrPlainEndpoint_Rejected(string endpoint)
     {
-        Assert.False(await PushEndpointGuard.IsAllowedAsync(new Uri(endpoint)));
+        Assert.False(await IsAllowedByAddressAsync(endpoint));
     }
 
     [Fact]

@@ -304,6 +304,117 @@ public class HardeningTests
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }
 
+    private static async Task<WebSocket> OpenSocketFromAsync(RelayApp app, string forwardedFor)
+    {
+        var client = app.Server.CreateWebSocketClient();
+        client.ConfigureRequest = request => request.Headers["X-Forwarded-For"] = forwardedFor;
+        return await client.ConnectAsync(new Uri(app.Server.BaseAddress, "ws"), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task OpenSockets_CappedPerClient()
+    {
+        using var app = new RelayApp(new()
+        {
+            ["Relay:TrustedProxies"] = "10.0.0.0/8",
+            ["Relay:MaxSocketsPerClient"] = "2",
+        })
+        {
+            ExtraServices = services => services.AddSingleton<IStartupFilter>(new RemoteAddressFilter(IPAddress.Parse("10.1.2.3"))),
+        };
+
+        await using var first = new TestSocket(await OpenSocketFromAsync(app, "1.1.1.1"));
+        await using var second = new TestSocket(await OpenSocketFromAsync(app, "2001:db8::1"));
+        await using var third = new TestSocket(await OpenSocketFromAsync(app, "2001:db8::2"));
+        await Assert.ThrowsAnyAsync<Exception>(() => OpenSocketFromAsync(app, "2001:db8::3"));
+        await using var other = new TestSocket(await OpenSocketFromAsync(app, "1.1.1.1"));
+
+        await second.SendAsync(new AuthFrame("bad"));
+        await second.ExpectClosedAsync();
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (true)
+        {
+            try
+            {
+                await using var reopened = new TestSocket(await OpenSocketFromAsync(app, "2001:db8::4"));
+                return;
+            }
+            catch (Exception) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(20);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SocketConnects_RateLimitedPerClient()
+    {
+        using var app = new RelayApp(new() { ["Relay:SocketConnectsPerMinute"] = "2" });
+
+        await using var first = await app.OpenSocketAsync();
+        await using var second = await app.OpenSocketAsync();
+
+        await Assert.ThrowsAnyAsync<Exception>(() => app.OpenSocketAsync());
+    }
+
+    [Fact]
+    public void AuthTimeout_DefaultsToFiveSeconds()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), new RelayOptions().AuthTimeout);
+    }
+
+    [Fact]
+    public async Task PushSubscription_UnknownService_400()
+    {
+        using var app = new RelayApp(new() { ["Relay:PushServiceHosts"] = new RelayOptions().PushServiceHosts });
+        var install = await app.RegisterInstallAsync();
+        var device = await app.ClaimAsync(await app.CreatePairingAsync(install.InstallToken));
+        var client = app.Client(device.DeviceToken);
+
+        foreach (var endpoint in new[]
+        {
+            "https://1.1.1.1/sub",
+            "https://tarpit.example/sub",
+            "https://fcm.googleapis.com:8443/sub",
+            "http://fcm.googleapis.com/sub",
+            "https://evilpush.apple.com.attacker.net/sub",
+            "https://notpush.apple.com/sub",
+        })
+        {
+            var response = await client.PutAsJsonAsync("/api/devices/me/push", new { endpoint, keys = new { p256dh = "p", auth = "a" } });
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        Assert.Null(app.Services.GetRequiredService<RelayStore>().FindDevice(device.DeviceId)!.Push);
+    }
+
+    [Fact]
+    public async Task StoredSubscription_UnknownService_NotPushed()
+    {
+        using var app = new RelayApp();
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        app.Services.GetRequiredService<RelayStore>().SetPush(device.DeviceId, new PushSubscriptionRecord("https://tarpit.example:8443/sub", "p", "a"));
+
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "x", Notify: true));
+        await plugin.BarrierAsync();
+
+        Assert.Empty(app.Push.Calls);
+    }
+
+    [Fact]
+    public async Task PushSubscription_RateLimited()
+    {
+        using var app = new RelayApp(new() { ["Relay:PushSubscriptionsPerMinute"] = "1" });
+        var install = await app.RegisterInstallAsync();
+        var device = await app.ClaimAsync(await app.CreatePairingAsync(install.InstallToken));
+        var client = app.Client(device.DeviceToken);
+        var body = new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p", auth = "a" } };
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/devices/me/push", body)).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await client.PutAsJsonAsync("/api/devices/me/push", body)).StatusCode);
+    }
+
     private sealed class RemoteAddressFilter(IPAddress address) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>

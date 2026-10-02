@@ -8,6 +8,8 @@ public static class RequestLimits
 {
     public const string PairingPolicy = "pairing";
     public const string InstallPolicy = "installs";
+    public const string SocketPolicy = "sockets";
+    public const string PushPolicy = "push";
 
     // IPv6 clients usually own a whole /64, so one client is one /64.
     public static string PartitionKey(IPAddress? address)
