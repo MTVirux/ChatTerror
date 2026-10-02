@@ -2,7 +2,7 @@ import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaults, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, openPayload, sealPayload } from "./crypto";
-import { parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame } from "./protocol";
+import { isValidSettings, isValidTs, parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame } from "./protocol";
 import type { PushControl } from "./push";
 import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
@@ -155,7 +155,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     stopConnection();
     pairing = await deps.store.getPairing();
     shownIds.clear();
-    const [settings, muted, channelPrefs, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
+    const [storedSettings, muted, channelPrefs, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
       deps.store.getMeta("lastSettings"),
       deps.store.getMeta("mutedChannels"),
       deps.store.getMeta("channelPrefs"),
@@ -167,7 +167,9 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     ]);
     guard = new SeqGuard(lastSeenWs);
     counter = new SeqCounter(lastSeqSent);
-    syncTs = storedSyncTs;
+    // Stored values may predate payload validation.
+    const settings = isValidSettings(storedSettings) ? storedSettings : null;
+    syncTs = isValidTs(storedSyncTs) ? storedSyncTs : 0;
     cacheLimit = deps.cacheLimit;
     approved = storedApproved;
     dropped = false;

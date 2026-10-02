@@ -17,8 +17,8 @@ import { ServerRail } from "./ServerRail";
 import { createUnreadTracker, type UnreadTracker } from "./unread";
 import { useFeed } from "./useFeed";
 
-const NAV_KEY = "chatterror.nav";
-const LAST_KEY = "chatterror.lastChannels";
+export const NAV_KEY = "chatterror.nav";
+export const LAST_KEY = "chatterror.lastChannels";
 const LEGACY_KEY = "chatterror.account";
 
 function stored(key: string): string | null {

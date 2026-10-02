@@ -56,6 +56,13 @@ describe("custom channels", () => {
   const key = "x|Alpha Beta|s";
   const prefs = saveCustom(EMPTY_CHANNEL_PREFS, social);
 
+  it("deletes a channel for a character named like an Object.prototype key", () => {
+    for (const character of ["__proto__", "constructor"]) {
+      const odd = { ...social, character };
+      expect(deleteCustom(saveCustom(EMPTY_CHANNEL_PREFS, odd), odd).custom).toEqual([]);
+    }
+  });
+
   it("adds, edits and deletes along with their prefs", () => {
     expect(saveCustom(prefs, { ...social, name: "Chat" }).custom).toEqual([{ ...social, name: "Chat" }]);
     const decorated = { ...togglePinned(toggleMuted(setNotify(prefs, key, "all"), key), key), order: { "Alpha Beta": [key, tell] } };

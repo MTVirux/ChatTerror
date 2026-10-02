@@ -35,6 +35,11 @@ describe("storage", () => {
     expect((await store.loadMessages(2)).map((m) => m.id)).toEqual(["b", "c"]);
   });
 
+  it("skips malformed messages stored before validation", async () => {
+    await store.addMessages([item("a", 1), item("bad", 1e300), { ...item("odd", 2), character: 5 as unknown as string }], 10);
+    expect((await store.loadMessages(10)).map((m) => m.id)).toEqual(["a"]);
+  });
+
   it("clears messages", async () => {
     await store.addMessages([item("a", 1)], 10);
     await store.clearMessages();

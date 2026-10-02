@@ -52,7 +52,7 @@ export function toggleMuted(prefs: ChannelPrefs, key: string): ChannelPrefs {
 }
 
 export function notifyChoice(prefs: ChannelPrefs, key: string): NotifyChoice {
-  return prefs.notify[key] ?? "default";
+  return Object.hasOwn(prefs.notify, key) ? prefs.notify[key] : "default";
 }
 
 export function setNotify(prefs: ChannelPrefs, key: string, choice: NotifyChoice): ChannelPrefs {
@@ -68,7 +68,7 @@ export function saveCustom(prefs: ChannelPrefs, custom: CustomChannel): ChannelP
 export function deleteCustom(prefs: ChannelPrefs, custom: CustomChannel): ChannelPrefs {
   const key = customKey(custom);
   const { [key]: _, ...notify } = prefs.notify;
-  const order = prefs.order[custom.character];
+  const order = savedOrder(prefs, custom.character);
   return {
     pinned: prefs.pinned.filter((k) => k !== key),
     muted: prefs.muted.filter((k) => k !== key),
@@ -76,6 +76,11 @@ export function deleteCustom(prefs: ChannelPrefs, custom: CustomChannel): Channe
     custom: prefs.custom.filter((c) => c.id !== custom.id),
     order: order ? { ...prefs.order, [custom.character]: order.filter((k) => k !== key) } : prefs.order,
   };
+}
+
+// Characters come from the plugin, so "__proto__" or "constructor" must not reach Object.prototype.
+export function savedOrder(prefs: ChannelPrefs, character: string): string[] | undefined {
+  return Object.hasOwn(prefs.order, character) ? prefs.order[character] : undefined;
 }
 
 // keys is the order the rows are shown in; the result keeps that order with key swapped by one step.

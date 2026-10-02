@@ -1,5 +1,5 @@
 import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "./channelPrefs";
-import type { ChatChannel, ChatItem, SettingsPayload } from "./protocol";
+import { isChatItem, type ChatChannel, type ChatItem, type SettingsPayload } from "./protocol";
 
 export interface Pairing {
   deviceId: string;
@@ -183,7 +183,8 @@ export function openAccountStore(dbName: string): AccountStore {
         request.onsuccess = () => {
           const cursor = request.result;
           if (!cursor || items.length >= limit) return resolve(items.reverse());
-          items.push(cursor.value as ChatItem);
+          // Items stored before validation existed may be malformed.
+          if (isChatItem(cursor.value)) items.push(cursor.value);
           cursor.continue();
         };
         request.onerror = () => reject(request.error);

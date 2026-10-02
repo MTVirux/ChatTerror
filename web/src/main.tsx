@@ -2,6 +2,7 @@ import { render } from "preact";
 import { openAccounts } from "./core/accounts";
 import { requestPersistentStorage } from "./core/storage";
 import { App } from "./ui/App";
+import { ErrorBoundary } from "./ui/ErrorBoundary";
 import { offerAndroidApp } from "./ui/format";
 import { applyTheme, loadTheme } from "./ui/theme";
 import "./ui/styles.css";
@@ -15,7 +16,12 @@ const root = document.getElementById("app")!;
 openAccounts()
   .then((manager) => {
     if (manager.list().length > 0) requestPersistentStorage();
-    render(<App manager={manager} />, root);
+    render(
+      <ErrorBoundary>
+        <App manager={manager} />
+      </ErrorBoundary>,
+      root,
+    );
   })
   .catch(() => {
     const message = document.createElement("p");

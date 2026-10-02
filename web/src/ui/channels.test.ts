@@ -64,6 +64,12 @@ describe("buildChannelTree", () => {
     expect(tree[1].refs).toEqual([]);
   });
 
+  it("handles characters named like Object.prototype keys", () => {
+    const items = [msg({ character: "__proto__", channel: "tell" }), msg({ character: "constructor", channel: "tell" })];
+    const tree = buildChannelTree(items, { prefs });
+    expect(tree.map((c) => c.character).sort()).toEqual(["Alpha Beta", "__proto__", "constructor"]);
+  });
+
   it("keeps a character that only has custom channels", () => {
     expect(buildChannelTree([], { prefs }).map((c) => c.character)).toEqual(["Alpha Beta"]);
   });

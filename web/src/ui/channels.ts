@@ -1,4 +1,4 @@
-import { channelIncludes, customKey, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
+import { channelIncludes, customKey, savedOrder, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import type { ChatChannel, ChatItem } from "../core/protocol";
 import { channelLabel, tellPartner } from "./format";
 
@@ -71,7 +71,7 @@ export function buildChannelTree(items: ChatItem[], { character, prefs }: { char
   const categories = [...seen.entries()].map(([name, e]): Category => {
     const customs: ChannelRef[] = prefs.custom.filter((c) => c.character === name).map((c) => ({ kind: "custom", character: name, id: c.id }));
     const tells: ChannelRef[] = [...e.tells.entries()].sort((a, b) => b[1] - a[1]).map(([partner]) => ({ kind: "tell", character: name, partner }));
-    return { character: name, active: name === character, refs: arrange([...customs, ...tells], prefs.order[name], prefs.pinned), lastTs: e.lastTs };
+    return { character: name, active: name === character, refs: arrange([...customs, ...tells], savedOrder(prefs, name), prefs.pinned), lastTs: e.lastTs };
   });
   return categories.sort((a, b) => Number(b.active) - Number(a.active) || b.lastTs - a.lastTs);
 }

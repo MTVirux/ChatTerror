@@ -32,7 +32,7 @@ function parseNav(stored: string | null): Nav | null {
 export type LastChannels = Record<string, string>;
 
 export function navTo(server: Server, last: LastChannels): Nav {
-  return { server, channel: server === "home" || server === "add" ? null : last[server] ?? null };
+  return { server, channel: server === "home" || server === "add" ? null : (Object.hasOwn(last, server) ? last[server] : null) };
 }
 
 export function rememberChannel(last: LastChannels, nav: Nav): LastChannels {
