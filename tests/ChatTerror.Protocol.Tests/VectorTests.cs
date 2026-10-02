@@ -8,14 +8,18 @@ namespace ChatTerror.Protocol.Tests;
 
 public class VectorTests
 {
-    private static string VectorPath()
+    private static string VectorPath() => VectorFile("e2e-v1.json");
+
+    private static string TellVectorPath() => VectorFile("tell-v1.json");
+
+    private static string VectorFile(string name)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "test-vectors")))
             dir = dir.Parent;
         if (dir == null)
             throw new DirectoryNotFoundException("test-vectors not found");
-        return Path.Combine(dir.FullName, "test-vectors", "e2e-v1.json");
+        return Path.Combine(dir.FullName, "test-vectors", name);
     }
 
     private static ECDiffieHellman FromJwk(JsonNode jwk)
@@ -101,5 +105,50 @@ public class VectorTests
             },
         };
         File.WriteAllText(VectorPath(), root.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) + "\n");
+    }
+
+    [Fact]
+    public void TellVectors_MatchFile()
+    {
+        var root = JsonNode.Parse(File.ReadAllText(TellVectorPath()))!;
+        using var recipient = FromJwk(root["recipient"]!["jwk"]!);
+        using var ephemeral = FromJwk(root["ephemeral"]!["jwk"]!);
+        var recipientPub = Base64Url.Decode((string)root["recipient"]!["publicRaw"]!);
+        var nonce = Base64Url.Decode((string)root["nonce"]!);
+        var plaintext = Encoding.UTF8.GetBytes((string)root["plaintext"]!);
+        var envelope = Base64Url.Decode((string)root["envelope"]!);
+        var signed = new SignedTellBundle((string)root["bundle"]!["bundle"]!, (string)root["bundle"]!["signature"]!);
+
+        Assert.Equal((string)root["hash"]!, TellHash.Compute(0x0102030405060708));
+        Assert.Equal(envelope, SealedTell.Seal(ephemeral, recipientPub, plaintext, nonce));
+        Assert.Equal(plaintext, SealedTell.Open(recipient, envelope));
+        Assert.NotNull(TellBundles.Verify(signed, Base64Url.Encode(recipientPub)));
+    }
+
+    // Regenerates the tell vector file with fresh keys. Remove Skip locally to run it once.
+    [Fact(Skip = "generator")]
+    public void TellVectors_Generate()
+    {
+        using var recipient = P256.Generate();
+        using var ephemeral = P256.Generate();
+        var recipientPub = P256.PublicRaw(recipient);
+        var key = Base64Url.Encode(recipientPub);
+        var nonce = Enumerable.Range(0, 12).Select(i => (byte)i).ToArray();
+        var body = new TellBody("0123456789abcdef0123456789abcdef", TellHash.Compute(1), "Y'shtola Rhul", "Twintania", TellHash.Compute(2), "Alpha Beta", "Lich", "hello <3", 1700000000000);
+        var plaintext = ProtocolJson.Serialize(body);
+        var envelope = SealedTell.Seal(ephemeral, recipientPub, Encoding.UTF8.GetBytes(plaintext), nonce);
+        var signed = TellBundles.Sign(recipient, new TellBundle(key, [new TellBundleEntry(TellTargets.Plugin, key, false), new TellBundleEntry("device1", key, true)], 1700000000000));
+
+        var root = new JsonObject
+        {
+            ["recipient"] = new JsonObject { ["jwk"] = ToJwk(recipient), ["publicRaw"] = key },
+            ["ephemeral"] = new JsonObject { ["jwk"] = ToJwk(ephemeral), ["publicRaw"] = Base64Url.Encode(P256.PublicRaw(ephemeral)) },
+            ["hash"] = TellHash.Compute(0x0102030405060708),
+            ["nonce"] = Base64Url.Encode(nonce),
+            ["plaintext"] = plaintext,
+            ["envelope"] = Base64Url.Encode(envelope),
+            ["bundle"] = new JsonObject { ["bundle"] = signed.Bundle, ["signature"] = signed.Signature },
+        };
+        File.WriteAllText(TellVectorPath(), root.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) + "\n");
     }
 }

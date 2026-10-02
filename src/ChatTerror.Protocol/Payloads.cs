@@ -14,6 +14,7 @@ namespace ChatTerror.Protocol;
 [JsonDerivedType(typeof(HelloPayload), "hello")]
 [JsonDerivedType(typeof(SendChatPayload), "sendChat")]
 [JsonDerivedType(typeof(PrefsPayload), "prefs")]
+[JsonDerivedType(typeof(TellKeyPayload), "tellKey")]
 public abstract record Payload
 {
     public long Seq { get; init; }
@@ -29,7 +30,13 @@ public sealed record SettingsPayload(
     [Optional, DefaultParameterValue(null)] string? Character,
     IReadOnlyList<ChatChannel> RelayChannels,
     IReadOnlyList<ChatChannel> SendChannels,
-    int MaxLength) : Payload;
+    int MaxLength,
+    IReadOnlyList<TellContact>? Contacts = null) : Payload;
+
+public sealed record TellKeyPayload(string PublicKey) : Payload;
+
+// A registered ChatTerror friend of one of the install's characters.
+public sealed record TellContact(string Character, string CharacterWorld, string CharacterHash, string Name, string World, string Hash);
 
 public sealed record HelloPayload(long SinceTs) : Payload;
 

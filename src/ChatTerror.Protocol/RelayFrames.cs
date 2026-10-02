@@ -18,6 +18,10 @@ namespace ChatTerror.Protocol;
 [JsonDerivedType(typeof(PairedFrame), "paired")]
 [JsonDerivedType(typeof(RevokedFrame), "revoked")]
 [JsonDerivedType(typeof(ErrorFrame), "error")]
+[JsonDerivedType(typeof(TellSendFrame), "tellSend")]
+[JsonDerivedType(typeof(TellResultFrame), "tellResult")]
+[JsonDerivedType(typeof(TellFrame), "tell")]
+[JsonDerivedType(typeof(TellAckFrame), "tellAck")]
 public abstract record RelayFrame;
 
 public sealed record AuthFrame(string Token) : RelayFrame;
@@ -48,6 +52,18 @@ public sealed record PairedFrame : RelayFrame;
 public sealed record RevokedFrame : RelayFrame;
 
 public sealed record ErrorFrame(string Code) : RelayFrame;
+
+// Self copies go to the sender's own install, the others to the install that owns To.
+public sealed record TellCopy(bool Self, string Target, string Envelope);
+
+public sealed record TellSendFrame(string Id, string From, string To, IReadOnlyList<TellCopy> Copies) : RelayFrame;
+
+public sealed record TellResultFrame(string Id, bool Ok, string? Error = null) : RelayFrame;
+
+// From is checked by the relay to belong to the sending install.
+public sealed record TellFrame(string Id, string From, string Envelope) : RelayFrame;
+
+public sealed record TellAckFrame(IReadOnlyList<string> Ids) : RelayFrame;
 
 public static class RelayRoles
 {
