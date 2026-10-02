@@ -36,7 +36,10 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
 
   const visiblePending = pending.filter((p) => {
     if (home) return accounts.some((a) => a.deviceId === p.deviceId);
-    if (!account || !channel || p.deviceId !== account.deviceId || channel.character !== account.character) return false;
+    if (!account || p.deviceId !== account.deviceId) return false;
+    // With no channels yet, failed sends still need somewhere to show Retry and Dismiss.
+    if (!channel) return true;
+    if (channel.character !== account.character) return false;
     return channel.kind === "chat" ? p.channel === channel.channel : p.channel === "tell" && p.target === channel.partner;
   });
 
@@ -92,6 +95,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
       />
 
       <Composer
+        key={viewId}
         state={state}
         tab={tab}
         blocked={blocked}
