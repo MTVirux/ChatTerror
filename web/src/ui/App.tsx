@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
+import { AccountSettings } from "./AccountSettings";
+import { AppSettings } from "./AppSettings";
 import { buildChannelTree, channelKey, type ChannelRef } from "./channels";
 import { ChannelList, HomeList } from "./ChannelList";
 import { ChatPane } from "./ChatPane";
 import { Drawer } from "./Drawer";
 import { GearIcon, MenuIcon } from "./icons";
-import { initialNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type LastChannels, type Nav, type Server } from "./nav";
+import { initialNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
 import { PairScreen } from "./PairScreen";
 import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
 import { ServerRail } from "./ServerRail";
-import { SettingsView } from "./SettingsView";
 import { createUnreadTracker, type UnreadTracker } from "./unread";
 import { useFeed } from "./useFeed";
 
@@ -26,19 +27,11 @@ function stored(key: string): string | null {
   }
 }
 
-function storeNav(nav: Nav) {
+function store(key: string, value: string) {
   try {
-    if (nav.server !== "add") localStorage.setItem(NAV_KEY, serializeNav(nav));
+    localStorage.setItem(key, value);
   } catch {
     // Private mode or blocked storage; the place is just not remembered.
-  }
-}
-
-function storeLast(last: LastChannels) {
-  try {
-    localStorage.setItem(LAST_KEY, JSON.stringify(last));
-  } catch {
-    // Same as above.
   }
 }
 
@@ -70,6 +63,8 @@ function useUnreadTracker(manager: AccountManager): UnreadTracker {
   return tracker;
 }
 
+type Settings = { app: true } | { deviceId: string; fromApp?: boolean };
+
 export function App({ manager }: { manager: AccountManager }) {
   const accounts = useAccounts(manager);
   const [sends] = useState(() => createPendingSends(manager));
@@ -91,11 +86,11 @@ export function App({ manager }: { manager: AccountManager }) {
   }, [manager, nav.server]);
 
   useEffect(() => {
-    storeNav(nav);
+    if (nav.server !== "add") store(NAV_KEY, serializeNav(nav));
     const next = rememberChannel(last.current, nav);
     if (next !== last.current) {
       last.current = next;
-      storeLast(next);
+      store(LAST_KEY, JSON.stringify(next));
     }
   }, [nav.server, nav.channel]);
 
@@ -148,7 +143,7 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
   onPairAgain: () => void;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [settings, setSettings] = useState<{ accountId: string | null } | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [epoch, setEpoch] = useState(0);
   const home = nav.server === "home";
   const account = home ? undefined : accounts.find((a) => a.deviceId === nav.server);
@@ -185,9 +180,44 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
     setDrawerOpen(false);
   }
 
-  function openSettings(accountId: string | null) {
+  function openSettings(next: Settings) {
     setDrawerOpen(false);
-    setSettings({ accountId });
+    setSettings(next);
+  }
+
+  // A removed account has no settings left, its channel list offers Remove and Pair again instead.
+  function openAccountFromApp(deviceId: string) {
+    selectServer(deviceId);
+    const target = accounts.find((a) => a.deviceId === deviceId);
+    setSettings(target?.status === "revoked" ? null : { deviceId, fromApp: true });
+  }
+
+  function settingsSheet() {
+    if (!settings) return null;
+    if (!("deviceId" in settings)) {
+      return (
+        <AppSettings
+          manager={manager}
+          accounts={accounts}
+          onClose={() => setSettings(null)}
+          onOpenAccount={openAccountFromApp}
+          onAddAccount={() => go("add")}
+        />
+      );
+    }
+    const target = accounts.find((a) => a.deviceId === settings.deviceId);
+    const session = target && manager.session(target.deviceId);
+    if (!target || !session) return null;
+    return (
+      <AccountSettings
+        key={target.deviceId}
+        manager={manager}
+        account={target}
+        session={session}
+        onClose={() => setSettings(settings.fromApp ? { app: true } : null)}
+        onCacheCleared={() => setEpoch((e) => e + 1)}
+      />
+    );
   }
 
   const chatPane = account?.status !== "revoked" && account?.state.status !== "pending";
@@ -210,7 +240,6 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
         sends={sends}
         pending={pending}
         onMenu={() => setDrawerOpen(true)}
-        onOpenSettings={() => openSettings(home ? null : nav.server)}
       />
     );
   }
@@ -224,18 +253,18 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
             key={account.deviceId}
             manager={manager}
             account={account}
-            items={items}
+            tree={tree}
             unread={unread}
             channel={channel}
             onOpenChannel={openChannel}
-            onOpenSettings={() => openSettings(account.deviceId)}
+            onOpenSettings={() => openSettings({ deviceId: account.deviceId })}
             onPairAgain={onPairAgain}
           />
         ) : (
           <HomeList accounts={accounts} unread={unread} onSelectServer={selectServer} />
         )}
         <div class="sidebar-foot">
-          <button class="icon-btn" aria-label="App settings" onClick={() => openSettings(null)}>
+          <button class="icon-btn" aria-label="App settings" onClick={() => openSettings({ app: true })}>
             <GearIcon />
           </button>
         </div>
@@ -251,17 +280,7 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
         </button>
       )}
       {chat()}
-      {settings && (
-        <SettingsView
-          manager={manager}
-          accounts={accounts}
-          accountId={settings.accountId}
-          onClose={() => setSettings(null)}
-          onCacheCleared={() => setEpoch((e) => e + 1)}
-          onOpenAccount={go}
-          onAddAccount={() => go("add")}
-        />
-      )}
+      {settingsSheet()}
     </Drawer>
   );
 }

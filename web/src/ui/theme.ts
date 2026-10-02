@@ -23,10 +23,17 @@ export function loadTheme(): ThemeChoice {
   return value === "light" || value === "dark" ? value : "system";
 }
 
+const STATUS_BAR = { light: "#ffffff", dark: "#313338" };
+
 export function applyTheme(choice: ThemeChoice) {
   const root = document.documentElement;
   if (choice === "system") delete root.dataset.theme;
   else root.dataset.theme = choice;
+  // index.html has one theme-color per color scheme; a manual choice makes both match it.
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    const own = meta.media.includes("dark") ? "dark" : "light";
+    meta.content = STATUS_BAR[choice === "system" ? own : choice];
+  }
 }
 
 export function saveTheme(choice: ThemeChoice) {

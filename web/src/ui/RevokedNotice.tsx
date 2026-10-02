@@ -14,7 +14,7 @@ export function RevokedNotice({ label, onRemove, onPairAgain, inline }: { label:
 
   const Root = inline ? "div" : "main";
   return (
-    <Root class={`screen pair${inline ? " inline" : ""}`}>
+    <Root class={`status-panel${inline ? " inline" : ""}`}>
       <div class="banner" role="alert">
         <strong>{label} was removed from the plugin.</strong> Its messages were deleted from this phone.
       </div>

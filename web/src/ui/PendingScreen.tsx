@@ -16,7 +16,7 @@ export function PendingScreen({ state, onCancel, inline }: { state: SessionState
 
   const Root = inline ? "div" : "main";
   return (
-    <Root class={`screen pending${inline ? " inline" : ""}`}>
+    <Root class={`status-panel${inline ? " inline" : ""}`}>
       <p class="waiting"><span class="pulse" aria-hidden="true" /> Waiting for approval</p>
       <div class="fingerprint" aria-label={`Security number ${groups.join(" ")}`}>
         {groups.map((g) => <span class="fp-group">{g}</span>)}

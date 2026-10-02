@@ -1,6 +1,6 @@
-import { useMemo, useState } from "preact/hooks";
-import type { AccountManager, AccountView, FeedItem } from "../core/accounts";
-import { buildChannelTree, channelKey, channelSlug, isCollapsed, toggleCategory, type Category, type ChannelRef } from "./channels";
+import { useState } from "preact/hooks";
+import type { AccountManager, AccountView } from "../core/accounts";
+import { channelKey, channelSlug, isCollapsed, toggleCategory, type Category, type ChannelRef } from "./channels";
 import { channelColor, STATUS_LABELS } from "./format";
 import { initials, senderColor } from "./identity";
 import { PendingScreen } from "./PendingScreen";
@@ -28,10 +28,10 @@ function saveToggled(deviceId: string, characters: string[]) {
   }
 }
 
-export function ChannelList({ manager, account, items, unread, channel, onOpenChannel, onOpenSettings, onPairAgain }: {
+export function ChannelList({ manager, account, tree, unread, channel, onOpenChannel, onOpenSettings, onPairAgain }: {
   manager: AccountManager;
   account: AccountView;
-  items: FeedItem[];
+  tree: Category[];
   unread: UnreadTracker;
   channel: ChannelRef | null;
   onOpenChannel: (ref: ChannelRef) => void;
@@ -40,10 +40,6 @@ export function ChannelList({ manager, account, items, unread, channel, onOpenCh
 }) {
   const id = account.deviceId;
   const [toggled, setToggled] = useState(() => loadToggled(id));
-  const tree = useMemo(
-    () => buildChannelTree(items, { character: account.character, relayChannels: account.state.relayChannels }),
-    [items, account.character, account.state.relayChannels],
-  );
   const selected = channel && channelKey(channel);
 
   function toggle(character: string) {

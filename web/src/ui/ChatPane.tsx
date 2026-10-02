@@ -4,11 +4,11 @@ import { channelKey, channelSlug, inChannel, type ChannelRef } from "./channels"
 import { Composer, type Tab } from "./Composer";
 import { defaultSendAccount } from "./feed";
 import { channelColor, STATUS_LABELS } from "./format";
-import { GearIcon, MenuIcon } from "./icons";
+import { MenuIcon } from "./icons";
 import { MessageList } from "./MessageList";
 import type { PendingSend, PendingSends } from "./pending";
 
-export function ChatPane({ accounts, server, channel, items, unreadCount, sends, pending, onMenu, onOpenSettings }: {
+export function ChatPane({ accounts, server, channel, items, unreadCount, sends, pending, onMenu }: {
   accounts: AccountView[];
   server: string;
   channel: ChannelRef | null;
@@ -17,7 +17,6 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
   sends: PendingSends;
   pending: PendingSend[];
   onMenu: () => void;
-  onOpenSettings: () => void;
 }) {
   const home = server === "home";
   const account = home ? undefined : accounts.find((a) => a.deviceId === server);
@@ -79,9 +78,6 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
             {subtitle}
           </small>
         </div>
-        <button class="icon-btn" aria-label={home ? "App settings" : "Account settings"} onClick={onOpenSettings}>
-          <GearIcon />
-        </button>
       </header>
 
       <MessageList

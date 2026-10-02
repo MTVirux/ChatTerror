@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { formatPairCode, parsePairCode } from "../core/session";
 import { defaultDeviceName } from "./format";
+import { CloseIcon } from "./icons";
 
 const MISSING_SECRET = "This code is missing its second half. Enter all 16 characters shown in the plugin, like ABCD-EFGH-JKMN-PQRS.";
 
@@ -91,58 +92,69 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
   }
 
   return (
-    <main class="screen pair">
-      {onBack && <button class="btn ghost back" onClick={onBack}>Back</button>}
-
-      <header class="brand">
-        <h1 class="wordmark">ChatTerror</h1>
-        <p class="lede">Your FFXIV chat on your phone, end-to-end encrypted.</p>
-      </header>
-
-      {revoked && (
-        <div class="banner" role="alert">
-          <strong>This device was removed.</strong> Its messages were deleted from this phone. Pair again to keep chatting.
-        </div>
+    <main class="pair-page">
+      {onBack && (
+        <button class="icon-btn pair-close" aria-label="Close" onClick={onBack}>
+          <CloseIcon />
+        </button>
       )}
 
-      <form class="card pair-form" onSubmit={submit}>
-        <p class="hint">In the game, open the ChatTerror window and choose to pair a new device. Scan its QR code or type the code below.</p>
-
-        {scanning ? (
-          <QrScanner onResult={onScanned} onCancel={() => setScanning(false)} onError={(m) => { setScanning(false); setError(m); }} />
-        ) : (
-          <button type="button" class="btn secondary wide" onClick={() => { setError(""); setScanning(true); }}>
-            <CameraIcon /> Scan QR code
-          </button>
+      <div class="pair-column">
+        {!onBack && (
+          <header class="brand">
+            <h1 class="wordmark">ChatTerror</h1>
+            <p class="lede">Your FFXIV chat on your phone, end-to-end encrypted.</p>
+          </header>
         )}
 
-        <label class="field">
-          <span>Pairing code</span>
-          <input
-            class="code-input"
-            value={code}
-            onInput={(e) => setCode(formatCodeInput(e.currentTarget.value))}
-            placeholder="ABCD-EFGH-JKMN-PQRS"
-            autocomplete="one-time-code"
-            autocapitalize="characters"
-            spellcheck={false}
-            inputMode="text"
-            maxLength={19}
-          />
-        </label>
+        {revoked && (
+          <div class="banner" role="alert">
+            <strong>This device was removed.</strong> Its messages were deleted from this phone. Pair again to keep chatting.
+          </div>
+        )}
 
-        <label class="field">
-          <span>Device name</span>
-          <input value={name} onInput={(e) => setName(e.currentTarget.value)} maxLength={40} />
-          <small>Shown in the plugin so you can tell your devices apart.</small>
-        </label>
+        <form class="pair-card" onSubmit={submit} aria-labelledby="pair-title">
+          <header class="pair-card-head">
+            <h2 id="pair-title">Add a server</h2>
+            <p class="hint">In the game, open the ChatTerror window and choose to pair a new device. Scan its QR code or type the code below.</p>
+          </header>
 
-        {error && <p class="error" role="alert">{error}</p>}
+          {scanning ? (
+            <QrScanner onResult={onScanned} onCancel={() => setScanning(false)} onError={(m) => { setScanning(false); setError(m); }} />
+          ) : (
+            <button type="button" class="btn secondary wide" onClick={() => { setError(""); setScanning(true); }}>
+              <CameraIcon /> Scan QR code
+            </button>
+          )}
 
-        <button type="submit" class="btn primary wide" disabled={busy}>
-          {busy ? "Pairing..." : revoked || pairAgain ? "Pair again" : onBack ? "Add account" : "Pair this device"}
-        </button>
-      </form>
+          <label class="field">
+            <span>Pairing code</span>
+            <input
+              class="code-input"
+              value={code}
+              onInput={(e) => setCode(formatCodeInput(e.currentTarget.value))}
+              placeholder="ABCD-EFGH-JKMN-PQRS"
+              autocomplete="one-time-code"
+              autocapitalize="characters"
+              spellcheck={false}
+              inputMode="text"
+              maxLength={19}
+            />
+          </label>
+
+          <label class="field">
+            <span>Device name</span>
+            <input value={name} onInput={(e) => setName(e.currentTarget.value)} maxLength={40} />
+            <small>Shown in the plugin so you can tell your devices apart.</small>
+          </label>
+
+          {error && <p class="error" role="alert">{error}</p>}
+
+          <button type="submit" class="btn primary wide" disabled={busy}>
+            {busy ? "Pairing..." : revoked || pairAgain ? "Pair again" : onBack ? "Add account" : "Pair this device"}
+          </button>
+        </form>
+      </div>
     </main>
   );
 }

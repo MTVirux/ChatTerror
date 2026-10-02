@@ -41,12 +41,14 @@ export function Drawer({ open, onOpenChange, drawer, children }: {
   // An open drawer owns one history entry so the back gesture closes it.
   useEffect(() => {
     if (!open) return;
-    history.pushState({ drawer: true }, "");
+    // Per-open token, so an entry left over from a reload or a forward step is never mistaken for ours.
+    const token = Math.random();
+    history.pushState({ drawer: token }, "");
     const onPop = () => onOpenChange(false);
     addEventListener("popstate", onPop);
     return () => {
       removeEventListener("popstate", onPop);
-      if (history.state?.drawer) history.back();
+      if (history.state?.drawer === token) history.back();
     };
   }, [open]);
 
