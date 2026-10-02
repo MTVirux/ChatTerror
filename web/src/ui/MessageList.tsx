@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { FeedItem } from "../core/accounts";
+import type { AccountView, FeedItem } from "../core/accounts";
 import type { ChatChannel } from "../core/protocol";
 import { feedKey } from "./feed";
 import { channelColor, channelLabel, timeOfDay } from "./format";
@@ -7,13 +7,13 @@ import { initials, senderColor } from "./identity";
 import { buildRows, incomingAfter, type Row } from "./messages";
 import type { PendingSend } from "./pending";
 
-export function MessageList({ viewId, items, unreadCount, showAccount, pending, characterOf, onRetry, onDismiss }: {
+export function MessageList({ viewId, items, unreadCount, showAccount, pending, accountOf, onRetry, onDismiss }: {
   viewId: string;
   items: FeedItem[];
   unreadCount: number;
   showAccount: boolean;
   pending: PendingSend[];
-  characterOf: (deviceId: string) => string;
+  accountOf: (deviceId: string) => AccountView | undefined;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
@@ -68,20 +68,31 @@ export function MessageList({ viewId, items, unreadCount, showAccount, pending, 
             <p class="hint">New chat from the game shows up here while the plugin is running.</p>
           </div>
         )}
-        {rows.map((row) => <MessageRow key={feedKey(row.item)} row={row} showAccount={showAccount} />)}
-        {pending.map((p) => (
-          <PendingRow key={`p-${p.localId}`} send={p} character={characterOf(p.deviceId)} showAccount={showAccount} onRetry={onRetry} onDismiss={onDismiss} />
-        ))}
+        {rows.map((row) => <MessageRow key={feedKey(row.item)} row={row} account={showAccount ? accountOf(row.item.deviceId) : undefined} showAccount={showAccount} />)}
+        {pending.map((p) => {
+          const account = accountOf(p.deviceId);
+          return (
+            <PendingRow
+              key={`p-${p.localId}`}
+              send={p}
+              character={account?.character ?? account?.label ?? ""}
+              account={showAccount ? account : undefined}
+              onRetry={onRetry}
+              onDismiss={onDismiss}
+            />
+          );
+        })}
       </div>
       {showJump && <button class="jump" onClick={jump}>New messages</button>}
     </div>
   );
 }
 
-function Tags({ character, channel }: { character: string; channel: ChatChannel }) {
+// The account comes from which pairing delivered the row, never from what the plugin put in it.
+function Tags({ account, channel }: { account?: AccountView; channel: ChatChannel }) {
   return (
     <>
-      <span class="acct">{character}</span>
+      {account && <span class="acct" style={{ "--c": account.color }} title={account.label}>{account.label}</span>}
       <span class="chip" style={{ "--c": channelColor(channel) }}>{channelLabel(channel)}</span>
     </>
   );
@@ -91,7 +102,7 @@ function Avatar({ name }: { name: string }) {
   return <span class="avatar" style={{ "--c": senderColor(name) }} aria-hidden="true">{initials(name)}</span>;
 }
 
-function MessageRow({ row, showAccount }: { row: Row; showAccount: boolean }) {
+function MessageRow({ row, account, showAccount }: { row: Row; account?: AccountView; showAccount: boolean }) {
   const { item } = row;
   const time = <time class="time" dateTime={new Date(item.ts).toISOString()}>{timeOfDay(item.ts)}</time>;
   const [name, ownWorld] = item.sender.split("@");
@@ -110,7 +121,7 @@ function MessageRow({ row, showAccount }: { row: Row; showAccount: boolean }) {
                 {item.channel === "tell" && item.outgoing ? `to ${name}` : name}
                 {world && !showAccount && <span class="world">{world}</span>}
               </span>
-              {showAccount && <Tags character={item.character} channel={item.channel} />}
+              {showAccount && <Tags account={account} channel={item.channel} />}
               {time}
             </div>
             <p class="msg-text">{item.text}</p>
@@ -125,10 +136,10 @@ function MessageRow({ row, showAccount }: { row: Row; showAccount: boolean }) {
   );
 }
 
-function PendingRow({ send, character, showAccount, onRetry, onDismiss }: {
+function PendingRow({ send, character, account, onRetry, onDismiss }: {
   send: PendingSend;
   character: string;
-  showAccount: boolean;
+  account?: AccountView;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
@@ -138,7 +149,7 @@ function PendingRow({ send, character, showAccount, onRetry, onDismiss }: {
       <div class="msg-body">
         <div class="msg-head">
           <span class="sender own">{send.target ? `to ${send.target.split("@")[0]}` : character}</span>
-          {showAccount && <Tags character={character} channel={send.channel} />}
+          {account && <Tags account={account} channel={send.channel} />}
           <span class="time">{send.error ? "Not sent" : "Sending..."}</span>
         </div>
         <p class="msg-text">{send.text}</p>

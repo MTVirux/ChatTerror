@@ -76,6 +76,14 @@ describe("routePush", () => {
     expect(await routePush({ p: await seal(keyB, item("m1"), 5), d: "b" })).toMatchObject({ deviceId: "b", label: "Main" });
   });
 
+  it("numbers a label another account already uses", async () => {
+    await seed("a");
+    const keyB = await seed("b");
+    await updateAccount("a", { label: "Alpha" });
+    await updateAccount("b", { label: "Alpha" });
+    expect(await routePush({ p: await seal(keyB, item("m1"), 5), d: "b" })).toMatchObject({ deviceId: "b", label: "Alpha (2)" });
+  });
+
   it("drops replays", async () => {
     const key = await seed("a");
     const body = { p: await seal(key, item("m1"), 5), d: "a" };

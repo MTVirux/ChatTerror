@@ -21,7 +21,7 @@ export function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current:
 }
 
 export interface AccountPicker {
-  options: { deviceId: string; label: string; online: boolean }[];
+  options: { deviceId: string; label: string; color: string; online: boolean }[];
   value: string;
   onChange: (deviceId: string) => void;
 }
@@ -100,7 +100,13 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
       {tab.kind !== "tell" && (
         <div class="composer-meta">
           {account && (
-            <select class="account-select" aria-label="Send as" value={account.value} onChange={(e) => account.onChange(e.currentTarget.value)}>
+            <select
+              class="account-select"
+              style={{ "--c": account.options.find((o) => o.deviceId === account.value)?.color }}
+              aria-label="Send as"
+              value={account.value}
+              onChange={(e) => account.onChange(e.currentTarget.value)}
+            >
               {account.options.map((o) => <option value={o.deviceId}>{o.online ? o.label : `${o.label} (offline)`}</option>)}
             </select>
           )}

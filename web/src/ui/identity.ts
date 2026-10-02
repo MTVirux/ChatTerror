@@ -1,4 +1,4 @@
-const COLORS = ["#5865f2", "#3ba55c", "#faa61a", "#ed4245", "#eb459e", "#9b59b6", "#1abc9c", "#e67e22"];
+import { hashColor } from "../core/accountIdentity";
 
 export function initials(name: string): string {
   const words = name.split("@")[0].split(/\s+/).map((w) => w.replace(/[^A-Za-z]/g, "")).filter(Boolean);
@@ -8,7 +8,5 @@ export function initials(name: string): string {
 }
 
 export function senderColor(name: string): string {
-  let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  return COLORS[Math.abs(hash) % COLORS.length];
+  return hashColor(name);
 }
