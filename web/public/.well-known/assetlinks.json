@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.mtvirux.chatterror",
+      "sha256_cert_fingerprints": ["8B:C6:EA:31:2A:AA:C9:E1:14:F0:63:19:80:BE:08:83:DE:50:2D:BF:E8:E7:10:66:AA:06:01:E1:36:65:0D:B1"]
+    }
+  }
+]
