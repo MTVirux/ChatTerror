@@ -124,6 +124,9 @@ All settings live under `Relay` and default to the values below. Set them as env
 | `Relay__InactiveInstallTtl` | `90.00:00:00` | Plugin installs are deleted with all their devices after not connecting for this long. |
 | `Relay__InactiveDeviceTtl` | `90.00:00:00` | Devices are deleted after not connecting for this long. |
 | `Relay__PushServiceHosts` | `fcm.googleapis.com,*.push.services.mozilla.com,*.push.apple.com,*.notify.windows.com` | Push service hosts a device may subscribe with, comma separated. `*.` matches any subdomain. Endpoints must also be https on port 443. |
+| `Relay__TellsPerRecipientPerMinute` | `30` | Relayed tells per minute from one character to one plugin install. |
+| `Relay__TellPushCooldown` | `00:00:10` | Minimum time between tell notifications from one character to one device. Tells inside the cooldown are still delivered. |
+| `Relay__MaxQueuedTellsPerSender` | `20` | Undelivered tells kept per sender for each recipient plugin or device. The oldest are dropped first. |
 | `Relay__PushSubscriptionsPerMinute` | `10` | Push subscription updates per minute per IP. |
 | `Relay__MaxConcurrentPushes` | `32` | Push requests in flight across the relay. |
 | `Relay__MaxPushesPerInstall` | `4` | Push requests in flight per plugin install. |

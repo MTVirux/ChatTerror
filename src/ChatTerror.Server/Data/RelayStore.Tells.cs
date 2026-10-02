@@ -57,13 +57,16 @@ public sealed partial class RelayStore
     public int CountTellCharacters(string installId) =>
         QuerySingle("SELECT COUNT(*) FROM tell_characters WHERE install_id = $install", reader => reader.GetInt32(0), ("$install", installId));
 
-    // Bundles are only handed out for the install's own characters and their friends, so the relay can't be used to probe content ids.
+    // Bundles are only handed out for the install's own characters and mutual friends of them. The caller picks its own
+    // friend lists, so a one-sided entry must not reveal whether a hash is registered.
     public bool CanSeeTellCharacter(string installId, string hash)
     {
         if (TellCharacterOwner(hash) == installId)
             return true;
-        var lists = Query("SELECT friends FROM tell_characters WHERE install_id = $install", reader => reader.GetString(0), ("$install", installId));
-        return lists.Any(friends => (JsonSerializer.Deserialize<List<string>>(friends) ?? []).Contains(hash));
+        var theirFriends = TellFriends(hash);
+        var own = Query("SELECT hash, friends FROM tell_characters WHERE install_id = $install",
+            reader => (Hash: reader.GetString(0), Friends: ParseFriends(reader.GetString(1))), ("$install", installId));
+        return own.Any(character => character.Friends.Contains(hash) && theirFriends.Contains(character.Hash));
     }
 
     public void DeleteTellCharacters(string installId) =>
@@ -72,14 +75,18 @@ public sealed partial class RelayStore
     public string? TellCharacterOwner(string hash) =>
         QuerySingle("SELECT install_id FROM tell_characters WHERE hash = $hash", reader => reader.GetString(0), ("$hash", hash));
 
-    public bool IsTellFriend(string hash, string friendHash)
-    {
-        var friends = QuerySingle("SELECT friends FROM tell_characters WHERE hash = $hash", reader => reader.GetString(0), ("$hash", hash));
-        return friends != null && (JsonSerializer.Deserialize<List<string>>(friends) ?? []).Contains(friendHash);
-    }
+    public bool IsTellFriend(string hash, string friendHash) => TellFriends(hash).Contains(friendHash);
 
-    public List<string> RegisteredTellCharacters(IEnumerable<string> hashes) =>
-        hashes.Distinct().Where(hash => TellCharacterOwner(hash) != null).ToList();
+    // Only friends that list the character back, so the answer can't be used to probe arbitrary hashes.
+    public List<string> MutualTellFriends(string hash, IEnumerable<string> friends) =>
+        friends.Distinct().Where(friend => IsTellFriend(friend, hash)).ToList();
+
+    private List<string> TellFriends(string hash) =>
+        QuerySingle("SELECT friends FROM tell_characters WHERE hash = $hash", reader => reader.GetString(0), ("$hash", hash)) is { } friends
+            ? ParseFriends(friends)
+            : [];
+
+    private static List<string> ParseFriends(string json) => JsonSerializer.Deserialize<List<string>>(json) ?? [];
 
     public void SetTellBundle(string installId, SignedTellBundle bundle) =>
         Execute("""
@@ -92,7 +99,8 @@ public sealed partial class RelayStore
         QuerySingle("SELECT bundle, signature FROM tell_bundles WHERE install_id = $install",
             reader => new SignedTellBundle(reader.GetString(0), reader.GetString(1)), ("$install", installId));
 
-    // Only the newest copies per target are kept, so a flood can't grow the queue without bound.
+    // Only the newest copies per target are kept, so a flood can't grow the queue without bound, and each sender only
+    // gets a share of them, so one sender can't push out everyone else's tells.
     public void EnqueueTell(string id, string installId, string target, string sender, string senderKey, string envelope)
     {
         Execute("""
@@ -101,6 +109,12 @@ public sealed partial class RelayStore
             """,
             ("$id", id), ("$install", installId), ("$target", target), ("$sender", sender), ("$senderKey", senderKey),
             ("$envelope", envelope), ("$now", Now));
+        Execute("""
+            DELETE FROM tell_queue WHERE install_id = $install AND target = $target AND sender = $sender AND rowid NOT IN (
+                SELECT rowid FROM tell_queue WHERE install_id = $install AND target = $target AND sender = $sender
+                ORDER BY created DESC, rowid DESC LIMIT $max)
+            """,
+            ("$install", installId), ("$target", target), ("$sender", sender), ("$max", maxQueuedTellsPerSender));
         Execute("""
             DELETE FROM tell_queue WHERE install_id = $install AND target = $target AND rowid NOT IN (
                 SELECT rowid FROM tell_queue WHERE install_id = $install AND target = $target ORDER BY created DESC, rowid DESC LIMIT $max)

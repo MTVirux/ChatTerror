@@ -32,6 +32,12 @@ public sealed class RelayOptions
 
     public int TellRequestsPerMinute { get; set; } = 60;
 
+    public int TellsPerRecipientPerMinute { get; set; } = 30;
+
+    public TimeSpan TellPushCooldown { get; set; } = TimeSpan.FromSeconds(10);
+
+    public int MaxQueuedTellsPerSender { get; set; } = 20;
+
     // "*.example.com" matches any subdomain of example.com, but not example.com itself.
     public string PushServiceHosts { get; set; } = "fcm.googleapis.com,*.push.services.mozilla.com,*.push.apple.com,*.notify.windows.com";
 

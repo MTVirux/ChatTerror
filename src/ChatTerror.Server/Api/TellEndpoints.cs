@@ -26,7 +26,7 @@ public static class TellEndpoints
             var distinct = friends.Distinct().ToList();
             if (!store.SetTellCharacter(install.Id, hash, distinct))
                 return AuthHelpers.Error(StatusCodes.Status409Conflict, "characterTaken");
-            return Results.Ok(new TellCharacterResponse(store.RegisteredTellCharacters(distinct)));
+            return Results.Ok(new TellCharacterResponse(store.MutualTellFriends(hash, distinct)));
         }).RequireRateLimiting(RequestLimits.TellPolicy);
 
         app.MapDelete("/api/tells/characters", (HttpContext context, RelayStore store) =>

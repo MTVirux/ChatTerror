@@ -1,7 +1,9 @@
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using ChatTerror.Protocol;
+using ChatTerror.Server.Data;
 using ChatTerror.Server.Tests.Support;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChatTerror.Server.Tests;
 
@@ -52,7 +54,7 @@ public class TellRelayTests
 
         await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
 
-        Assert.Equal(new TellResultFrame("t1", false, TellErrors.NotFriend), await pluginA.ReceiveAsync<TellResultFrame>());
+        Assert.Equal(new TellResultFrame("t1", false, TellErrors.NotChatTerror), await pluginA.ReceiveAsync<TellResultFrame>());
     }
 
     [Fact]
@@ -72,6 +74,9 @@ public class TellRelayTests
         Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
 
         await pluginA.SendAsync(Send("t4", A, B, new TellCopy(false, TellTargets.Plugin, new string('x', Limits.MaxTellEnvelopeChars + 1))));
+        Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
+
+        await pluginA.SendAsync(Send("t5", A, B, new TellCopy(false, TellTargets.Plugin, "env1"), new TellCopy(false, TellTargets.Plugin, "env2")));
         Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
     }
 
@@ -159,5 +164,54 @@ public class TellRelayTests
 
         await using var pluginB = await app.ConnectAsync(b.Install.InstallToken);
         Assert.Equal(Base64Url.Encode(P256.PublicRaw(a.Key)), (await pluginB.ReceiveAsync<TellFrame>()).FromKey);
+    }
+
+    [Fact]
+    public async Task Tell_RateLimitedPerSenderAndRecipient()
+    {
+        using var app = new RelayApp(new() { ["Relay:TellsPerRecipientPerMinute"] = "2" });
+        var (a, _) = await FriendsAsync(app);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+
+        for (var i = 0; i < 2; i++)
+        {
+            await pluginA.SendAsync(Send($"t{i}", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+            Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+        }
+        await pluginA.SendAsync(Send("t2", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.Equal(new TellResultFrame("t2", false, TellErrors.RateLimited), await pluginA.ReceiveAsync<TellResultFrame>());
+
+        app.Time.Advance(TimeSpan.FromMinutes(1));
+        await pluginA.SendAsync(Send("t3", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+    }
+
+    [Fact]
+    public async Task Tell_PushCooldownStillQueuesTheTell()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        ClaimResponse phoneB;
+        await using (var pluginB = await app.ConnectAsync(b.Install.InstallToken))
+            phoneB = await app.PairDeviceAsync(b.Install, pluginB);
+        var push = await app.Client(phoneB.DeviceToken).PutAsJsonAsync("/api/devices/me/push", new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p256", auth = "secret" } });
+        push.EnsureSuccessStatusCode();
+        await app.PutTellBundleAsync(b.Install.InstallToken, b.Key, new TellBundleEntry(phoneB.DeviceId, RelayApp.NewPublicKey(), true));
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+
+        foreach (var id in new[] { "t1", "t2" })
+        {
+            await pluginA.SendAsync(Send(id, A, B, new TellCopy(false, phoneB.DeviceId, "env")));
+            Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+        }
+        Assert.Single(app.Push.Calls);
+
+        app.Time.Advance(TimeSpan.FromSeconds(10));
+        await pluginA.SendAsync(Send("t3", A, B, new TellCopy(false, phoneB.DeviceId, "env")));
+        Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+        Assert.Equal(2, app.Push.Calls.Count);
+
+        var store = app.Services.GetRequiredService<RelayStore>();
+        Assert.Equal(["t1", "t2", "t3"], store.PendingTells(b.Install.InstallId, phoneB.DeviceId).Select(tell => tell.Id));
     }
 }

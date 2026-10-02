@@ -76,6 +76,7 @@ public sealed partial class RelayStore
     private readonly TimeSpan inactiveInstallTtl;
     private readonly TimeSpan inactiveDeviceTtl;
     private readonly int maxInstallsPerDay;
+    private readonly int maxQueuedTellsPerSender;
     private readonly Lock claimLock = new();
     private readonly Lock tellOwnerLock = new();
     private readonly Lock installLock = new();
@@ -88,6 +89,7 @@ public sealed partial class RelayStore
         inactiveInstallTtl = options.Value.InactiveInstallTtl;
         inactiveDeviceTtl = options.Value.InactiveDeviceTtl;
         maxInstallsPerDay = options.Value.MaxInstallsPerDay;
+        maxQueuedTellsPerSender = options.Value.MaxQueuedTellsPerSender;
 
         var path = Path.GetFullPath(options.Value.DbPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
