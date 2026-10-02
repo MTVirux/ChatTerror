@@ -6,11 +6,11 @@ import { channelSlug } from "./channels";
 import { byteLength, channelColor, channelLabel, sendBlockedReason, sendPrefix, TELL_TARGET } from "./format";
 
 // latest is the channel of the newest message in a custom channel, its default target.
-export type Tab = { kind: "all" } | { kind: "custom"; channels: ChatChannel[]; latest?: ChatChannel } | { kind: "tell"; partner: string };
+export type Tab = { kind: "all" } | { kind: "custom"; channels: ChatChannel[]; latest?: ChatChannel } | { kind: "tell"; character: string; partner: string };
 
 // Tells to ChatTerror friends still go out through the relay while the game is closed.
-export function blockedReason(status: SessionStatus, contacts: TellContact[], channel?: ChatChannel, target?: string): string | null {
-  if (status === "gameOffline" && channel === "tell" && target && findContact(contacts, target)) return null;
+export function blockedReason(status: SessionStatus, contacts: TellContact[], channel?: ChatChannel, target?: string, character?: string): string | null {
+  if (status === "gameOffline" && channel === "tell" && target && findContact(contacts, target, character)) return null;
   return sendBlockedReason(status);
 }
 
@@ -38,7 +38,7 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
   tab: Tab;
   account?: AccountPicker;
   blocked?: string;
-  onSend: (channel: ChatChannel, text: string, target?: string) => void;
+  onSend: (channel: ChatChannel, text: string, target?: string, character?: string) => void;
 }) {
   const [channel, setChannel] = useState<ChatChannel | undefined>(() => preferredChannel(tab, state.sendChannels, undefined));
   const [text, setText] = useState("");
@@ -59,12 +59,13 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
   const fixedTarget = tab.kind === "tell" ? tab.partner : undefined;
   const needsTarget = channel === "tell" && !fixedTarget;
   const effectiveTarget = fixedTarget ?? (needsTarget ? target.trim() : undefined);
+  const character = tab.kind === "tell" ? tab.character : state.character;
   const trimmed = text.trim();
   // The plugin limits the whole chat line, so the channel prefix counts too.
   const bytes = channel ? byteLength(sendPrefix(channel, effectiveTarget) + trimmed) : byteLength(trimmed);
 
   const options = pickable(tab, state.sendChannels);
-  let blocked = blockedBy ?? blockedReason(state.status, state.contacts, channel, effectiveTarget);
+  let blocked = blockedBy ?? blockedReason(state.status, state.contacts, channel, effectiveTarget, character);
   if (!blocked && state.sendChannels.length === 0) blocked = "Sending from your phone is turned off in the plugin";
   if (!blocked && tab.kind === "custom" && options.length === 0) blocked = "Sending to these channels is disabled in the plugin";
   if (!blocked && channel && !state.sendChannels.includes(channel)) blocked = "Sending to this channel is disabled in the plugin";
@@ -80,7 +81,7 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
   function submit(event?: Event) {
     event?.preventDefault();
     if (!canSend || !channel) return;
-    onSend(channel, trimmed, effectiveTarget);
+    onSend(channel, trimmed, effectiveTarget, character);
     setText("");
     inputRef.current?.focus();
   }

@@ -27,6 +27,8 @@ export interface Meta {
   tellKey: { privateKey: CryptoKey; publicKey: string } | null;
   // Install key first seen for each friend's character hash.
   tellPins: Record<string, string>;
+  // Newest tell bundle issuedAt accepted per install key, so the relay can't hand out an older bundle.
+  tellBundles: Record<string, number>;
 }
 
 export const DEFAULT_CACHE_LIMIT = 2000;
@@ -44,6 +46,7 @@ const META_DEFAULTS: Meta = {
   pushEnabled: false,
   tellKey: null,
   tellPins: {},
+  tellBundles: {},
 };
 
 const STORES = ["pairing", "messages", "meta"] as const;

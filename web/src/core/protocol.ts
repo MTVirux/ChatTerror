@@ -138,6 +138,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_TEXT_LENGTH = 4096;
 const MAX_NAME_LENGTH = 64;
+// A tell hash is base64url SHA-256, an install key base64url raw P-256.
+const MAX_HASH_LENGTH = 43;
+const MAX_KEY_LENGTH = 87;
 // Matches Limits.MaxTextBytes in the plugin.
 const MAX_SEND_LENGTH = 500;
 
@@ -190,7 +193,16 @@ function hasStrings(value: unknown, keys: string[]): value is Record<string, unk
 }
 
 function isTellContact(value: unknown): value is TellContact {
-  return hasStrings(value, ["character", "characterWorld", "characterHash", "name", "world", "hash"]) && (value.key === undefined || typeof value.key === "string");
+  return (
+    isObject(value) &&
+    isName(value.character) &&
+    isName(value.characterWorld) &&
+    isBoundedString(value.characterHash, MAX_HASH_LENGTH) &&
+    isName(value.name) &&
+    isName(value.world) &&
+    isBoundedString(value.hash, MAX_HASH_LENGTH) &&
+    (value.key === undefined || isBoundedString(value.key, MAX_KEY_LENGTH))
+  );
 }
 
 export function isTellBundle(value: unknown): value is TellBundle {
@@ -203,9 +215,22 @@ export function isTellBundle(value: unknown): value is TellBundle {
   );
 }
 
+// ts may be ahead of our clock, the caller clamps it.
 export function parseTellBody(value: unknown): TellBody | null {
-  const strings = ["id", "fromHash", "fromName", "fromWorld", "toHash", "toName", "toWorld", "text"];
-  return hasStrings(value, strings) && typeof value.ts === "number" ? (value as unknown as TellBody) : null;
+  const valid =
+    isObject(value) &&
+    isBoundedString(value.id, MAX_NAME_LENGTH) &&
+    isBoundedString(value.fromHash, MAX_HASH_LENGTH) &&
+    isName(value.fromName) &&
+    isName(value.fromWorld) &&
+    isBoundedString(value.toHash, MAX_HASH_LENGTH) &&
+    isName(value.toName) &&
+    isName(value.toWorld) &&
+    isBoundedString(value.text, MAX_TEXT_LENGTH) &&
+    typeof value.ts === "number" &&
+    Number.isFinite(value.ts) &&
+    value.ts >= 0;
+  return valid ? (value as unknown as TellBody) : null;
 }
 
 export function parsePluginPayload(value: unknown): PluginPayload | null {

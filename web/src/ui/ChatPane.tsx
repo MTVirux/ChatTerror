@@ -48,7 +48,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
 
   const tab = useMemo((): Tab => {
     if (!channel || home) return { kind: "all" };
-    if (channel.kind === "tell") return { kind: "tell", partner: channel.partner };
+    if (channel.kind === "tell") return { kind: "tell", character: channel.character, partner: channel.partner };
     return { kind: "custom", channels: custom?.channels ?? [], latest: visible.at(-1)?.channel };
   }, [viewId, custom, visible.at(-1)?.channel]);
 
@@ -105,7 +105,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
           value: sendAccount,
           onChange: setSendAccount,
         } : undefined}
-        onSend={(channel, text, target) => void sends.send(targetId, channel, text, target)}
+        onSend={(channel, text, target, character) => void sends.send(targetId, channel, text, target, character)}
       />
     </div>
   );

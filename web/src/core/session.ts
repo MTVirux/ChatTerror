@@ -7,7 +7,7 @@ import type { PushControl } from "./push";
 import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
 import { DEFAULT_CACHE_LIMIT, type AccountStore, type Pairing } from "./storage";
-import { buildCopies, findContact, openTellFrame, tellToItem } from "./tells";
+import { buildCopies, findContact, openTellFrame, pinFor, tellToItem } from "./tells";
 
 export type SessionStatus = "unpaired" | "pending" | "connecting" | "online" | "gameOffline" | "relayOffline" | "revoked";
 
@@ -35,7 +35,8 @@ export interface Session {
   subscribe(cb: (s: SessionState) => void): () => void;
   onMessages(cb: (items: ChatItem[]) => void): () => void;
   loadHistory(limit: number): Promise<ChatItem[]>;
-  send(channel: ChatChannel, text: string, target?: string): Promise<SendResult>;
+  // character picks which of our characters a relayed tell goes out from.
+  send(channel: ChatChannel, text: string, target?: string, character?: string): Promise<SendResult>;
   setMuted(channels: ChatChannel[]): Promise<void>;
   setChannelPrefs(prefs: ChannelPrefs): Promise<void>;
   enablePush(): Promise<boolean>;
@@ -369,7 +370,8 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
   async function sendRelayedTell(contact: TellContact, text: string): Promise<SendResult> {
     if (!pairing) return { ok: false, error: "offline" };
     const { token, deviceId, pluginPublicKey } = pairing;
-    const pins = await deps.store.getMeta("tellPins");
+    const [pins, issued] = await Promise.all([deps.store.getMeta("tellPins"), deps.store.getMeta("tellBundles")]);
+    const isStale = (bundle: TellBundle) => Object.hasOwn(issued, bundle.installPublicKey) && bundle.issuedAt < issued[bundle.installPublicKey];
     let recipient: TellBundle | null;
     let own: TellBundle | null;
     try {
@@ -378,14 +380,17 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
         deps.api.getTellBundle(token, "self").catch(() => null),
       ]);
       // The plugin's pin wins, so forgetting a friend in the plugin also fixes the phones.
-      const expected = contact.key ?? pins[contact.hash];
+      const expected = contact.key ?? pinFor(pins, contact.hash);
       recipient = await verifyBundle(theirs, expected);
       if (!recipient) return { ok: false, error: expected && (await verifyBundle(theirs)) ? "keyChanged" : "notChatTerror" };
+      if (isStale(recipient)) return { ok: false, error: "staleBundle" };
       own = mine && (await verifyBundle(mine, pluginPublicKey));
+      if (own && isStale(own)) own = null;
     } catch (error) {
       return { ok: false, error: error instanceof ApiError && error.status === 404 ? "notChatTerror" : "offline" };
     }
-    if (pins[contact.hash] !== recipient.installPublicKey) await deps.store.setMeta("tellPins", { ...pins, [contact.hash]: recipient.installPublicKey });
+    if (pinFor(pins, contact.hash) !== recipient.installPublicKey) await deps.store.setMeta("tellPins", { ...pins, [contact.hash]: recipient.installPublicKey });
+    await deps.store.setMeta("tellBundles", { ...issued, [recipient.installPublicKey]: recipient.issuedAt, ...(own ? { [own.installPublicKey]: own.issuedAt } : {}) });
 
     const body: TellBody = {
       id: crypto.randomUUID().replace(/-/g, ""),
@@ -454,11 +459,11 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       return items;
     },
 
-    send(channel, text, target) {
+    send(channel, text, target, character) {
       if (!authed || !approved) return Promise.resolve({ ok: false, error: "offline" });
       if (pluginOnline === false) {
         // Tells to ChatTerror friends still go out through the relay while the game is closed.
-        const contact = channel === "tell" && target ? findContact(state.contacts, target) : undefined;
+        const contact = channel === "tell" && target ? findContact(state.contacts, target, character) : undefined;
         return contact ? sendRelayedTell(contact, text) : Promise.resolve({ ok: false, error: "gameOffline" });
       }
       const requestId = crypto.randomUUID();

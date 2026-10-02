@@ -47,5 +47,29 @@ describe("sealed tells", () => {
     expect(isValidSettings({ ...base, contacts: [contact] })).toBe(true);
     expect(isValidSettings({ ...base, contacts: [{ ...contact, hash: 3 }] })).toBe(false);
     expect(isValidSettings(base)).toBe(true);
+    for (const bad of [
+      { name: "C|D" },
+      { world: "x".repeat(65) },
+      { character: 1 },
+      { characterWorld: null },
+      { hash: "h".repeat(44) },
+      { characterHash: "h".repeat(44) },
+      { key: "k".repeat(88) },
+      { key: 5 },
+    ]) {
+      expect(isValidSettings({ ...base, contacts: [{ ...contact, ...bad }] })).toBe(false);
+    }
+    expect(isValidSettings({ ...base, contacts: [{ ...contact, hash: "h".repeat(43), key: "k".repeat(87) }] })).toBe(true);
+  });
+
+  it("rejects tell bodies with bad timestamps or fields", () => {
+    const body = JSON.parse(vector.plaintext);
+    expect(parseTellBody({ ...body, ts: Date.now() + 1e9 })).not.toBeNull();
+    for (const ts of [-Infinity, Infinity, NaN, -1, -1e20, "1"]) expect(parseTellBody({ ...body, ts })).toBeNull();
+    expect(parseTellBody({ ...body, toName: "A|B" })).toBeNull();
+    expect(parseTellBody({ ...body, fromWorld: "x".repeat(65) })).toBeNull();
+    expect(parseTellBody({ ...body, fromHash: "h".repeat(44) })).toBeNull();
+    expect(parseTellBody({ ...body, id: "i".repeat(65) })).toBeNull();
+    expect(parseTellBody({ ...body, text: "x".repeat(5000) })).toBeNull();
   });
 });
