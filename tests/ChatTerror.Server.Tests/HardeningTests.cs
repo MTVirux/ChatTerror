@@ -162,6 +162,36 @@ public class HardeningTests
     }
 
     [Fact]
+    public void InstallPartitionKey_GroupsIpv6By56()
+    {
+        Assert.Equal(
+            RequestLimits.InstallPartitionKey(IPAddress.Parse("2001:db8:1:200::1")),
+            RequestLimits.InstallPartitionKey(IPAddress.Parse("2001:db8:1:2ff:ffff::9")));
+        Assert.NotEqual(
+            RequestLimits.InstallPartitionKey(IPAddress.Parse("2001:db8:1:200::1")),
+            RequestLimits.InstallPartitionKey(IPAddress.Parse("2001:db8:1:300::1")));
+        Assert.Equal("2001:db8:1:200::/56", RequestLimits.InstallPartitionKey(IPAddress.Parse("2001:db8:1:2ab::1")));
+        Assert.Equal("1.2.3.4", RequestLimits.InstallPartitionKey(IPAddress.Parse("::ffff:1.2.3.4")));
+    }
+
+    [Fact]
+    public async Task RegisterInstall_DailyCapAcrossRelay()
+    {
+        using var app = new RelayApp(new() { ["Relay:MaxInstallsPerDay"] = "2" });
+
+        await app.RegisterInstallAsync();
+        app.Time.Advance(TimeSpan.FromHours(12));
+        await app.RegisterInstallAsync();
+        var capped = await app.Client().PostAsJsonAsync("/api/installs", new { publicKey = RelayApp.NewPublicKey() });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, capped.StatusCode);
+        Assert.Equal("installLimitReached", (await capped.Content.ReadFromJsonAsync<ErrorResponse>())!.Error);
+
+        app.Time.Advance(TimeSpan.FromHours(12));
+        await app.RegisterInstallAsync();
+    }
+
+    [Fact]
     public async Task TrustedProxy_ForwardedFor_UsedForRateLimit()
     {
         using var app = new RelayApp(new()
@@ -284,11 +314,15 @@ public class HardeningTests
         var device = await app.ClaimAsync(await app.CreatePairingAsync(install.InstallToken));
         var client = app.Client(device.DeviceToken);
 
+        var prefix = "https://1.1.1.1/";
+        var maxEndpoint = await client.PutAsJsonAsync("/api/devices/me/push",
+            new { endpoint = prefix + new string('a', DeviceEndpoints.MaxEndpointLength - prefix.Length), keys = new { p256dh = "p", auth = "a" } });
         var longEndpoint = await client.PutAsJsonAsync("/api/devices/me/push",
-            new { endpoint = "https://1.1.1.1/" + new string('a', 2048), keys = new { p256dh = "p", auth = "a" } });
+            new { endpoint = prefix + new string('a', DeviceEndpoints.MaxEndpointLength - prefix.Length + 1), keys = new { p256dh = "p", auth = "a" } });
         var longKey = await client.PutAsJsonAsync("/api/devices/me/push",
             new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = new string('p', 257), auth = "a" } });
 
+        Assert.Equal(HttpStatusCode.NoContent, maxEndpoint.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, longEndpoint.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, longKey.StatusCode);
     }
