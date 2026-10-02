@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import type { SessionState } from "../core/session";
 
-export function PendingScreen({ state, onCancel }: { state: SessionState; onCancel: () => Promise<void> }) {
+export function PendingScreen({ state, onCancel, inline }: { state: SessionState; onCancel: () => Promise<void>; inline?: boolean }) {
   const [busy, setBusy] = useState(false);
   const groups = (state.fingerprint ?? "--- ---").split(" ");
 
@@ -14,8 +14,9 @@ export function PendingScreen({ state, onCancel }: { state: SessionState; onCanc
     }
   }
 
+  const Root = inline ? "div" : "main";
   return (
-    <main class="screen pending">
+    <Root class={`screen pending${inline ? " inline" : ""}`}>
       <p class="waiting"><span class="pulse" aria-hidden="true" /> Waiting for approval</p>
       <div class="fingerprint" aria-label={`Security number ${groups.join(" ")}`}>
         {groups.map((g) => <span class="fp-group">{g}</span>)}
@@ -25,6 +26,6 @@ export function PendingScreen({ state, onCancel }: { state: SessionState; onCanc
       <button class="btn ghost" onClick={cancel} disabled={busy}>
         {busy ? "Cancelling..." : "Cancel pairing"}
       </button>
-    </main>
+    </Root>
   );
 }

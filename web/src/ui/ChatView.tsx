@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { AccountManager, AccountView, FeedItem } from "../core/accounts";
 import { ALL_CHANNELS, type ChatChannel, type ChatItem } from "../core/protocol";
 import type { SessionState } from "../core/session";
+import { channelKey, type ChannelRef } from "./channels";
 import { Composer } from "./Composer";
 import { defaultSendAccount, feedKey, mergeFeed } from "./feed";
+import { GearIcon } from "./icons";
 import type { PendingSend, PendingSends } from "./pending";
 import { SettingsView } from "./SettingsView";
 import { channelColor, channelLabel, dayLabel, STATUS_LABELS, tellPartner, timeOfDay } from "./format";
@@ -23,10 +25,11 @@ function itemTabKey(item: ChatItem): string {
   return item.channel === "tell" ? `tell:${tellPartner(item)}` : `ch:${item.channel}`;
 }
 
-export function ChatView({ manager, accounts, accountId, sends, pending, onOpenAccount, onAddAccount }: {
+export function ChatView({ manager, accounts, accountId, channel, sends, pending, onOpenAccount, onAddAccount }: {
   manager: AccountManager;
   accounts: AccountView[];
   accountId: string | null;
+  channel?: ChannelRef | null;
   sends: PendingSends;
   pending: PendingSend[];
   onOpenAccount: (deviceId: string) => void;
@@ -121,6 +124,13 @@ export function ChatView({ manager, accounts, accountId, sends, pending, onOpenA
     const key = tabKey(next);
     setUnread((prev) => ({ ...prev, [key]: 0 }));
   }
+
+  // Follow the channel picked in the drawer.
+  const channelId = channel ? channelKey(channel) : null;
+  useEffect(() => {
+    if (!channel) return;
+    selectTab(channel.kind === "chat" ? { kind: "channel", channel: channel.channel } : { kind: "tell", partner: channel.partner });
+  }, [channelId]);
 
   const allTitle = merged ? "All accounts" : state.character ?? "Not logged in";
   const title = tab.kind === "all" ? allTitle : tab.kind === "channel" ? channelLabel(tab.channel) : tab.partner;
@@ -315,14 +325,5 @@ function Message({ item, continued, showChannel, showAccount }: { item: ChatItem
       )}
       <p class="msg-text">{item.text}</p>
     </div>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-    </svg>
   );
 }
