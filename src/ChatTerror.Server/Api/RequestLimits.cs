@@ -12,8 +12,14 @@ public static class RequestLimits
     public const string PushPolicy = "push";
     public const string TellPolicy = "tells";
 
-    // IPv6 clients usually own a whole /64, so one client is one /64.
-    public static string PartitionKey(IPAddress? address)
+    // IPv6 clients usually own at least a whole /64, so one client is one /64.
+    public static string PartitionKey(IPAddress? address) => PartitionKey(address, 64);
+
+    // Home connections are commonly given a /56, so install creation is limited per /56 to make large
+    // prefixes less useful without lumping a whole ISP into one bucket.
+    public static string InstallPartitionKey(IPAddress? address) => PartitionKey(address, 56);
+
+    private static string PartitionKey(IPAddress? address, int ipv6Prefix)
     {
         if (address == null)
             return "unknown";
@@ -22,8 +28,9 @@ public static class RequestLimits
         if (address.AddressFamily != AddressFamily.InterNetworkV6)
             return address.ToString();
 
-        var prefix = address.GetAddressBytes()[..8];
-        return new IPAddress([.. prefix, 0, 0, 0, 0, 0, 0, 0, 0]) + "/64";
+        var bytes = new byte[16];
+        address.GetAddressBytes()[..(ipv6Prefix / 8)].CopyTo(bytes, 0);
+        return new IPAddress(bytes) + "/" + ipv6Prefix;
     }
 
     public static IApplicationBuilder UseApiBodyLimit(this IApplicationBuilder app, long maxBytes) =>

@@ -117,6 +117,87 @@ public class LifecycleTests
     }
 
     [Fact]
+    public async Task InactiveDevice_IsDeleted_AndTreatedAsRevoked()
+    {
+        using var app = new RelayApp();
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        var store = app.Services.GetRequiredService<RelayStore>();
+
+        app.Time.Advance(TimeSpan.FromDays(89));
+        app.Services.GetRequiredService<ExpiryService>().Sweep();
+        Assert.NotNull(store.FindDevice(device.DeviceId));
+
+        app.Time.Advance(TimeSpan.FromDays(2));
+        app.Services.GetRequiredService<ExpiryService>().Sweep();
+
+        Assert.Null(store.FindDevice(device.DeviceId));
+        Assert.Equal(device.DeviceId, (await plugin.ReceiveAsync<DeviceRevokedFrame>()).DeviceId);
+        await using var phone = await app.OpenSocketAsync();
+        await phone.SendAsync(new AuthFrame(device.DeviceToken));
+        Assert.IsType<AuthFailFrame>(await phone.NextAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client(device.DeviceToken).GetAsync("/api/devices/me")).StatusCode);
+    }
+
+    [Fact]
+    public async Task InactiveDevice_ConnectedNow_IsKept()
+    {
+        using var app = new RelayApp();
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        await using var phone = await app.ConnectAsync(device.DeviceToken);
+
+        app.Time.Advance(TimeSpan.FromDays(91));
+        app.Services.GetRequiredService<ExpiryService>().Sweep();
+
+        Assert.NotNull(app.Services.GetRequiredService<RelayStore>().FindDevice(device.DeviceId));
+    }
+
+    [Fact]
+    public async Task InactiveInstall_WithDevices_IsDeleted()
+    {
+        using var app = new RelayApp(new() { ["Relay:InactiveInstallTtl"] = "10.00:00:00" });
+        var install = await app.RegisterInstallAsync();
+        var device = await app.ClaimAsync(await app.CreatePairingAsync(install.InstallToken));
+        var store = app.Services.GetRequiredService<RelayStore>();
+        store.SetDeviceStatus(device.DeviceId, DeviceStatus.Active);
+        var code = await app.CreatePairingAsync(install.InstallToken);
+        await using var phone = await app.ConnectAsync(device.DeviceToken);
+
+        app.Time.Advance(TimeSpan.FromDays(9));
+        app.Services.GetRequiredService<ExpiryService>().Sweep();
+        Assert.NotNull(store.FindInstallByToken(install.InstallToken));
+
+        app.Time.Advance(TimeSpan.FromDays(2));
+        app.Services.GetRequiredService<ExpiryService>().Sweep();
+
+        Assert.Contains(await phone.ExpectClosedAsync(), f => f is RevokedFrame);
+        Assert.Null(store.FindInstallByToken(install.InstallToken));
+        Assert.Null(store.FindDevice(device.DeviceId));
+        Assert.Null(store.FindPairing(code));
+        await using var plugin = await app.OpenSocketAsync();
+        await plugin.SendAsync(new AuthFrame(install.InstallToken));
+        Assert.IsType<AuthFailFrame>(await plugin.NextAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client(install.InstallToken).GetAsync("/api/devices")).StatusCode);
+    }
+
+    [Fact]
+    public async Task InactiveInstall_ConnectedNow_IsKept()
+    {
+        using var app = new RelayApp();
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        await app.PairDeviceAsync(install, plugin);
+
+        app.Time.Advance(TimeSpan.FromDays(91));
+        app.Services.GetRequiredService<ExpiryService>().Sweep();
+
+        Assert.NotNull(app.Services.GetRequiredService<RelayStore>().FindInstallByToken(install.InstallToken));
+    }
+
+    [Fact]
     public async Task PushBody_AtCap_Sent_OverCap_Skipped()
     {
         using var app = new RelayApp();

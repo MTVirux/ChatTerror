@@ -11,9 +11,20 @@ public sealed class ExpiryService(RelayStore store, ConnectionRegistry registry,
 
         store.DeleteExpiredTells();
 
-        var deleted = store.DeleteStaleInstalls(installId => registry.Plugin(installId) != null);
-        if (deleted > 0)
-            log.LogInformation("Deleted {Count} unused installs", deleted);
+        var devices = store.DeleteInactiveDevices(deviceId => registry.Device(deviceId) != null);
+        foreach (var (deviceId, installId) in devices)
+            registry.Revoke(deviceId, installId, notifyPlugin: true);
+        if (devices.Count > 0)
+            log.LogInformation("Deleted {Count} inactive devices", devices.Count);
+
+        var installs = store.DeleteStaleInstalls(installId => registry.Plugin(installId) != null);
+        foreach (var (installId, deviceIds) in installs)
+        {
+            foreach (var deviceId in deviceIds)
+                registry.Revoke(deviceId, installId, notifyPlugin: false);
+        }
+        if (installs.Count > 0)
+            log.LogInformation("Deleted {Count} unused installs", installs.Count);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

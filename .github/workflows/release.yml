@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.ref_name }}
+      DALAMUD_HOME: ${{ github.workspace }}/dalamud
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check tag matches plugin version
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/ChatTerror.Plugin/ChatTerror.Plugin.csproj)
+          if [ "$version" != "$TAG" ]; then
+            echo "Tag $TAG does not match csproj Version $version"
+            exit 1
+          fi
+
+      - name: Download Dalamud
+        run: |
+          curl -fsSL -o dalamud.zip https://goatcorp.github.io/dalamud-distrib/latest.zip
+          sha256sum dalamud.zip
+          unzip -q dalamud.zip -d "$DALAMUD_HOME"
+
+      - name: Restore
+        run: dotnet restore ChatTerror.sln --locked-mode
+
+      - name: Test
+        run: dotnet test ChatTerror.sln -c Release --no-restore
+
+      - name: Build plugin
+        run: dotnet build src/ChatTerror.Plugin -c Release --no-restore
+
+      - name: Package
+        run: |
+          mkdir dist
+          cp src/ChatTerror.Plugin/bin/Release/ChatTerror/latest.zip dist/ChatTerror.zip
+          cd dist
+          echo "$(sha256sum ChatTerror.zip | cut -d' ' -f1)  ChatTerror.zip" > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/ChatTerror.zip
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" dist/ChatTerror.zip dist/SHA256SUMS --title "$TAG" --notes "Built from $GITHUB_SHA by $GITHUB_WORKFLOW."

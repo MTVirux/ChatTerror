@@ -18,8 +18,9 @@ public static class InstallEndpoints
             if (body?.PublicKey is not { } publicKey || !AuthHelpers.IsPublicKey(publicKey))
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidPublicKey");
 
-            var (id, token) = store.CreateInstall(publicKey);
-            return Results.Ok(new CreateInstallResponse(id, token));
+            if (store.CreateInstall(publicKey) is not { } install)
+                return AuthHelpers.Error(StatusCodes.Status503ServiceUnavailable, "installLimitReached");
+            return Results.Ok(new CreateInstallResponse(install.Id, install.Token));
         }).RequireRateLimiting(RequestLimits.InstallPolicy);
 
         app.MapGet("/api/vapid", (VapidKeys keys) => Results.Ok(new VapidResponse(keys.PublicKey)));

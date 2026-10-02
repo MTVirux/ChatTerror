@@ -39,10 +39,18 @@ public sealed class RelayOptions
 
     public int InstallsPerHour { get; set; } = 5;
 
+    // Across all clients, so a large pool of addresses cannot fill the database.
+    public int MaxInstallsPerDay { get; set; } = 2000;
+
     public int PairingsPerInstallPerHour { get; set; } = 10;
 
     // Installs with no devices are deleted once they have not connected for this long.
     public TimeSpan InstallTtl { get; set; } = TimeSpan.FromDays(30);
+
+    // Installs are deleted with all their devices once the plugin has not connected for this long.
+    public TimeSpan InactiveInstallTtl { get; set; } = TimeSpan.FromDays(90);
+
+    public TimeSpan InactiveDeviceTtl { get; set; } = TimeSpan.FromDays(90);
 
     public TimeSpan PendingDeviceTtl { get; set; } = TimeSpan.FromHours(1);
 

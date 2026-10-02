@@ -1,3 +1,4 @@
+import { uniqueLabels } from "./accountIdentity";
 import { openPayload } from "./crypto";
 import { CHANNEL_LABELS, parsePluginPayload, type ChatItem } from "./protocol";
 import { getCacheLimit, listAccounts } from "./registry";
@@ -30,7 +31,9 @@ export async function routePush(body: unknown): Promise<RoutedPush | null> {
   if (tell.t === "tell") return routeTell(tell);
   const { p, d } = (body ?? {}) as { p?: unknown; d?: unknown };
   if (typeof p !== "string") return null;
-  const accounts = (await listAccounts()).filter((a) => a.status === "active");
+  const all = await listAccounts();
+  const labels = uniqueLabels(all.map((a, i) => ({ name: a.name, fallback: a.label || `Account ${i + 1}` })));
+  const accounts = all.filter((a) => a.status === "active");
   const matching = accounts.filter((a) => a.deviceId === d);
   // Older relays send no device id, so every key is tried.
   for (const account of matching.length > 0 ? matching : accounts) {
@@ -48,8 +51,7 @@ export async function routePush(body: unknown): Promise<RoutedPush | null> {
     if (!guard.accept(payload.seq)) return null;
     await store.setMeta("lastSeenPush", payload.seq);
     await store.addMessages([payload.item], await getCacheLimit());
-    const index = accounts.indexOf(account);
-    return { deviceId: account.deviceId, label: account.name || account.label || `Account ${index + 1}`, multiple: accounts.length > 1, item: payload.item };
+    return { deviceId: account.deviceId, label: labels[all.indexOf(account)], multiple: accounts.length > 1, item: payload.item };
   }
   return null;
 }

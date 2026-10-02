@@ -67,10 +67,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
   }
 
   const subtitle = home ? "All accounts" : channel ? channel.character : account?.character ?? "Not logged in";
-  const characterOf = (deviceId: string) => {
-    const a = accounts.find((x) => x.deviceId === deviceId);
-    return a?.character ?? a?.label ?? "";
-  };
+  const accountOf = (deviceId: string) => accounts.find((a) => a.deviceId === deviceId);
 
   return (
     <div class="chat">
@@ -93,7 +90,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
         unreadCount={unreadCount}
         showAccount={home}
         pending={visiblePending}
-        characterOf={characterOf}
+        accountOf={accountOf}
         onRetry={(p) => void sends.retry(p)}
         onDismiss={sends.dismiss}
       />
@@ -104,7 +101,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
         tab={tab}
         blocked={blocked}
         account={home && activeAccounts.length > 1 && sendAccount ? {
-          options: activeAccounts.map((a) => ({ deviceId: a.deviceId, label: a.label, online: a.state.status === "online" })),
+          options: activeAccounts.map((a) => ({ deviceId: a.deviceId, label: a.label, color: a.color, online: a.state.status === "online" })),
           value: sendAccount,
           onChange: setSendAccount,
         } : undefined}

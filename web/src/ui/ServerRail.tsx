@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import type { AccountView } from "../core/accounts";
-import { initials, senderColor } from "./identity";
+import { initials } from "./identity";
 import type { Server } from "./nav";
 import type { UnreadSummary, UnreadTracker } from "./unread";
 
@@ -26,7 +26,7 @@ export function ServerRail({ accounts, server, unread, onSelect }: {
           label={a.label}
           selected={server === a.deviceId}
           summary={unread.summary(a.deviceId)}
-          color={senderColor(a.deviceId)}
+          color={a.color}
           revoked={a.status === "revoked"}
           pending={a.state.status === "pending"}
           onClick={() => onSelect(a.deviceId)}

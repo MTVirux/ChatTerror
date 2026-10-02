@@ -55,6 +55,16 @@ public sealed partial class RelayStore
             install_id TEXT NOT NULL,
             expires INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS pairings_install ON pairings(install_id);
+        CREATE INDEX IF NOT EXISTS devices_last_seen ON devices(last_seen);
+        CREATE INDEX IF NOT EXISTS installs_created ON installs(created);
+        """;
+
+    private const string InstallIndexes = "CREATE INDEX IF NOT EXISTS installs_last_seen ON installs(last_seen)";
+
+    // An install is stale when it has not connected within InstallTtl and has no devices, or within InactiveInstallTtl at all.
+    private const string StaleInstall = """
+        (installs.last_seen <= $emptyCutoff AND NOT EXISTS(SELECT 1 FROM devices WHERE devices.install_id = installs.id))
+        OR installs.last_seen <= $inactiveCutoff
         """;
 
     private const string DeviceColumns = "id, install_id, name, public_key, status, created, last_seen, push_endpoint, push_p256dh, push_auth";
@@ -63,13 +73,20 @@ public sealed partial class RelayStore
     private readonly TimeProvider time;
     private readonly TimeSpan pendingDeviceTtl;
     private readonly TimeSpan installTtl;
+    private readonly TimeSpan inactiveInstallTtl;
+    private readonly TimeSpan inactiveDeviceTtl;
+    private readonly int maxInstallsPerDay;
     private readonly Lock claimLock = new();
+    private readonly Lock installLock = new();
 
     public RelayStore(IOptions<RelayOptions> options, TimeProvider time)
     {
         this.time = time;
         pendingDeviceTtl = options.Value.PendingDeviceTtl;
         installTtl = options.Value.InstallTtl;
+        inactiveInstallTtl = options.Value.InactiveInstallTtl;
+        inactiveDeviceTtl = options.Value.InactiveDeviceTtl;
+        maxInstallsPerDay = options.Value.MaxInstallsPerDay;
 
         var path = Path.GetFullPath(options.Value.DbPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -77,6 +94,7 @@ public sealed partial class RelayStore
         Execute(Schema);
         Execute(TellSchema);
         AddInstallLastSeen();
+        Execute(InstallIndexes);
     }
 
     // Databases created before installs tracked last_seen.
@@ -91,13 +109,23 @@ public sealed partial class RelayStore
 
     private long Now => time.GetUtcNow().ToUnixTimeMilliseconds();
 
-    public (string Id, string Token) CreateInstall(string publicKey)
+    // Returns null once MaxInstallsPerDay installs were created in the last 24 hours.
+    public (string Id, string Token)? CreateInstall(string publicKey)
     {
-        var id = Tokens.NewId();
-        var (token, hash) = Tokens.Create(Tokens.InstallPrefix, id);
-        Execute("INSERT INTO installs(id, token_hash, public_key, created, last_seen) VALUES($id, $hash, $key, $now, $now)",
-            ("$id", id), ("$hash", hash), ("$key", publicKey), ("$now", Now));
-        return (id, token);
+        lock (installLock)
+        {
+            var now = Now;
+            var since = now - (long)TimeSpan.FromDays(1).TotalMilliseconds;
+            var recent = QuerySingle("SELECT COUNT(*) FROM installs WHERE created > $since", reader => reader.GetInt32(0), ("$since", since));
+            if (recent >= maxInstallsPerDay)
+                return null;
+
+            var id = Tokens.NewId();
+            var (token, hash) = Tokens.Create(Tokens.InstallPrefix, id);
+            Execute("INSERT INTO installs(id, token_hash, public_key, created, last_seen) VALUES($id, $hash, $key, $now, $now)",
+                ("$id", id), ("$hash", hash), ("$key", publicKey), ("$now", now));
+            return (id, token);
+        }
     }
 
     public InstallRecord? FindInstallByToken(string token)
@@ -235,31 +263,43 @@ public sealed partial class RelayStore
             .ToList();
     }
 
-    // Deletes installs with no devices that have not connected within the TTL and are not connected now.
-    public int DeleteStaleInstalls(Func<string, bool> isConnected)
+    // Deletes devices that have not connected within the TTL and are not connected now.
+    public List<(string DeviceId, string InstallId)> DeleteInactiveDevices(Func<string, bool> isConnected)
     {
-        var cutoff = Now - (long)installTtl.TotalMilliseconds;
-        var candidates = Query("""
-            SELECT id FROM installs i
-            WHERE last_seen <= $cutoff AND NOT EXISTS(SELECT 1 FROM devices d WHERE d.install_id = i.id)
-            """,
-            reader => reader.GetString(0), ("$cutoff", cutoff));
+        var cutoff = Now - (long)inactiveDeviceTtl.TotalMilliseconds;
+        var candidates = Query("SELECT id, install_id FROM devices WHERE last_seen <= $cutoff",
+            reader => (DeviceId: reader.GetString(0), InstallId: reader.GetString(1)), ("$cutoff", cutoff));
+        return candidates
+            .Where(device => !isConnected(device.DeviceId))
+            .Where(device => Execute("DELETE FROM devices WHERE id = $id AND last_seen <= $cutoff",
+                ("$id", device.DeviceId), ("$cutoff", cutoff)) == 1)
+            .ToList();
+    }
 
-        var deleted = 0;
+    // Deletes stale installs that are not connected now, with their devices and pairings.
+    // Returns each deleted install with its devices, so their sockets can be closed.
+    public List<(string InstallId, List<string> DeviceIds)> DeleteStaleInstalls(Func<string, bool> isConnected)
+    {
+        var now = Now;
+        (string, object?)[] cutoffs =
+        [
+            ("$emptyCutoff", now - (long)installTtl.TotalMilliseconds),
+            ("$inactiveCutoff", now - (long)inactiveInstallTtl.TotalMilliseconds),
+        ];
+        var candidates = Query($"SELECT id FROM installs WHERE {StaleInstall}", reader => reader.GetString(0), cutoffs);
+
+        var deleted = new List<(string, List<string>)>();
         foreach (var id in candidates.Where(id => !isConnected(id)))
         {
             lock (claimLock)
             {
-                var removed = Execute("""
-                    DELETE FROM installs
-                    WHERE id = $id AND last_seen <= $cutoff AND NOT EXISTS(SELECT 1 FROM devices WHERE install_id = $id)
-                    """,
-                    ("$id", id), ("$cutoff", cutoff));
-                if (removed == 0)
+                if (Execute($"DELETE FROM installs WHERE id = $id AND ({StaleInstall})", [("$id", id), .. cutoffs]) == 0)
                     continue;
+                var devices = Query("SELECT id FROM devices WHERE install_id = $id", reader => reader.GetString(0), ("$id", id));
+                Execute("DELETE FROM devices WHERE install_id = $id", ("$id", id));
                 Execute("DELETE FROM pairings WHERE install_id = $id", ("$id", id));
                 DeleteTellData(id);
-                deleted++;
+                deleted.Add((id, devices));
             }
         }
         return deleted;
