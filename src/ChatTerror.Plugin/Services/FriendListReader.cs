@@ -17,7 +17,8 @@ public static unsafe class FriendListReader
 
         foreach (var entry in proxy->CharDataSpan)
         {
-            if (entry.ContentId != 0 && entry.NameString.Length > 0)
+            // Pending friend requests are listed too, but only accepted friends may send relayed tells.
+            if (entry.ContentId != 0 && entry.NameString.Length > 0 && !entry.WaitingForFriendListApproval)
                 friends.Add(new GameFriend(entry.ContentId, entry.NameString, entry.HomeWorld));
         }
         return friends;

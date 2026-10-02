@@ -61,6 +61,7 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
             if (ImGui.SmallButton($"Forget##{hash}"))
             {
                 config.TellPins.Remove(hash);
+                config.TellBundleIssuedAt.Remove(hash);
                 changed();
             }
             if (ImGui.IsItemHovered())

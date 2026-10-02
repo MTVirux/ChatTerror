@@ -52,6 +52,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
 
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var tokenReadable = config.LoadInstallToken();
+        config.Migrate();
         if (!tokenReadable)
             log.Error("The saved install token could not be decrypted, it may belong to another Windows user or machine. Registering a new install.");
         foreach (var (channel, setting) in RelaySettings.Defaults())
@@ -67,7 +68,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         capture = new ChatCapture(chatGui, playerState, config, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);
         tellDirectory = new TellDirectory(config, SaveConfig, keys, api, hub, framework, playerState, dataManager, log);
-        tellRelay = new TellRelay(config, SaveConfig, keys, api, relay, hub, tellDirectory, chatGui, framework, playerState, log);
+        tellRelay = new TellRelay(config, SaveConfig, keys, api, relay, hub, tellDirectory, capture, chatGui, framework, playerState, log);
         tellHook = new TellCommandHook(interop, tellRelay, log);
         hub.Contacts = () => config.TellsEnabled ? TellContacts.ForDevices(config.TellCharacters, config.TellPins) : [];
 

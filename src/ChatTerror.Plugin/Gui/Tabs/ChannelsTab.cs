@@ -26,6 +26,7 @@ public sealed class ChannelsTab(Configuration config, TellDirectory tells, Actio
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Tells to friends who also use ChatTerror are delivered through the relay when the game can't reach them.");
+        ImGui.TextDisabled("Uploads hashed IDs of your characters and friend lists to the relay. ChatTerror friends can see you use it.");
         if (config.TellsEnabled && tells.Status is { } status)
             ImGui.TextDisabled(status);
         ImGui.Spacing();

@@ -15,4 +15,14 @@ public class SeenIdsTests
         Assert.True(seen.Add("c"));
         Assert.True(seen.Add("a"));
     }
+
+    [Fact]
+    public void Ids_RoundTripOldestFirst()
+    {
+        var seen = new SeenIds(2, ["a", "b", "c"]);
+
+        Assert.Equal(["b", "c"], seen.Ids);
+        Assert.False(seen.Add("c"));
+        Assert.True(seen.Add("a"));
+    }
 }
