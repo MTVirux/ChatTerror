@@ -20,6 +20,25 @@ ChatTerror is not in the official Dalamud repository. Add it as a custom reposit
 
 Open the settings with `/chatterror` (or `/ct`).
 
+## Verifying a release
+
+The only official plugin repository is `https://raw.githubusercontent.com/MTVirux/ChatTerror/master/repo.json`. Releases after 0.1.0.0 are built from a version tag by GitHub Actions ([release.yml](.github/workflows/release.yml)), which attaches `ChatTerror.zip`, a `SHA256SUMS` file and a signed build provenance attestation.
+
+To check a downloaded zip came from that workflow and this repository:
+
+```sh
+gh attestation verify ChatTerror.zip --repo MTVirux/ChatTerror
+sha256sum -c SHA256SUMS
+```
+
+The Android app (`ChatTerror.apk`) is signed with a certificate whose SHA-256 fingerprint is:
+
+```
+8B:C6:EA:31:2A:AA:C9:E1:14:F0:63:19:80:BE:08:83:DE:50:2D:BF:E8:E7:10:66:AA:06:01:E1:36:65:0D:B1
+```
+
+Check it with `apksigner verify --print-certs ChatTerror.apk` and compare the `SHA-256 digest` line (printed in lowercase without colons). The same fingerprint is published in [assetlinks.json](web/public/.well-known/assetlinks.json).
+
 The plugin uses the hosted relay at `https://chatterror.mtvirux.app` by default. To use your own relay (see below), set its URL in the **Connection** tab. Plain `http://` is only accepted for a relay on the same computer (`localhost`, `127.0.0.1`, `::1`).
 
 ## Pairing a phone
