@@ -9,6 +9,8 @@ public sealed class ExpiryService(RelayStore store, ConnectionRegistry registry,
         foreach (var (deviceId, installId) in store.DeleteExpired())
             registry.Revoke(deviceId, installId, notifyPlugin: true);
 
+        store.DeleteExpiredTells();
+
         var deleted = store.DeleteStaleInstalls(installId => registry.Plugin(installId) != null);
         if (deleted > 0)
             log.LogInformation("Deleted {Count} unused installs", deleted);

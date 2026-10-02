@@ -27,7 +27,7 @@ public enum ClaimStatus
 
 public sealed record ClaimResult(ClaimStatus Status, DeviceRecord? Device = null, string? Token = null);
 
-public sealed class RelayStore
+public sealed partial class RelayStore
 {
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -75,6 +75,7 @@ public sealed class RelayStore
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         connectionString = new SqliteConnectionStringBuilder { DataSource = path, Pooling = true }.ToString();
         Execute(Schema);
+        Execute(TellSchema);
         AddInstallLastSeen();
     }
 
@@ -197,7 +198,11 @@ public sealed class RelayStore
     public void SetDeviceStatus(string id, string status) =>
         Execute("UPDATE devices SET status = $status WHERE id = $id", ("$id", id), ("$status", status));
 
-    public bool DeleteDevice(string id) => Execute("DELETE FROM devices WHERE id = $id", ("$id", id)) == 1;
+    public bool DeleteDevice(string id)
+    {
+        Execute("DELETE FROM tell_queue WHERE target = $id", ("$id", id));
+        return Execute("DELETE FROM devices WHERE id = $id", ("$id", id)) == 1;
+    }
 
     public void SetPush(string id, PushSubscriptionRecord push) =>
         Execute("UPDATE devices SET push_endpoint = $endpoint, push_p256dh = $p256dh, push_auth = $auth WHERE id = $id",
@@ -253,6 +258,7 @@ public sealed class RelayStore
                 if (removed == 0)
                     continue;
                 Execute("DELETE FROM pairings WHERE install_id = $id", ("$id", id));
+                DeleteTellData(id);
                 deleted++;
             }
         }
