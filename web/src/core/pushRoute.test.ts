@@ -1,7 +1,8 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { beforeEach, describe, expect, it } from "vitest";
-import { sealPayload } from "./crypto";
+import { decode, encode } from "./b64url";
+import { exportPublicRaw, generateTellKey, sealPayload, sealTell } from "./crypto";
 import type { ChatItem } from "./protocol";
 import { notificationTitle, routePush } from "./pushRoute";
 import { addAccount, resetRegistryForTests, updateAccount } from "./registry";
@@ -94,5 +95,30 @@ describe("notificationTitle", () => {
     const chat = item("m1");
     expect(notificationTitle({ deviceId: "a", label: "Alpha Beta", multiple: false, item: chat })).toBe("Y'shtola Rhul (Say)");
     expect(notificationTitle({ deviceId: "a", label: "Alpha Beta", multiple: true, item: chat })).toBe("Alpha Beta - Y'shtola Rhul (Say)");
+  });
+});
+
+describe("routePush for relayed tells", () => {
+  it("opens a tell with the account's tell key and stores it", async () => {
+    await seed("a");
+    await seed("b");
+    const store = openAccountStore("chatterror-b");
+    const pair = await generateTellKey();
+    const publicKey = encode(await exportPublicRaw(pair.publicKey));
+    await store.setMeta("tellKey", { privateKey: pair.privateKey, publicKey });
+    const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: [], sendChannels: [], maxLength: 500, contacts: [contact] });
+    const body = { id: "t1", fromHash: "bob", fromName: "Bob Smith", fromWorld: "Lich", toHash: "me", toName: "Me", toWorld: "Lich", text: "hi", ts: 5 };
+    const envelope = encode(await sealTell(decode(publicKey), new TextEncoder().encode(JSON.stringify(body))));
+
+    const routed = await routePush({ t: "tell", i: "t1", f: "bob", e: envelope, d: "b" });
+
+    expect(routed).toMatchObject({ deviceId: "b", item: { id: "t1", sender: "Bob Smith", channel: "tell" } });
+    expect((await store.loadMessages(10)).map((i) => i.id)).toEqual(["t1"]);
+  });
+
+  it("returns null for a tell it can't open", async () => {
+    await seed("b");
+    expect(await routePush({ t: "tell", i: "t1", f: "bob", e: "garbage", d: "b" })).toBeNull();
   });
 });

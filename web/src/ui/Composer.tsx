@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { ChatChannel } from "../core/protocol";
-import type { SessionState } from "../core/session";
+import type { ChatChannel, TellContact } from "../core/protocol";
+import type { SessionState, SessionStatus } from "../core/session";
+import { findContact } from "../core/tells";
 import { channelSlug } from "./channels";
 import { byteLength, channelColor, channelLabel, sendBlockedReason, sendPrefix, TELL_TARGET } from "./format";
 
 // latest is the channel of the newest message in a custom channel, its default target.
 export type Tab = { kind: "all" } | { kind: "custom"; channels: ChatChannel[]; latest?: ChatChannel } | { kind: "tell"; partner: string };
+
+// Tells to ChatTerror friends still go out through the relay while the game is closed.
+export function blockedReason(status: SessionStatus, contacts: TellContact[], channel?: ChatChannel, target?: string): string | null {
+  if (status === "gameOffline" && channel === "tell" && target && findContact(contacts, target)) return null;
+  return sendBlockedReason(status);
+}
 
 export function pickable(tab: Tab, sendChannels: ChatChannel[]): ChatChannel[] {
   if (tab.kind === "custom") return sendChannels.filter((c) => tab.channels.includes(c));
@@ -57,7 +64,7 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
   const bytes = channel ? byteLength(sendPrefix(channel, effectiveTarget) + trimmed) : byteLength(trimmed);
 
   const options = pickable(tab, state.sendChannels);
-  let blocked = blockedBy ?? sendBlockedReason(state.status);
+  let blocked = blockedBy ?? blockedReason(state.status, state.contacts, channel, effectiveTarget);
   if (!blocked && state.sendChannels.length === 0) blocked = "Sending from your phone is turned off in the plugin";
   if (!blocked && tab.kind === "custom" && options.length === 0) blocked = "Sending to these channels is disabled in the plugin";
   if (!blocked && channel && !state.sendChannels.includes(channel)) blocked = "Sending to this channel is disabled in the plugin";

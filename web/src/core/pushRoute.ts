@@ -3,6 +3,7 @@ import { CHANNEL_LABELS, parsePluginPayload, type ChatItem } from "./protocol";
 import { getCacheLimit, listAccounts } from "./registry";
 import { SeqGuard } from "./seq";
 import { openAccountStore } from "./storage";
+import { openTellFrame } from "./tells";
 
 export interface RoutedPush {
   deviceId: string;
@@ -11,7 +12,22 @@ export interface RoutedPush {
   item: ChatItem;
 }
 
+async function routeTell(tell: { i?: unknown; f?: unknown; e?: unknown; d?: unknown }): Promise<RoutedPush | null> {
+  if (typeof tell.i !== "string" || typeof tell.f !== "string" || typeof tell.e !== "string") return null;
+  const accounts = (await listAccounts()).filter((a) => a.status === "active");
+  const account = accounts.find((a) => a.deviceId === tell.d);
+  if (!account) return null;
+  const store = openAccountStore(account.dbName);
+  const item = await openTellFrame(store, tell.f, tell.i, tell.e);
+  if (!item) return null;
+  await store.addMessages([item], await getCacheLimit());
+  const index = accounts.indexOf(account);
+  return { deviceId: account.deviceId, label: account.name || account.label || `Account ${index + 1}`, multiple: accounts.length > 1, item };
+}
+
 export async function routePush(body: unknown): Promise<RoutedPush | null> {
+  const tell = (body ?? {}) as { t?: unknown; i?: unknown; f?: unknown; e?: unknown; d?: unknown };
+  if (tell.t === "tell") return routeTell(tell);
   const { p, d } = (body ?? {}) as { p?: unknown; d?: unknown };
   if (typeof p !== "string") return null;
   const accounts = (await listAccounts()).filter((a) => a.status === "active");
