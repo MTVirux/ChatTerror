@@ -17,3 +17,6 @@ vapid.json
 secrets.json
 *.tfvars
 *.tfstate*
+.claude/
+CLAUDE.md
+CLAUDE.local.md
