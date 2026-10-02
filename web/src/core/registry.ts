@@ -10,6 +10,7 @@ export interface AccountRecord {
   order: number;
   addedAt: number;
   status: AccountStatus;
+  name?: string;
 }
 
 let registryPromise: Promise<IDBDatabase> | undefined;
@@ -102,7 +103,7 @@ export async function addAccount(record: Omit<AccountRecord, "order">): Promise<
   });
 }
 
-export function updateAccount(deviceId: string, patch: Partial<Pick<AccountRecord, "label" | "status">>): Promise<void> {
+export function updateAccount(deviceId: string, patch: Partial<Pick<AccountRecord, "label" | "status" | "name">>): Promise<void> {
   return run("readwrite", async (accounts) => {
     const current = await result(accounts.get(deviceId) as IDBRequest<AccountRecord | undefined>);
     if (current) accounts.put({ ...current, ...patch });

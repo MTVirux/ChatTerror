@@ -165,6 +165,31 @@ describe("account manager", () => {
     await vi.waitFor(async () => expect((await listAccounts())[0].label).toBe("Alpha Beta"));
   });
 
+  async function renamedManager() {
+    await seed("a");
+    const { deps, online, fromPlugin } = fakeDeps();
+    const manager = await createAccountManager(deps);
+    online("a");
+    await fromPlugin("a", { type: "settings", seq: Date.now(), character: "Alpha Beta", relayChannels: ["say"], sendChannels: ["say"], maxLength: 500 });
+    await manager.rename("a", " Main ");
+    return manager;
+  }
+
+  it("a custom name wins over the character", async () => {
+    const manager = await renamedManager();
+
+    await vi.waitFor(() => expect(manager.list()[0]).toMatchObject({ label: "Main", character: "Alpha Beta" }));
+    expect((await listAccounts())[0].name).toBe("Main");
+  });
+
+  it("clearing the name falls back to the character", async () => {
+    const manager = await renamedManager();
+    await manager.rename("a", "");
+
+    await vi.waitFor(() => expect(manager.list()[0].label).toBe("Alpha Beta"));
+    expect((await listAccounts())[0].name).toBeUndefined();
+  });
+
   it("counts unread for accounts not being viewed", async () => {
     await seed("a");
     await seed("b");

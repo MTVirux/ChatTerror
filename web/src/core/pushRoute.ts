@@ -33,7 +33,7 @@ export async function routePush(body: unknown): Promise<RoutedPush | null> {
     await store.setMeta("lastSeenPush", payload.seq);
     await store.addMessages([payload.item], await getCacheLimit());
     const index = accounts.indexOf(account);
-    return { deviceId: account.deviceId, label: account.label || `Account ${index + 1}`, multiple: accounts.length > 1, item: payload.item };
+    return { deviceId: account.deviceId, label: account.name || account.label || `Account ${index + 1}`, multiple: accounts.length > 1, item: payload.item };
   }
   return null;
 }

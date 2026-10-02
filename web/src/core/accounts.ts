@@ -10,6 +10,7 @@ import { accountDbName, openAccountStore, type AccountStore } from "./storage";
 export interface AccountView {
   deviceId: string;
   label: string;
+  character?: string;
   status: AccountStatus;
   state: SessionState;
   unread: number;
@@ -35,6 +36,7 @@ export interface AccountManager {
   loadMerged(limit: number): Promise<FeedItem[]>;
   pair(code: string, deviceName: string): Promise<{ deviceId: string; fingerprint: string }>;
   remove(deviceId: string): Promise<void>;
+  rename(deviceId: string, name: string): Promise<void>;
   setViewing(viewing: Viewing): void;
   cacheLimit(): number;
   setCacheLimit(n: number): Promise<void>;
@@ -63,13 +65,17 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
   }
 
   function emit() {
-    views = ordered().map((e, i) => ({
-      deviceId: e.record.deviceId,
-      label: e.session.getState().character ?? (e.record.label || `Account ${i + 1}`),
-      status: e.record.status,
-      state: e.session.getState(),
-      unread: e.unread,
-    }));
+    views = ordered().map((e, i) => {
+      const state = e.session.getState();
+      return {
+        deviceId: e.record.deviceId,
+        label: e.record.name || state.character || e.record.label || `Account ${i + 1}`,
+        character: state.character,
+        status: e.record.status,
+        state,
+        unread: e.unread,
+      };
+    });
     for (const listener of listeners) listener(views);
   }
 
@@ -189,6 +195,15 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
       if (!entry) return;
       if (entry.record.status === "active") await entry.session.unpair();
       await drop(entry);
+      emit();
+    },
+
+    async rename(deviceId, name) {
+      const entry = entries.get(deviceId);
+      if (!entry) return;
+      const trimmed = name.trim() || undefined;
+      entry.record = { ...entry.record, name: trimmed };
+      await registry.updateAccount(deviceId, { name: trimmed });
       emit();
     },
 
