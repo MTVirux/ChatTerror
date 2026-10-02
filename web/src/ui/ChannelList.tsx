@@ -227,7 +227,7 @@ export function HomeList({ accounts, unread, onSelectServer }: {
           const summary = unread.summary(a.deviceId);
           return (
             <button key={a.deviceId} class={`channel home-row${summary.unread ? " unread" : ""}`} onClick={() => onSelectServer(a.deviceId)}>
-              <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": senderColor(a.deviceId) }} aria-hidden="true">{initials(a.label)}</span>
+              <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": a.color }} aria-hidden="true">{initials(a.label)}</span>
               <span class="channel-name">
                 {a.label}
                 <small class="home-status">{STATUS_LABELS[a.state.status]}</small>

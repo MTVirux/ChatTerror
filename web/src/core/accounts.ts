@@ -1,3 +1,4 @@
+import { accountColors, uniqueLabels } from "./accountIdentity";
 import { createApi, type Api } from "./api";
 import type { ChatItem } from "./protocol";
 import { createPushControl, registerServiceWorker, type PushControl } from "./push";
@@ -10,6 +11,7 @@ import { accountDbName, openAccountStore, requestPersistentStorage, type Account
 export interface AccountView {
   deviceId: string;
   label: string;
+  color: string;
   character?: string;
   status: AccountStatus;
   state: SessionState;
@@ -65,11 +67,18 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
   }
 
   function emit() {
-    views = ordered().map((e, i) => {
+    const list = ordered();
+    const labels = uniqueLabels(list.map((e, i) => ({
+      name: e.record.name,
+      fallback: String(e.session.getState().character || e.record.label || `Account ${i + 1}`),
+    })));
+    const colors = accountColors(list.map((e) => e.record.deviceId));
+    views = list.map((e, i) => {
       const state = e.session.getState();
       return {
         deviceId: e.record.deviceId,
-        label: String(e.record.name || state.character || e.record.label || `Account ${i + 1}`),
+        label: labels[i],
+        color: colors[i],
         character: state.character,
         status: e.record.status,
         state,

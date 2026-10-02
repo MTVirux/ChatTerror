@@ -165,6 +165,21 @@ describe("account manager", () => {
     await vi.waitFor(async () => expect((await listAccounts())[0].label).toBe("Alpha Beta"));
   });
 
+  it("numbers a character name another account already shows", async () => {
+    await seed("a");
+    await seed("b");
+    const { deps, online, fromPlugin } = fakeDeps();
+    const manager = await createAccountManager(deps);
+    online("a");
+    online("b");
+    for (const id of ["a", "b"]) {
+      await fromPlugin(id, { type: "settings", seq: Date.now(), character: "Alpha Beta", relayChannels: ["say"], sendChannels: ["say"], maxLength: 500 });
+    }
+
+    await vi.waitFor(() => expect(manager.list().map((a) => a.label)).toEqual(["Alpha Beta", "Alpha Beta (2)"]));
+    expect(manager.list()[0].color).not.toBe(manager.list()[1].color);
+  });
+
   async function renamedManager() {
     await seed("a");
     const { deps, online, fromPlugin } = fakeDeps();
