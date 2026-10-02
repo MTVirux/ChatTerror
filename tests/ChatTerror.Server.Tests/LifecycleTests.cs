@@ -140,7 +140,7 @@ public class LifecycleTests
     [Fact]
     public async Task PushSubscription_PrivateEndpoint_400()
     {
-        using var app = new RelayApp();
+        using var app = new RelayApp(new() { ["Relay:PushServiceHosts"] = "127.0.0.1,10.1.2.3,::1,169.254.169.254,fd00::1" });
         var install = await app.RegisterInstallAsync();
         var device = await app.ClaimAsync(await app.CreatePairingAsync(install.InstallToken));
         var client = app.Client(device.DeviceToken);

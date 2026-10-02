@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Lib.Net.Http.WebPush;
 using Lib.Net.Http.WebPush.Authentication;
+using Microsoft.Extensions.Options;
 
 namespace ChatTerror.Server.Push;
 
@@ -12,9 +13,10 @@ public sealed class WebPushSender : IPushSender, IDisposable
     private readonly PushServiceClient client;
     private readonly VapidAuthentication authentication;
     private readonly ILogger<WebPushSender> log;
+    private readonly string[] serviceHosts;
 
-    public WebPushSender(VapidKeys keys, ILogger<WebPushSender> log)
-        : this(keys, log, new HttpClient(CreateHandler()))
+    public WebPushSender(VapidKeys keys, IOptions<RelayOptions> options, ILogger<WebPushSender> log)
+        : this(keys, options, log, new HttpClient(CreateHandler()))
     {
     }
 
@@ -45,9 +47,10 @@ public sealed class WebPushSender : IPushSender, IDisposable
         }
     }
 
-    internal WebPushSender(VapidKeys keys, ILogger<WebPushSender> log, HttpClient http)
+    internal WebPushSender(VapidKeys keys, IOptions<RelayOptions> options, ILogger<WebPushSender> log, HttpClient http)
     {
         this.log = log;
+        serviceHosts = options.Value.GetPushServiceHosts();
         authentication = new VapidAuthentication(keys.PublicKey, keys.PrivateKey);
         if (keys.Subject != "")
             authentication.Subject = keys.Subject;
@@ -58,7 +61,7 @@ public sealed class WebPushSender : IPushSender, IDisposable
     {
         if (!Uri.TryCreate(sub.Endpoint, UriKind.Absolute, out var endpoint) || !await IsAllowedAsync(endpoint, ct))
         {
-            log.LogWarning("Push endpoint {Host} is not a public https address, skipped", endpoint?.Host);
+            log.LogWarning("Push endpoint {Host} is not a known push service on a public address, skipped", endpoint?.Host);
             return PushResult.Failed;
         }
 
@@ -83,11 +86,11 @@ public sealed class WebPushSender : IPushSender, IDisposable
         }
     }
 
-    private static async Task<bool> IsAllowedAsync(Uri endpoint, CancellationToken ct)
+    private async Task<bool> IsAllowedAsync(Uri endpoint, CancellationToken ct)
     {
         try
         {
-            return await PushEndpointGuard.IsAllowedAsync(endpoint, ct);
+            return await PushEndpointGuard.IsAllowedAsync(endpoint, serviceHosts, ct);
         }
         catch (OperationCanceledException)
         {

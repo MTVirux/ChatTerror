@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using ChatTerror.Protocol;
+using ChatTerror.Server.Api;
 using ChatTerror.Server.Data;
 using ChatTerror.Server.Push;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,8 @@ public sealed class RelaySocketHandler(
     public const int MaxPushBodyBytes = 3993;
 
     private readonly PushLimiter pushLimiter = new(options.Value.MaxConcurrentPushes, options.Value.MaxPushesPerInstall);
+    private readonly SocketLimiter socketLimiter = new(options.Value.MaxSocketsPerClient);
+    private readonly string[] pushServiceHosts = options.Value.GetPushServiceHosts();
 
     private enum Kind
     {
@@ -41,6 +44,25 @@ public sealed class RelaySocketHandler(
             return;
         }
 
+        var client = RequestLimits.PartitionKey(context.Connection.RemoteIpAddress);
+        if (!socketLimiter.TryAcquire(client))
+        {
+            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            return;
+        }
+
+        try
+        {
+            await RunAsync(context);
+        }
+        finally
+        {
+            socketLimiter.Release(client);
+        }
+    }
+
+    private async Task RunAsync(HttpContext context)
+    {
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var conn = new Conn(socket);
         try
@@ -334,6 +356,11 @@ public sealed class RelaySocketHandler(
         if (bodyBytes > MaxPushBodyBytes)
         {
             log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: body is {Length} bytes", device.Id, device.InstallId, bodyBytes);
+            return;
+        }
+        if (!PushEndpointGuard.IsPushService(subscription.Endpoint, pushServiceHosts))
+        {
+            log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: endpoint is not a known push service", device.Id, device.InstallId);
             return;
         }
         if (!pushLimiter.TryAcquire(device.InstallId))

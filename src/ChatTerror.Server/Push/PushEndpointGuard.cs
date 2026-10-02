@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace ChatTerror.Server.Push;
 
-// Keeps the relay from being pointed at its own network through a push endpoint.
+// Keeps the relay from being pointed at its own network, or at arbitrary hosts, through a push endpoint.
 public static class PushEndpointGuard
 {
     private static readonly (IPAddress Network, int Prefix)[] BlockedRanges =
@@ -26,8 +26,26 @@ public static class PushEndpointGuard
         (IPAddress.Parse("ff00::"), 8),
     ];
 
-    public static async Task<bool> IsAllowedAsync(Uri endpoint, CancellationToken ct = default) =>
-        endpoint.Scheme == Uri.UriSchemeHttps && PickAddress(await ResolveAsync(endpoint.DnsSafeHost, ct)) != null;
+    public static async Task<bool> IsAllowedAsync(Uri endpoint, IReadOnlyList<string> serviceHosts, CancellationToken ct = default) =>
+        IsPushService(endpoint, serviceHosts) && PickAddress(await ResolveAsync(endpoint.DnsSafeHost, ct)) != null;
+
+    public static bool IsPushService(string endpoint, IReadOnlyList<string> serviceHosts) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && IsPushService(uri, serviceHosts);
+
+    public static bool IsPushService(Uri endpoint, IReadOnlyList<string> serviceHosts) =>
+        endpoint.Scheme == Uri.UriSchemeHttps
+        && endpoint.Port == 443
+        && serviceHosts.Any(pattern => HostMatches(endpoint.DnsSafeHost, pattern));
+
+    // "*.example.com" only matches below a dot, so "evilexample.com" and "example.com.evil.net" do not.
+    public static bool HostMatches(string host, string pattern)
+    {
+        if (!pattern.StartsWith("*."))
+            return string.Equals(host, pattern, StringComparison.OrdinalIgnoreCase);
+
+        var suffix = pattern[1..];
+        return host.Length > suffix.Length && host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+    }
 
     // Unresolvable hosts come back empty, which PickAddress rejects.
     public static async Task<IPAddress[]> ResolveAsync(string host, CancellationToken ct)

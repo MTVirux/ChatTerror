@@ -1,6 +1,7 @@
 using ChatTerror.Server.Data;
 using ChatTerror.Server.Push;
 using ChatTerror.Server.Relay;
+using Microsoft.Extensions.Options;
 
 namespace ChatTerror.Server.Api;
 
@@ -59,19 +60,19 @@ public static class DeviceEndpoints
             return Results.NoContent();
         });
 
-        app.MapPut("/api/devices/me/push", async (PushRequest? body, HttpContext context, RelayStore store) =>
+        app.MapPut("/api/devices/me/push", async (PushRequest? body, HttpContext context, RelayStore store, IOptions<RelayOptions> options) =>
         {
             if (AuthHelpers.Device(context, store) is not { } device)
                 return AuthHelpers.Unauthorized();
 
             if (body is not { Endpoint: { Length: <= MaxEndpointLength } url, Keys: { P256dh: { Length: > 0 and <= MaxKeyLength } p256dh, Auth: { Length: > 0 and <= MaxKeyLength } auth } }
                 || !Uri.TryCreate(url, UriKind.Absolute, out var endpoint)
-                || !await PushEndpointGuard.IsAllowedAsync(endpoint, context.RequestAborted))
+                || !await PushEndpointGuard.IsAllowedAsync(endpoint, options.Value.GetPushServiceHosts(), context.RequestAborted))
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidSubscription");
 
             store.SetPush(device.Id, new PushSubscriptionRecord(url, p256dh, auth));
             return Results.NoContent();
-        });
+        }).RequireRateLimiting(RequestLimits.PushPolicy);
 
         app.MapDelete("/api/devices/me/push", (HttpContext context, RelayStore store) =>
         {

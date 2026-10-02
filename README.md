@@ -93,12 +93,16 @@ All settings live under `Relay` and default to the values below. Set them as env
 | `Relay__TrustedProxies` | empty | Proxy IPs or CIDRs whose `X-Forwarded-For`/`X-Forwarded-Proto` are trusted, comma separated. Empty ignores those headers. |
 | `Relay__FramesPerSecond` | `20` | WebSocket frames per second per connection. |
 | `Relay__FrameBurst` | `40` | WebSocket frame burst per connection. |
-| `Relay__AuthTimeout` | `00:00:10` | Time a new socket has to authenticate. |
+| `Relay__AuthTimeout` | `00:00:05` | Time a new socket has to authenticate. |
+| `Relay__MaxSocketsPerClient` | `20` | Open WebSocket connections per IP (IPv6 per /64). |
+| `Relay__SocketConnectsPerMinute` | `60` | New WebSocket connections per minute per IP. |
 | `Relay__PairingRequestsPerMinute` | `10` | Pairing lookups and claims per minute per IP. |
 | `Relay__InstallsPerHour` | `5` | Plugin registrations per hour per IP. |
 | `Relay__PendingDeviceTtl` | `01:00:00` | How long an unapproved device is kept. |
 | `Relay__PairingsPerInstallPerHour` | `10` | Pairing codes a plugin install can create per hour. Each new code replaces the previous one. |
 | `Relay__InstallTtl` | `30.00:00:00` | Plugin installs with no devices are deleted after not connecting for this long. |
+| `Relay__PushServiceHosts` | `fcm.googleapis.com,*.push.services.mozilla.com,*.push.apple.com,*.notify.windows.com` | Push service hosts a device may subscribe with, comma separated. `*.` matches any subdomain. Endpoints must also be https on port 443. |
+| `Relay__PushSubscriptionsPerMinute` | `10` | Push subscription updates per minute per IP. |
 | `Relay__MaxConcurrentPushes` | `32` | Push requests in flight across the relay. |
 | `Relay__MaxPushesPerInstall` | `4` | Push requests in flight per plugin install. |
 | `Relay__PushTimeout` | `00:00:10` | Timeout for one push request. |
