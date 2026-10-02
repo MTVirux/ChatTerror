@@ -5,7 +5,7 @@ import { connectRelay } from "./relay";
 import * as registry from "./registry";
 import type { AccountRecord, AccountStatus } from "./registry";
 import { createSession, pairDevice, type Session, type SessionDeps, type SessionState } from "./session";
-import { accountDbName, openAccountStore, type AccountStore } from "./storage";
+import { accountDbName, openAccountStore, requestPersistentStorage, type AccountStore } from "./storage";
 
 export interface AccountView {
   deviceId: string;
@@ -187,6 +187,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
       });
       await open(record);
       emit();
+      requestPersistentStorage();
       return { deviceId: pairing.deviceId, fingerprint: pairing.fingerprint };
     },
 

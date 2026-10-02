@@ -46,6 +46,15 @@ export function accountDbName(deviceId: string): string {
   return `chatterror-${deviceId}`;
 }
 
+// Without this, mobile browsers may evict IndexedDB and lose the pairing.
+export function requestPersistentStorage(): void {
+  if (typeof navigator === "undefined" || !navigator.storage?.persist) return;
+  navigator.storage
+    .persisted()
+    .then((persisted) => persisted || navigator.storage.persist())
+    .catch(() => {});
+}
+
 const databases = new Map<string, Promise<IDBDatabase>>();
 
 function openDb(name: string): Promise<IDBDatabase> {
