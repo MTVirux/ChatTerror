@@ -9,7 +9,7 @@ namespace ChatTerror.Plugin;
 
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 2;
 
     public bool Enabled { get; set; } = true;
 
@@ -42,7 +42,7 @@ public sealed class Configuration : IPluginConfiguration
 
     public List<PairedDevice> Devices { get; set; } = new();
 
-    public bool TellsEnabled { get; set; }
+    public bool TellsEnabled { get; set; } = true;
 
     // Set when tells were turned off and the relay has not confirmed removing this install's characters yet.
     public bool TellsUnregisterPending { get; set; }
@@ -58,21 +58,11 @@ public sealed class Configuration : IPluginConfiguration
     // Recently received relayed tell ids, oldest first, so a replay after a restart is still caught.
     public List<string> SeenTellIds { get; set; } = new();
 
-    // Relayed tells were on by default before version 3, so they are turned off once until the user opts in.
-    public void Migrate()
-    {
-        if (Version < 3 && TellsEnabled)
-        {
-            TellsEnabled = false;
-            TellsUnregisterPending = true;
-        }
-        Version = 3;
-    }
-
     // Decrypts the install token after loading and migrates a plaintext one. Returns false when the stored token
     // could not be decrypted, e.g. a config copied from another machine or Windows user.
     public bool LoadInstallToken()
     {
+        Version = 2;
         if (plainInstallToken != null || InstallTokenProtected == null)
         {
             InstallToken = plainInstallToken;

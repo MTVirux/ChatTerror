@@ -52,7 +52,6 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
 
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var tokenReadable = config.LoadInstallToken();
-        config.Migrate();
         if (!tokenReadable)
             log.Error("The saved install token could not be decrypted, it may belong to another Windows user or machine. Registering a new install.");
         foreach (var (channel, setting) in RelaySettings.Defaults())
