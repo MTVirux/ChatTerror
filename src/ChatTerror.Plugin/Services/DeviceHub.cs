@@ -69,6 +69,10 @@ public sealed class DeviceHub : IDisposable
 
     public event Action<PendingPair>? PairRequested;
 
+    public event Action<RelayFrame>? TellFrameReceived;
+
+    public Func<IReadOnlyList<TellContact>> Contacts { get; set; } = () => [];
+
     public MessageHistory History { get; }
 
     public IReadOnlyList<PendingPair> PendingPairs => pendingPairs;
@@ -82,6 +86,9 @@ public sealed class DeviceHub : IDisposable
         foreach (var session in sessions.Values)
             SendTo(session, new ChatPayload(item), session.ShouldNotify(item, filter));
     }
+
+    // Phones got their own sealed copy and push, so relayed tells only go into history and the backlog.
+    public void PublishRelayed(ChatItem item) => Publish(item, new FilterResult(true, false, false));
 
     public void SendResult(string deviceId, SendResultPayload result)
     {
@@ -291,6 +298,9 @@ public sealed class DeviceHub : IDisposable
             case DeviceOfflineFrame offline:
                 onlineDevices.Remove(offline.DeviceId);
                 break;
+            case TellFrame or TellResultFrame:
+                TellFrameReceived?.Invoke(frame);
+                break;
             case ErrorFrame error:
                 log.Warning($"Relay error: {error.Code}");
                 break;
@@ -326,6 +336,10 @@ public sealed class DeviceHub : IDisposable
             case PrefsPayload prefs:
                 RememberSeq(session);
                 UpdatePrefs(session, prefs.MutedChannels, prefs.Channels ?? []);
+                break;
+            case TellKeyPayload tellKey:
+                RememberSeq(session);
+                SetTellKey(session.DeviceId, tellKey.PublicKey);
                 break;
         }
     }
@@ -369,6 +383,24 @@ public sealed class DeviceHub : IDisposable
         PairRequested?.Invoke(pair);
     }
 
+    private void SetTellKey(string deviceId, string publicKey)
+    {
+        var device = config.Devices.FirstOrDefault(d => d.DeviceId == deviceId);
+        if (device == null || device.TellKey == publicKey)
+            return;
+        try
+        {
+            P256.ImportPublicRaw(Base64Url.Decode(publicKey)).Dispose();
+        }
+        catch (Exception ex) when (ex is FormatException or System.Security.Cryptography.CryptographicException)
+        {
+            log.Warning($"Ignoring an invalid tell key from {device.Name}.");
+            return;
+        }
+        device.TellKey = publicKey;
+        saveConfig();
+    }
+
     private void UpdatePrefs(DeviceSession session, IReadOnlyList<ChatChannel> muted, IReadOnlyList<ChannelPref> overrides)
     {
         session.Muted.Clear();
@@ -406,7 +438,8 @@ public sealed class DeviceHub : IDisposable
             Character: characterName(),
             RelayChannels: order.Where(c => settings.Channels.TryGetValue(c, out var s) && s.Relay).ToList(),
             SendChannels: order.Where(c => settings.Channels.TryGetValue(c, out var s) && s.Send).ToList(),
-            MaxLength: Math.Min(config.Settings.MaxLengthBytes, Limits.MaxTextBytes));
+            MaxLength: Math.Min(config.Settings.MaxLengthBytes, Limits.MaxTextBytes),
+            Contacts: Contacts());
     }
 
     private void SendTo(DeviceSession session, Payload payload, bool notify) =>

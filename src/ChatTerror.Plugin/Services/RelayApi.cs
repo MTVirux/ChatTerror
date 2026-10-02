@@ -61,6 +61,39 @@ public sealed class RelayApi : IDisposable
         await EnsureSuccess(response);
     }
 
+    private sealed record TellCharacterResponse(List<string> Registered);
+
+    public async Task<List<string>> PutTellCharacter(string token, string hash, IReadOnlyList<string> friends)
+    {
+        using var request = Request(HttpMethod.Put, $"/api/tells/characters/{Uri.EscapeDataString(hash)}", token, new { friends });
+        return (await Send<TellCharacterResponse>(request)).Registered;
+    }
+
+    public async Task DeleteTellCharacters(string token)
+    {
+        using var request = Request(HttpMethod.Delete, "/api/tells/characters", token, null);
+        using var response = await http.SendAsync(request);
+        await EnsureSuccess(response);
+    }
+
+    public async Task PutTellBundle(string token, SignedTellBundle bundle)
+    {
+        using var request = Request(HttpMethod.Put, "/api/tells/bundle", token, bundle);
+        using var response = await http.SendAsync(request);
+        await EnsureSuccess(response);
+    }
+
+    // Null when the character is not a ChatTerror user.
+    public async Task<SignedTellBundle?> GetTellBundle(string token, string hash)
+    {
+        using var request = Request(HttpMethod.Get, $"/api/tells/bundles/{Uri.EscapeDataString(hash)}", token, null);
+        using var response = await http.SendAsync(request);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        await EnsureSuccess(response);
+        return await response.Content.ReadFromJsonAsync<SignedTellBundle>(ProtocolJson.Options);
+    }
+
     public void Dispose() => http.Dispose();
 
     private HttpRequestMessage Request(HttpMethod method, string path, string? token, object? body, string? baseUrl = null)

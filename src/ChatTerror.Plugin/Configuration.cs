@@ -42,6 +42,13 @@ public sealed class Configuration : IPluginConfiguration
 
     public List<PairedDevice> Devices { get; set; } = new();
 
+    public bool TellsEnabled { get; set; } = true;
+
+    public List<TellCharacter> TellCharacters { get; set; } = new();
+
+    // Install key first seen for each friend's character hash.
+    public Dictionary<string, string> TellPins { get; set; } = new();
+
     // Decrypts the install token after loading and migrates a plaintext one. Returns false when the stored token
     // could not be decrypted, e.g. a config copied from another machine or Windows user.
     public bool LoadInstallToken()
@@ -76,4 +83,7 @@ public sealed class PairedDevice
     public long PairedAt { get; set; }
 
     public long LastSeenSeq { get; set; }
+
+    // The phone's key for relayed tells, separate from the pairing key.
+    public string? TellKey { get; set; }
 }

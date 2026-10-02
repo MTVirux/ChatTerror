@@ -25,6 +25,9 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
     private readonly ConnectionManager connection;
     private readonly ChatCapture capture;
     private readonly ChatSender sender;
+    private readonly TellDirectory tellDirectory;
+    private readonly TellRelay tellRelay;
+    private readonly TellCommandHook tellHook;
     private readonly WindowSystem windowSystem = new("ChatTerror");
     private readonly ConfigWindow configWindow;
     private readonly DevicesTab devicesTab;
@@ -38,6 +41,8 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         ICondition condition,
         IChatGui chatGui,
         IPlayerState playerState,
+        IDataManager dataManager,
+        IGameInteropProvider interop,
         IPluginLog log)
     {
         this.pluginInterface = pluginInterface;
@@ -61,12 +66,16 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         connection = new ConnectionManager(config, SaveConfig, keys, api, relay, hub, framework, log);
         capture = new ChatCapture(chatGui, playerState, config, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);
+        tellDirectory = new TellDirectory(config, SaveConfig, keys, api, hub, framework, playerState, dataManager, log);
+        tellRelay = new TellRelay(config, SaveConfig, keys, api, relay, hub, tellDirectory, chatGui, framework, playerState, log);
+        tellHook = new TellCommandHook(interop, tellRelay, log);
+        hub.Contacts = () => TellContacts.ForDevices(config.TellCharacters);
 
         devicesTab = new DevicesTab(config, api, hub, framework);
         configWindow = new ConfigWindow(
         [
             new ConnectionTab(config, connection, SaveConfig),
-            new ChannelsTab(config, SettingsChanged),
+            new ChannelsTab(config, tellDirectory, SettingsChanged),
             new NotificationsTab(config, SettingsChanged),
             new FiltersTab(config, SettingsChanged),
             devicesTab,
@@ -112,6 +121,9 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
 
         connection.Dispose();
         devicesTab.Dispose();
+        tellHook.Dispose();
+        tellRelay.Dispose();
+        tellDirectory.Dispose();
         sender.Dispose();
         capture.Dispose();
         relay.Dispose();

@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using ChatTerror.Plugin.Core;
 using ChatTerror.Plugin.Logic;
+using ChatTerror.Plugin.Services;
 using ChatTerror.Protocol;
 using Dalamud.Bindings.ImGui;
 
 namespace ChatTerror.Plugin.Gui.Tabs;
 
-public sealed class ChannelsTab(Configuration config, Action changed) : ITab
+public sealed class ChannelsTab(Configuration config, TellDirectory tells, Action changed) : ITab
 {
     private const string DragType = "CHANNEL_ROW";
 
@@ -17,6 +18,18 @@ public sealed class ChannelsTab(Configuration config, Action changed) : ITab
 
     public void Draw()
     {
+        var relayed = config.TellsEnabled;
+        if (ImGui.Checkbox("Relay tells to ChatTerror friends", ref relayed))
+        {
+            config.TellsEnabled = relayed;
+            changed();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Tells to friends who also use ChatTerror are delivered through the relay when the game can't reach them.");
+        if (config.TellsEnabled && tells.Status is { } status)
+            ImGui.TextDisabled(status);
+        ImGui.Spacing();
+
         ImGui.TextWrapped("Relay sends the channel to your phone, Push notifies for every message, Send lets the phone write to it.");
         ImGui.TextWrapped("Drag a channel name to reorder it, the app lists channels in this order.");
         if (ImGui.Button("Reset order"))
