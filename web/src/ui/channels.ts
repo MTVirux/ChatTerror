@@ -90,3 +90,12 @@ export function firstChannel(categories: Category[]): ChannelRef | null {
   if (first.tells.length > 0) return { kind: "tell", character: first.character, partner: first.tells[0].partner };
   return null;
 }
+
+// Characters listed in toggled are flipped from the default, where only the logged-in one is expanded.
+export function isCollapsed(category: Pick<Category, "character" | "active">, toggled: string[]): boolean {
+  return category.active === toggled.includes(category.character);
+}
+
+export function toggleCategory(toggled: string[], character: string): string[] {
+  return toggled.includes(character) ? toggled.filter((c) => c !== character) : [...toggled, character];
+}

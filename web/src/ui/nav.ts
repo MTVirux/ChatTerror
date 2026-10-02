@@ -28,10 +28,32 @@ function parseNav(stored: string | null): Nav | null {
   }
 }
 
-export function initialNav(accounts: AccountView[], hash: string, stored: string | null): Nav {
+// Last opened channel key per account.
+export type LastChannels = Record<string, string>;
+
+export function navTo(server: Server, last: LastChannels): Nav {
+  return { server, channel: server === "home" || server === "add" ? null : last[server] ?? null };
+}
+
+export function rememberChannel(last: LastChannels, nav: Nav): LastChannels {
+  if (!nav.channel || nav.server === "home" || nav.server === "add" || last[nav.server] === nav.channel) return last;
+  return { ...last, [nav.server]: nav.channel };
+}
+
+export function parseLastChannels(stored: string | null): LastChannels {
+  try {
+    const value = JSON.parse(stored ?? "null");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([, key]) => typeof key === "string")) as LastChannels;
+  } catch {
+    return {};
+  }
+}
+
+export function initialNav(accounts: AccountView[], hash: string, stored: string | null, last: LastChannels = {}): Nav {
   if (accounts.length > 0 && hash.startsWith("#pair=")) return { server: "add", channel: null };
   const fromLink = hash.match(/^#account=(.+)$/);
-  if (fromLink) return validNav({ server: decodeURIComponent(fromLink[1]), channel: null }, accounts);
+  if (fromLink) return validNav(navTo(decodeURIComponent(fromLink[1]), last), accounts);
   const saved = parseNav(stored);
   if (saved) return validNav(saved, accounts);
   return validNav({ server: accounts[0]?.deviceId ?? "add", channel: null }, accounts);

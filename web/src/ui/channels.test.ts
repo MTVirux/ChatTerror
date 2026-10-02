@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../core/protocol";
-import { buildChannelTree, channelKey, channelSlug, firstChannel, inChannel, itemChannelRef, parseChannelKey } from "./channels";
+import { buildChannelTree, channelKey, channelSlug, firstChannel, inChannel, isCollapsed, itemChannelRef, parseChannelKey, toggleCategory } from "./channels";
 
 function msg(over: Partial<ChatItem>): ChatItem {
   return { id: Math.random().toString(), ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
@@ -67,5 +67,21 @@ describe("buildChannelTree", () => {
     const tree = buildChannelTree([], { character: "Alpha Beta", relayChannels: ["party"] });
     expect(firstChannel(tree)).toEqual({ kind: "chat", character: "Alpha Beta", channel: "party" });
     expect(firstChannel([])).toBeNull();
+  });
+});
+
+describe("category collapse", () => {
+  it("expands only the logged-in character by default", () => {
+    expect(isCollapsed({ character: "A", active: true }, [])).toBe(false);
+    expect(isCollapsed({ character: "B", active: false }, [])).toBe(true);
+  });
+  it("flips a toggled character and keeps new ones on the default", () => {
+    const toggled = toggleCategory(toggleCategory([], "A"), "B");
+    expect(isCollapsed({ character: "A", active: true }, toggled)).toBe(true);
+    expect(isCollapsed({ character: "B", active: false }, toggled)).toBe(false);
+    expect(isCollapsed({ character: "C", active: false }, toggled)).toBe(true);
+  });
+  it("toggles back to the default", () => {
+    expect(toggleCategory(toggleCategory([], "A"), "A")).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AccountView } from "../core/accounts";
 import type { Category } from "./channels";
-import { initialNav, resolveChannel, serializeNav, validNav } from "./nav";
+import { initialNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav } from "./nav";
 
 const acct = (deviceId: string) => ({ deviceId, label: deviceId, status: "active", unread: 0, state: {} }) as unknown as AccountView;
 
@@ -58,5 +58,29 @@ describe("resolveChannel", () => {
   });
   it("gives nothing for an empty tree", () => {
     expect(resolveChannel("c|Alpha Beta|say", [])).toBeNull();
+  });
+  it("opens a notification link on that account's last channel", () => {
+    expect(initialNav([acct("a"), acct("b")], "#account=b", null, { b: "c|X|party" })).toEqual({ server: "b", channel: "c|X|party" });
+  });
+});
+
+describe("last channels", () => {
+  it("goes to a server's last channel", () => {
+    expect(navTo("a", { a: "c|X|party" })).toEqual({ server: "a", channel: "c|X|party" });
+    expect(navTo("b", { a: "c|X|party" })).toEqual({ server: "b", channel: null });
+    expect(navTo("home", { home: "c|X|party" })).toEqual({ server: "home", channel: null });
+  });
+  it("remembers account channels only", () => {
+    expect(rememberChannel({}, { server: "a", channel: "c|X|party" })).toEqual({ a: "c|X|party" });
+    const last = { a: "c|X|party" };
+    expect(rememberChannel(last, { server: "a", channel: null })).toBe(last);
+    expect(rememberChannel(last, { server: "home", channel: null })).toBe(last);
+    expect(rememberChannel(last, { server: "a", channel: "c|X|party" })).toBe(last);
+  });
+  it("reads stored channels and ignores junk", () => {
+    expect(parseLastChannels('{"a":"c|X|party","b":3}')).toEqual({ a: "c|X|party" });
+    expect(parseLastChannels("{nope")).toEqual({});
+    expect(parseLastChannels(null)).toEqual({});
+    expect(parseLastChannels("[1]")).toEqual({});
   });
 });

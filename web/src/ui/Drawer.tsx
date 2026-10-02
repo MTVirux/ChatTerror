@@ -9,19 +9,24 @@ export function Drawer({ open, onOpenChange, drawer, children }: {
   children: ComponentChildren;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const opener = useRef<HTMLElement | null>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+  const fromButton = useRef(false);
 
   useEffect(() => {
     if (open) {
-      opener.current = document.activeElement as HTMLElement | null;
+      fromButton.current = !swiped.current;
+      swiped.current = false;
       panelRef.current?.focus();
       return;
     }
-    // Leave focus alone when something else (like a settings sheet) already took it.
+    // Only a menu button open gives focus back, so a swipe never pops the keyboard. Leave focus alone when a settings sheet took it.
     const active = document.activeElement;
-    if (!active || active === document.body || panelRef.current?.contains(active)) opener.current?.focus();
-    opener.current = null;
+    if (fromButton.current && (!active || active === document.body || panelRef.current?.contains(active))) {
+      mainRef.current?.querySelector<HTMLElement>(".menu-btn")?.focus();
+    }
+    fromButton.current = false;
   }, [open]);
 
   useEffect(() => {
@@ -32,6 +37,18 @@ export function Drawer({ open, onOpenChange, drawer, children }: {
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
+
+  // An open drawer owns one history entry so the back gesture closes it.
+  useEffect(() => {
+    if (!open) return;
+    history.pushState({ drawer: true }, "");
+    const onPop = () => onOpenChange(false);
+    addEventListener("popstate", onPop);
+    return () => {
+      removeEventListener("popstate", onPop);
+      if (history.state?.drawer) history.back();
+    };
+  }, [open]);
 
   function onTouchStart(e: TouchEvent) {
     const t = e.touches[0];
@@ -44,12 +61,14 @@ export function Drawer({ open, onOpenChange, drawer, children }: {
     const t = e.changedTouches[0];
     if (!start || !t) return;
     const result = swipeResult({ startX: start.x, dx: t.clientX - start.x, dy: t.clientY - start.y, open });
-    if (result) onOpenChange(result === "open");
+    if (!result) return;
+    if (result === "open") swiped.current = true;
+    onOpenChange(result === "open");
   }
 
   return (
     <div class="shell" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      <div class="shell-main" inert={open}>{children}</div>
+      <div ref={mainRef} class="shell-main" inert={open}>{children}</div>
       <div class={`drawer-backdrop${open ? " open" : ""}`} aria-hidden="true" onClick={() => onOpenChange(false)} />
       <div
         ref={panelRef}

@@ -1,28 +1,28 @@
 import { useMemo, useState } from "preact/hooks";
 import type { AccountManager, AccountView, FeedItem } from "../core/accounts";
-import { buildChannelTree, channelKey, channelSlug, type Category, type ChannelRef } from "./channels";
+import { buildChannelTree, channelKey, channelSlug, isCollapsed, toggleCategory, type Category, type ChannelRef } from "./channels";
 import { channelColor, STATUS_LABELS } from "./format";
 import { initials, senderColor } from "./identity";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
 import type { UnreadTracker } from "./unread";
 
-function collapsedKey(deviceId: string): string {
-  return `chatterror.collapsed.${deviceId}`;
+function toggledKey(deviceId: string): string {
+  return `chatterror.toggled.${deviceId}`;
 }
 
-function loadCollapsed(deviceId: string): string[] | null {
+function loadToggled(deviceId: string): string[] {
   try {
-    const value = JSON.parse(localStorage.getItem(collapsedKey(deviceId)) ?? "null");
-    return Array.isArray(value) ? value.filter((c) => typeof c === "string") : null;
+    const value = JSON.parse(localStorage.getItem(toggledKey(deviceId)) ?? "[]");
+    return Array.isArray(value) ? value.filter((c) => typeof c === "string") : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-function saveCollapsed(deviceId: string, characters: string[]) {
+function saveToggled(deviceId: string, characters: string[]) {
   try {
-    localStorage.setItem(collapsedKey(deviceId), JSON.stringify(characters));
+    localStorage.setItem(toggledKey(deviceId), JSON.stringify(characters));
   } catch {
     // Storage can be unavailable in private mode; categories then reset next visit.
   }
@@ -39,19 +39,17 @@ export function ChannelList({ manager, account, items, unread, channel, onOpenCh
   onPairAgain: () => void;
 }) {
   const id = account.deviceId;
-  const [stored, setStored] = useState(() => loadCollapsed(id));
+  const [toggled, setToggled] = useState(() => loadToggled(id));
   const tree = useMemo(
     () => buildChannelTree(items, { character: account.character, relayChannels: account.state.relayChannels }),
     [items, account.character, account.state.relayChannels],
   );
-  // Until the user toggles something, only the logged-in character starts expanded.
-  const collapsed = stored ?? tree.filter((c) => !c.active).map((c) => c.character);
   const selected = channel && channelKey(channel);
 
   function toggle(character: string) {
-    const next = collapsed.includes(character) ? collapsed.filter((c) => c !== character) : [...collapsed, character];
-    setStored(next);
-    saveCollapsed(id, next);
+    const next = toggleCategory(toggled, character);
+    setToggled(next);
+    saveToggled(id, next);
   }
 
   function body() {
@@ -66,7 +64,7 @@ export function ChannelList({ manager, account, items, unread, channel, onOpenCh
       <CategoryView
         key={category.character}
         category={category}
-        collapsed={collapsed.includes(category.character)}
+        collapsed={isCollapsed(category, toggled)}
         selected={selected}
         count={(ref) => unread.count(id, channelKey(ref))}
         onToggle={() => toggle(category.character)}
