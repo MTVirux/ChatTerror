@@ -121,6 +121,16 @@ describe("session", () => {
     await vi.waitFor(() => expect(session.getState().status).toBe("relayOffline"));
   });
 
+  it("ignores malformed settings and sync point stored before validation", async () => {
+    await store.setMeta("lastSettings", { type: "settings", seq: 1, character: 42 as unknown as string, relayChannels: [], sendChannels: [], maxLength: 300 });
+    await store.setMeta("syncTs", 1e300);
+    const { session, relay } = await setup();
+    expect(session.getState().character).toBeUndefined();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () => expect((await relay.payloads())[0]).toMatchObject({ type: "hello", sinceTs: 0 }));
+  });
+
   it("resends hello when the plugin comes back", async () => {
     const { relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });

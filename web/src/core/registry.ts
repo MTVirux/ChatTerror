@@ -59,7 +59,8 @@ async function adoptLegacy(): Promise<void> {
   const legacy = openAccountStore(LEGACY_DB_NAME);
   const pairing = await legacy.getPairing();
   const cacheLimit = await legacy.getMeta("cacheLimit");
-  const label = (await legacy.getMeta("lastSettings"))?.character ?? "";
+  const character = (await legacy.getMeta("lastSettings"))?.character;
+  const label = typeof character === "string" ? character : "";
   await run("readwrite", async (accounts, prefs) => {
     if (await result(prefs.get("legacyAdopted"))) return;
     if (pairing && (await result(accounts.get(pairing.deviceId))) === undefined) {

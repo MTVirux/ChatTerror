@@ -69,7 +69,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
       const state = e.session.getState();
       return {
         deviceId: e.record.deviceId,
-        label: e.record.name || state.character || e.record.label || `Account ${i + 1}`,
+        label: String(e.record.name || state.character || e.record.label || `Account ${i + 1}`),
         character: state.character,
         status: e.record.status,
         state,

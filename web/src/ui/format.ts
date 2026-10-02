@@ -54,7 +54,7 @@ const SEND_ERRORS: Record<string, string> = {
 };
 
 export function sendErrorText(code?: string): string {
-  return (code && SEND_ERRORS[code]) || "Message failed to send";
+  return (code && Object.hasOwn(SEND_ERRORS, code) && SEND_ERRORS[code]) || "Message failed to send";
 }
 
 export const STATUS_LABELS: Record<SessionStatus, string> = {

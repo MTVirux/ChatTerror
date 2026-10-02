@@ -109,22 +109,53 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_TEXT_LENGTH = 4096;
+const MAX_NAME_LENGTH = 64;
+// Matches Limits.MaxTextBytes in the plugin.
+const MAX_SEND_LENGTH = 500;
+
+function isBoundedString(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length <= max;
+}
+
+// Names end up inside "kind|character|rest" channel keys.
+function isName(value: unknown): value is string {
+  return isBoundedString(value, MAX_NAME_LENGTH) && !value.includes("|");
+}
+
+export function isValidTs(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= Date.now() + DAY_MS;
+}
+
 export function isChatItem(value: unknown): value is ChatItem {
   return (
     isObject(value) &&
-    typeof value.id === "string" &&
-    typeof value.ts === "number" &&
+    isBoundedString(value.id, MAX_NAME_LENGTH) &&
+    isValidTs(value.ts) &&
     isChatChannel(value.channel) &&
-    typeof value.sender === "string" &&
-    (value.senderWorld === undefined || typeof value.senderWorld === "string") &&
-    typeof value.text === "string" &&
-    typeof value.character === "string" &&
+    isName(value.sender) &&
+    (value.senderWorld === undefined || isName(value.senderWorld)) &&
+    isBoundedString(value.text, MAX_TEXT_LENGTH) &&
+    isName(value.character) &&
     typeof value.outgoing === "boolean"
   );
 }
 
 function isChannelList(value: unknown): value is ChatChannel[] {
   return Array.isArray(value) && value.every(isChatChannel);
+}
+
+export function isValidSettings(value: unknown): value is Omit<SettingsPayload, "type" | "seq"> {
+  return (
+    isObject(value) &&
+    (value.character === undefined || value.character === null || isName(value.character)) &&
+    isChannelList(value.relayChannels) &&
+    isChannelList(value.sendChannels) &&
+    Number.isInteger(value.maxLength) &&
+    (value.maxLength as number) >= 1 &&
+    (value.maxLength as number) <= MAX_SEND_LENGTH
+  );
 }
 
 export function parsePluginPayload(value: unknown): PluginPayload | null {
@@ -137,13 +168,13 @@ export function parsePluginPayload(value: unknown): PluginPayload | null {
         ? (value as unknown as BacklogPayload)
         : null;
     case "sendResult":
-      return typeof value.requestId === "string" && typeof value.ok === "boolean"
+      return isBoundedString(value.requestId, MAX_NAME_LENGTH) &&
+        typeof value.ok === "boolean" &&
+        (value.error === undefined || value.error === null || isBoundedString(value.error, MAX_NAME_LENGTH))
         ? (value as unknown as SendResultPayload)
         : null;
     case "settings":
-      return isChannelList(value.relayChannels) && isChannelList(value.sendChannels) && typeof value.maxLength === "number"
-        ? (value as unknown as SettingsPayload)
-        : null;
+      return isValidSettings(value) ? (value as unknown as SettingsPayload) : null;
     default:
       return null;
   }
