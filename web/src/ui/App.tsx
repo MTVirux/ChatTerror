@@ -9,6 +9,7 @@ import { Drawer } from "./Drawer";
 import { GearIcon, MenuIcon } from "./icons";
 import { initialNav, legacyNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
 import { PairScreen } from "./PairScreen";
+import { loadShowEmpty, saveShowEmpty } from "./prefs";
 import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
@@ -159,13 +160,14 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [epoch, setEpoch] = useState(0);
+  const [showEmpty, setShowEmpty] = useState(loadShowEmpty);
   const home = nav.server === "home";
   const account = home ? undefined : accounts.find((a) => a.deviceId === nav.server);
   const { items, loaded } = useFeed(manager, home ? null : nav.server, epoch);
 
   const tree = useMemo(
-    () => (account ? buildChannelTree(items, { character: account.character, relayChannels: account.state.relayChannels }) : []),
-    [items, account?.character, account?.state.relayChannels],
+    () => (account ? buildChannelTree(items, { character: account.character, relayChannels: account.state.relayChannels, showEmpty }) : []),
+    [items, account?.character, account?.state.relayChannels, showEmpty],
   );
   const channel = home ? null : resolveChannel(nav.channel, tree);
   const openKey = channel && channelKey(channel);
@@ -223,6 +225,8 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
           onClose={() => setSettings(null)}
           onOpenAccount={openAccountFromApp}
           onAddAccount={() => go("add")}
+          showEmpty={showEmpty}
+          onShowEmptyChange={(show) => { setShowEmpty(show); saveShowEmpty(show); }}
         />
       );
     }

@@ -1,22 +1,8 @@
+import { readPref as read, writePref as write } from "./prefs";
+
 export type ThemeChoice = "system" | "light" | "dark";
 
 const THEME_KEY = "chatterror.theme";
-
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function write(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Storage can be unavailable in private mode; the choice then lasts for this visit only.
-  }
-}
 
 export function loadTheme(): ThemeChoice {
   const value = read(THEME_KEY);

@@ -34,14 +34,20 @@ describe("channel keys", () => {
 });
 
 describe("buildChannelTree", () => {
-  it("shows the logged-in character first with its relayed channels even without messages", () => {
+  it("shows the logged-in character first, hiding relayed channels without messages by default", () => {
     const tree = buildChannelTree([msg({ character: "Other One", ts: 50 })], { character: "Alpha Beta", relayChannels: ["freeCompany", "party"] });
+    expect(tree.map((c) => [c.character, c.active])).toEqual([["Alpha Beta", true], ["Other One", false]]);
+    expect(tree[0].chats).toEqual([]);
+  });
+
+  it("shows relayed channels without messages when asked", () => {
+    const tree = buildChannelTree([msg({ character: "Other One", ts: 50 })], { character: "Alpha Beta", relayChannels: ["freeCompany", "party"], showEmpty: true });
     expect(tree.map((c) => [c.character, c.active])).toEqual([["Alpha Beta", true], ["Other One", false]]);
     expect(tree[0].chats).toEqual(["freeCompany", "party"]);
   });
 
   it("adds seen chat types that are not relayed anymore after the relayed ones", () => {
-    const tree = buildChannelTree([msg({ channel: "say" })], { character: "Alpha Beta", relayChannels: ["party"] });
+    const tree = buildChannelTree([msg({ channel: "say" })], { character: "Alpha Beta", relayChannels: ["party"], showEmpty: true });
     expect(tree[0].chats).toEqual(["party", "say"]);
   });
 
@@ -64,7 +70,7 @@ describe("buildChannelTree", () => {
   });
 
   it("finds the first channel", () => {
-    const tree = buildChannelTree([], { character: "Alpha Beta", relayChannels: ["party"] });
+    const tree = buildChannelTree([], { character: "Alpha Beta", relayChannels: ["party"], showEmpty: true });
     expect(firstChannel(tree)).toEqual({ kind: "chat", character: "Alpha Beta", channel: "party" });
     expect(firstChannel([])).toBeNull();
   });

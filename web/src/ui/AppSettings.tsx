@@ -13,12 +13,14 @@ const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAccount }: {
+export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAccount, showEmpty, onShowEmptyChange }: {
   manager: AccountManager;
   accounts: AccountView[];
   onClose: () => void;
   onOpenAccount: (deviceId: string) => void;
   onAddAccount: () => void;
+  showEmpty: boolean;
+  onShowEmptyChange: (show: boolean) => void;
 }) {
   const [theme, setTheme] = useState<ThemeChoice>(loadTheme);
   const [cacheError, setCacheError] = useState("");
@@ -68,6 +70,10 @@ export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAc
             </button>
           ))}
         </div>
+        <label class="settings-row">
+          <span class="settings-text">Show empty channels</span>
+          <input type="checkbox" class="switch" checked={showEmpty} onChange={(e) => onShowEmptyChange(e.currentTarget.checked)} />
+        </label>
       </SettingsGroup>
 
       <SettingsGroup label="Stored messages" note={cacheError && <p class="settings-note error">{cacheError}</p>}>

@@ -50,7 +50,7 @@ function ordered(channels: Set<ChatChannel>, relay: ChatChannel[]): ChatChannel[
   return order.filter((c) => channels.has(c));
 }
 
-export function buildChannelTree(items: ChatItem[], active: { character?: string; relayChannels: ChatChannel[] }): Category[] {
+export function buildChannelTree(items: ChatItem[], active: { character?: string; relayChannels: ChatChannel[]; showEmpty?: boolean }): Category[] {
   const seen = new Map<string, { chats: Set<ChatChannel>; tells: Map<string, number>; lastTs: number }>();
   const entry = (character: string) => {
     let e = seen.get(character);
@@ -71,7 +71,7 @@ export function buildChannelTree(items: ChatItem[], active: { character?: string
 
   const categories = [...seen.entries()].map(([character, e]): Category => {
     const isActive = character === active.character;
-    if (isActive) for (const c of active.relayChannels) if (c !== "tell") e.chats.add(c);
+    if (isActive && active.showEmpty) for (const c of active.relayChannels) if (c !== "tell") e.chats.add(c);
     return {
       character,
       active: isActive,
