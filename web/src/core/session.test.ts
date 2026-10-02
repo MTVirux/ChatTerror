@@ -24,7 +24,7 @@ function fakeApi(overrides: Partial<Api> = {}): Api {
     deleteDevice: () => Promise.resolve(),
     putPush: () => Promise.resolve(),
     deletePush: () => Promise.resolve(),
-    getVapid: fail,
+    getVapid: fail, getTellBundle: fail,
     ...overrides,
   };
 }
