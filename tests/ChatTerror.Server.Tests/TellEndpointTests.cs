@@ -9,6 +9,7 @@ public class TellEndpointTests
 {
     private static readonly string A = TellHash.Compute(1);
     private static readonly string B = TellHash.Compute(2);
+    private static readonly string C = TellHash.Compute(3);
 
     [Fact]
     public async Task PutCharacter_ReturnsRegisteredFriends()
@@ -117,7 +118,7 @@ public class TellEndpointTests
     }
 
     [Fact]
-    public async Task GetBundle_OnlyForFriendsOfTheCallersCharacters()
+    public async Task GetBundle_OnlyForMutualFriendsOfTheCallersCharacters()
     {
         using var app = new RelayApp();
         using var keyA = P256.Generate();
@@ -130,7 +131,24 @@ public class TellEndpointTests
         Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
 
         await app.PutTellCharacterAsync(b.InstallToken, B, A);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+
+        await app.PutTellCharacterAsync(a.InstallToken, A, B);
         Assert.Equal(HttpStatusCode.OK, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task PutCharacter_HidesRegisteredHashesThatDoNotListTheCaller()
+    {
+        using var app = new RelayApp();
+        var a = await app.RegisterInstallAsync();
+        var b = await app.RegisterInstallAsync();
+        var c = await app.RegisterInstallAsync();
+        await app.PutTellCharacterAsync(a.InstallToken, A, C);
+        await app.PutTellCharacterAsync(b.InstallToken, B);
+
+        Assert.Equal([A], await app.PutTellCharacterAsync(c.InstallToken, C, A, B));
+        Assert.Empty(await app.PutTellCharacterAsync(c.InstallToken, C, B));
     }
 
     [Fact]

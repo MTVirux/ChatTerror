@@ -42,7 +42,8 @@ public sealed partial class RelaySocketHandler
             }
             else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
-                && device.InstallId == install)
+                && device.InstallId == install
+                && tellLimiter.TryPush(frame.From, device.Id))
             {
                 var body = JsonSerializer.Serialize(new { t = "tell", i = frame.Id, f = frame.From, e = copy.Envelope, k = senderKey, d = device.Id });
                 _ = PushAsync(device, subscription, body);
@@ -63,13 +64,13 @@ public sealed partial class RelaySocketHandler
 
         recipientInstall = store.TellCharacterOwner(frame.To);
         recipient = recipientInstall != null && store.FindTellBundle(recipientInstall) is { } signed ? TellBundles.Read(signed) : null;
-        if (recipient == null)
+        // Same answer as for an unregistered hash, so a stranger can't learn who uses ChatTerror or whose friend list they are on.
+        if (recipient == null || !store.IsTellFriend(frame.To, frame.From))
             return TellErrors.NotChatTerror;
-        if (!store.IsTellFriend(frame.To, frame.From))
-            return TellErrors.NotFriend;
 
         var own = store.FindTellBundle(conn.InstallId) is { } ownSigned ? TellBundles.Read(ownSigned) : null;
-        if (frame.Copies.Count is 0 || frame.Copies.Count > 2 * (Limits.MaxDevices + 1))
+        if (frame.Copies.Count is 0 || frame.Copies.Count > 2 * (Limits.MaxDevices + 1)
+            || frame.Copies.DistinctBy(copy => (copy.Self, copy.Target)).Count() != frame.Copies.Count)
             return TellErrors.BadCopies;
 
         foreach (var copy in frame.Copies)
@@ -78,7 +79,7 @@ public sealed partial class RelaySocketHandler
             if (bundle == null || copy.Envelope.Length is 0 or > Limits.MaxTellEnvelopeChars || bundle.Entries.All(e => e.Target != copy.Target))
                 return TellErrors.BadCopies;
         }
-        return null;
+        return tellLimiter.TryTell(frame.From, recipientInstall!) ? null : TellErrors.RateLimited;
     }
 
     private Conn? Online(string installId, string target) =>
