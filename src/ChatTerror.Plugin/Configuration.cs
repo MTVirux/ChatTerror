@@ -44,6 +44,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool TellsEnabled { get; set; } = true;
 
+    // Set when tells were turned off and the relay has not confirmed removing this install's characters yet.
+    public bool TellsUnregisterPending { get; set; }
+
     public List<TellCharacter> TellCharacters { get; set; } = new();
 
     // Install key first seen for each friend's character hash.

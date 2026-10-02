@@ -69,7 +69,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         tellDirectory = new TellDirectory(config, SaveConfig, keys, api, hub, framework, playerState, dataManager, log);
         tellRelay = new TellRelay(config, SaveConfig, keys, api, relay, hub, tellDirectory, chatGui, framework, playerState, log);
         tellHook = new TellCommandHook(interop, tellRelay, log);
-        hub.Contacts = () => TellContacts.ForDevices(config.TellCharacters);
+        hub.Contacts = () => config.TellsEnabled ? TellContacts.ForDevices(config.TellCharacters, config.TellPins) : [];
 
         devicesTab = new DevicesTab(config, api, hub, framework);
         configWindow = new ConfigWindow(

@@ -36,7 +36,10 @@ public sealed class TellRelay : IDisposable
     private readonly TellFallback fallback = new();
     private readonly ReplyTracker reply = new();
     private readonly SeenIds seen = new(1000);
-    private readonly Dictionary<string, (TellBody Body, TellFriend To)> inFlight = new();
+    private readonly InFlightTells<SentTell> inFlight = new();
+    private readonly TellInbox inbox = new();
+
+    private sealed record SentTell(TellBody Body, TellFriend To);
 
     public TellRelay(Configuration config, Action saveConfig, KeyStore keys, RelayApi api, RelayClient relay, DeviceHub hub,
         TellDirectory directory, IChatGui chatGui, IFramework framework, IPlayerState playerState, IPluginLog log)
@@ -53,6 +56,7 @@ public sealed class TellRelay : IDisposable
         this.playerState = playerState;
         this.log = log;
         hub.TellFrameReceived += OnFrame;
+        relay.StateChanged += OnStateChanged;
         chatGui.ChatMessage += OnChatMessage;
         framework.Update += OnUpdate;
     }
@@ -61,6 +65,7 @@ public sealed class TellRelay : IDisposable
     {
         framework.Update -= OnUpdate;
         chatGui.ChatMessage -= OnChatMessage;
+        relay.StateChanged -= OnStateChanged;
         hub.TellFrameReceived -= OnFrame;
     }
 
@@ -94,8 +99,27 @@ public sealed class TellRelay : IDisposable
             reply.Incoming(new TellTarget(name, from), relayed: false);
     }
 
+    // Results of tells still in flight never arrive once the connection drops.
+    private void OnStateChanged(RelayState state)
+    {
+        if (state == RelayState.Connected)
+            return;
+        framework.RunOnFrameworkThread(() =>
+        {
+            foreach (var sent in inFlight.DropAll())
+                PrintError(sent.To, "the connection to the relay was lost");
+        });
+    }
+
     private void OnUpdate(IFramework unused)
     {
+        // Unacked tells are delivered again on reconnect, so holding them until login loses nothing.
+        foreach (var tell in inbox.Drain(playerState.IsLoaded))
+        {
+            Receive(tell);
+            relay.Send(new TellAckFrame([tell.Id]));
+        }
+
         foreach (var pending in fallback.Expired(Environment.TickCount64))
         {
             if (TellContacts.Route(config.TellCharacters, directory.CurrentHash, pending.Target) is { } route)
@@ -118,10 +142,10 @@ public sealed class TellRelay : IDisposable
             var copies = TellCopies.Build(body, recipient, own, TellTargets.Plugin);
             await framework.RunOnFrameworkThread(() =>
             {
-                inFlight[body.Id] = (body, route.To);
+                inFlight.Add(body.Id, new SentTell(body, route.To));
                 if (!relay.Send(new TellSendFrame(body.Id, body.FromHash, body.ToHash, copies)))
                 {
-                    inFlight.Remove(body.Id);
+                    inFlight.Complete(body.Id);
                     PrintError(route.To, "not connected to the relay");
                 }
             });
@@ -161,15 +185,14 @@ public sealed class TellRelay : IDisposable
     {
         switch (frame)
         {
-            case TellResultFrame result when inFlight.Remove(result.Id, out var sent):
+            case TellResultFrame result when inFlight.Complete(result.Id) is { } sent:
                 if (result.Ok)
                     ShowOutgoing(sent.Body);
                 else
                     PrintError(sent.To, ErrorText(result.Error));
                 break;
             case TellFrame tell:
-                Receive(tell);
-                relay.Send(new TellAckFrame([tell.Id]));
+                inbox.Add(tell);
                 break;
         }
     }
@@ -196,17 +219,16 @@ public sealed class TellRelay : IDisposable
             return;
         }
 
-        if (!config.TellsEnabled || TellContacts.Friend(config.TellCharacters, body.ToHash, tell.From) is not { } friend)
+        if (!config.TellsEnabled || TellItems.Incoming(body, tell.From, config.TellCharacters, Now()) is not { } item)
             return;
-        var own = config.TellCharacters.First(c => c.Hash == body.ToHash);
         chatGui.Print(new XivChatEntry
         {
             Type = XivChatType.TellIncoming,
-            Name = new SeStringBuilder().AddText($"{friend.Name}@{friend.World}").Build(),
+            Name = new SeStringBuilder().AddText($"{item.Sender}@{item.SenderWorld}").Build(),
             Message = new SeStringBuilder().AddText(TellMarker.Prefix + body.Text).Build(),
         });
-        reply.Incoming(new TellTarget(friend.Name, friend.World), relayed: true);
-        hub.PublishRelayed(new ChatItem(body.Id, body.Ts, ChatChannel.Tell, friend.Name, friend.World, body.Text, own.Name, false));
+        reply.Incoming(new TellTarget(item.Sender, item.SenderWorld!), relayed: true);
+        hub.PublishRelayed(item);
     }
 
     private void ShowOutgoing(TellBody body)
@@ -218,8 +240,10 @@ public sealed class TellRelay : IDisposable
             Name = new SeStringBuilder().AddText($"{body.ToName}@{body.ToWorld}").Build(),
             Message = new SeStringBuilder().AddText(TellMarker.Prefix + body.Text).Build(),
         });
-        hub.PublishRelayed(new ChatItem(body.Id, body.Ts, ChatChannel.Tell, body.ToName, body.ToWorld, body.Text, body.FromName, true));
+        hub.PublishRelayed(TellItems.Outgoing(body, Now()));
     }
+
+    private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     private void PrintError(TellFriend to, string reason) =>
         chatGui.PrintError($"[ChatTerror] Tell to {to.Name}@{to.World} could not be relayed: {reason}.");
@@ -229,6 +253,7 @@ public sealed class TellRelay : IDisposable
         TellErrors.NotFriend => "you are not on their friend list",
         TellErrors.NotChatTerror => "they don't use ChatTerror",
         TellErrors.NotOwner => "this character is registered to another ChatTerror install",
+        TellErrors.RateLimited => "too many messages, try again in a moment",
         _ => "the relay refused it",
     };
 }

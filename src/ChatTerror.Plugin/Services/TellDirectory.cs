@@ -27,6 +27,7 @@ public sealed class TellDirectory : IDisposable
     private readonly Dictionary<string, (string Friends, long At)> uploaded = new();
     private string? uploadedBundle;
     private long lastScan = long.MinValue / 2;
+    private TellSyncStep lastStep;
     private bool busy;
     private bool wasEnabled;
 
@@ -65,59 +66,87 @@ public sealed class TellDirectory : IDisposable
         lastScan = long.MinValue / 2;
     }
 
-    private void OnUpdate(IFramework _)
+    private void OnUpdate(IFramework unused)
     {
         if (busy || config.InstallToken is not { } token)
             return;
 
-        if (wasEnabled && !config.TellsEnabled)
+        // Persisted, so turning tells off while the relay is unreachable still unregisters later.
+        if (wasEnabled != config.TellsEnabled)
         {
-            wasEnabled = false;
+            wasEnabled = config.TellsEnabled;
+            config.TellsUnregisterPending = !config.TellsEnabled;
+            saveConfig();
             Reset();
-            Status = null;
-            Run(() => api.DeleteTellCharacters(token));
-            return;
         }
-        wasEnabled = config.TellsEnabled;
-        if (!config.TellsEnabled)
-            return;
 
         var now = Environment.TickCount64;
         if (now - lastScan < ScanIntervalMs)
             return;
         lastScan = now;
 
-        var entries = BundleEntries();
-        var bundleKey = ProtocolJson.Serialize(entries);
-        if (bundleKey != uploadedBundle)
-        {
-            var signed = TellBundles.Sign(keys.Key, new TellBundle(keys.PublicKey, entries, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-            Run(async () =>
-            {
-                await api.PutTellBundle(token, signed);
-                await framework.RunOnFrameworkThread(() => uploadedBundle = bundleKey);
-            });
-            return;
-        }
-
-        if (ScanCharacter() is not { } character)
-            return;
-        var friends = TellContacts.Uploadable(character, config.Settings);
+        var bundleKey = ProtocolJson.Serialize(BundleEntries(null));
+        var character = config.TellsEnabled ? ScanCharacter() : null;
+        var friends = character == null ? [] : TellContacts.Uploadable(character, config.Settings);
         var friendsKey = string.Join(',', friends.Order());
-        if (uploaded.TryGetValue(character.Hash, out var last) && last.Friends == friendsKey && now - last.At < RefreshIntervalMs)
-            return;
+        var characterDue = character != null
+            && (!uploaded.TryGetValue(character.Hash, out var last) || last.Friends != friendsKey || now - last.At >= RefreshIntervalMs);
 
-        Run(async () =>
+        lastStep = TellSync.Next(config.TellsEnabled, config.TellsUnregisterPending, bundleKey != uploadedBundle, characterDue, lastStep);
+        switch (lastStep)
         {
-            var registered = await api.PutTellCharacter(token, character.Hash, friends);
+            case TellSyncStep.Unregister:
+                Run(async () =>
+                {
+                    await api.DeleteTellCharacters(token);
+                    await framework.RunOnFrameworkThread(() =>
+                    {
+                        config.TellsUnregisterPending = false;
+                        saveConfig();
+                    });
+                });
+                break;
+            case TellSyncStep.Bundle:
+                Run(async () =>
+                {
+                    var known = (await api.ListDevices(token)).Select(d => d.DeviceId).ToList();
+                    var entries = await framework.RunOnFrameworkThread(() => BundleEntries(known));
+                    var bundle = new TellBundle(keys.PublicKey, entries, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    await api.PutTellBundle(token, TellBundles.Sign(keys.Key, bundle));
+                    await framework.RunOnFrameworkThread(() => uploadedBundle = bundleKey);
+                });
+                break;
+            case TellSyncStep.Character:
+                Run(() => UploadCharacter(token, character!, friends, friendsKey, now));
+                break;
+        }
+    }
+
+    private async Task UploadCharacter(string token, TellCharacter character, List<string> friends, string friendsKey, long now)
+    {
+        var registered = await api.PutTellCharacter(token, character.Hash, friends);
+        await framework.RunOnFrameworkThread(() =>
+        {
+            uploaded[character.Hash] = (friendsKey, now);
+            character.Registered = registered;
+            saveConfig();
+            hub.BroadcastSettings();
+        });
+
+        // Trusting friends' keys up front lets phones follow the plugin's pins, also for friends never written to.
+        var unpinned = await framework.RunOnFrameworkThread(() => registered.Where(h => !config.TellPins.ContainsKey(h)).ToList());
+        foreach (var hash in unpinned)
+        {
+            if (await api.GetTellBundle(token, hash) is not { } signed || TellBundles.Verify(signed, null) is not { } bundle)
+                continue;
             await framework.RunOnFrameworkThread(() =>
             {
-                uploaded[character.Hash] = (friendsKey, now);
-                character.Registered = registered;
+                config.TellPins.TryAdd(hash, bundle.InstallPublicKey);
                 saveConfig();
-                hub.BroadcastSettings();
             });
-        });
+        }
+        if (unpinned.Count > 0)
+            await framework.RunOnFrameworkThread(hub.BroadcastSettings);
     }
 
     // Reads the logged-in character and its friend list into config. Null when nothing is loaded yet.
@@ -147,14 +176,11 @@ public sealed class TellDirectory : IDisposable
         return character;
     }
 
-    private List<TellBundleEntry> BundleEntries()
+    private List<TellBundleEntry> BundleEntries(IReadOnlyCollection<string>? known)
     {
-        var entries = new List<TellBundleEntry> { new(TellTargets.Plugin, keys.PublicKey, false) };
         var tellPush = config.Settings.Channels.TryGetValue(ChatChannel.Tell, out var setting) && setting.Push;
-        var notify = tellPush || config.Settings.PushOnTell;
-        foreach (var device in config.Devices.Where(d => d.TellKey != null))
-            entries.Add(new TellBundleEntry(device.DeviceId, device.TellKey!, notify && !device.MutedChannels.Contains(ChatChannel.Tell)));
-        return entries;
+        var devices = config.Devices.Select(d => new TellDevice(d.DeviceId, d.TellKey, d.MutedChannels.Contains(ChatChannel.Tell)));
+        return TellSync.BundleEntries(keys.PublicKey, devices, tellPush || config.Settings.PushOnTell, known);
     }
 
     private string WorldName(uint id) =>

@@ -42,11 +42,11 @@ public static class TellContacts
     public static TellFriend? Friend(IReadOnlyList<TellCharacter> characters, string ownHash, string friendHash) =>
         characters.FirstOrDefault(c => c.Hash == ownHash)?.Friends.FirstOrDefault(f => f.Hash == friendHash);
 
-    public static List<TellContact> ForDevices(IReadOnlyList<TellCharacter> characters) =>
+    public static List<TellContact> ForDevices(IReadOnlyList<TellCharacter> characters, IReadOnlyDictionary<string, string> pins) =>
         characters
             .SelectMany(c => c.Friends
                 .Where(f => c.Registered.Contains(f.Hash))
-                .Select(f => new TellContact(c.Name, c.World, c.Hash, f.Name, f.World, f.Hash)))
+                .Select(f => new TellContact(c.Name, c.World, c.Hash, f.Name, f.World, f.Hash, pins.GetValueOrDefault(f.Hash))))
             .ToList();
 
     public static List<string> Uploadable(TellCharacter character, RelaySettings settings) =>

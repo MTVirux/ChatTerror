@@ -52,7 +52,7 @@ public class TellContactsTests
     [Fact]
     public void ForDevices_ListsRegisteredFriendsPerCharacter()
     {
-        var contacts = TellContacts.ForDevices([Main, Alt]);
+        var contacts = TellContacts.ForDevices([Main, Alt], new Dictionary<string, string>());
 
         Assert.Equal(2, contacts.Count);
         Assert.Equal(new TellContact("Main Char", "Twintania", Main.Hash, "Bob Smith", "Lich", Bob.Hash), contacts[0]);
