@@ -271,6 +271,10 @@ p {
   color: var(--text);
 }
 
+.pair-app {
+  text-align: center;
+}
+
 .pair-column {
   width: 100%;
   max-width: 440px;
