@@ -5,12 +5,13 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  dotnet:
+  unit:
     runs-on: windows-latest
     defaults:
       run:
@@ -30,7 +31,20 @@ jobs:
           unzip -q dalamud.zip -d "$DALAMUD_HOME"
 
       - run: dotnet restore ChatTerror.sln --locked-mode
-      - run: dotnet test ChatTerror.sln --no-restore
+      - run: dotnet build ChatTerror.sln --no-restore
+      - run: dotnet test tests/ChatTerror.Protocol.Tests --no-build
+      - run: dotnet test tests/ChatTerror.Plugin.Tests --no-build
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - run: dotnet test tests/ChatTerror.Server.Tests
 
   web:
     runs-on: ubuntu-latest
@@ -47,3 +61,26 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - run: docker build -t chatterror .
+      - run: docker run -d --name relay -p 8080:8080 chatterror
+
+      - name: Wait for the relay
+        run: curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:8080/
+
+      - run: dotnet test tests/ChatTerror.Smoke.Tests
+        env:
+          SMOKE_URL: http://localhost:8080
+
+      - name: Relay logs
+        if: failure()
+        run: docker logs relay
