@@ -1,10 +1,9 @@
 import { Component, type ComponentChildren } from "preact";
-import { LAST_KEY, NAV_KEY } from "./App";
+import { PLACE_KEY, SERVER_KEY, SUB_KEY } from "./place";
 
-function resetNav() {
+function resetView() {
   try {
-    localStorage.removeItem(NAV_KEY);
-    localStorage.removeItem(LAST_KEY);
+    for (const key of [PLACE_KEY, SERVER_KEY, SUB_KEY]) localStorage.removeItem(key);
   } catch {
     // Blocked storage; reloading is all that is left to try.
   }
@@ -23,7 +22,7 @@ export class ErrorBoundary extends Component<{ children: ComponentChildren }, { 
     return (
       <div class="boot-error">
         <p>Something went wrong showing ChatTerror.</p>
-        <button class="btn" onClick={resetNav}>Reset view and reload</button>
+        <button class="btn" onClick={resetView}>Reset view and reload</button>
       </div>
     );
   }
