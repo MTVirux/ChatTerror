@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
 import { channelIncludes, customKey, EMPTY_CHANNEL_PREFS, isItemMuted, saveCustom, withTells, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import { AccountSettings } from "./AccountSettings";
@@ -82,13 +82,13 @@ function useUnreadTracker(manager: AccountManager): UnreadTracker {
   return tracker;
 }
 
-// A notification link also picks the channel and row the message shows in.
-function initialPicks(accounts: AccountView[]): Picks {
+// A notification link also picks the channel and row the message shows in, awaited until that row shows up.
+function initialPicks(accounts: AccountView[]): { picks: Picks; awaited: string | null } {
   const picks = { server: parseViews(stored(SERVER_KEY)), sub: parseViews(stored(SUB_KEY)) };
   const link = parseLink(location.hash);
   const account = link && accounts.find((a) => a.deviceId === link.deviceId);
   const target = account && link.chat ? chatTarget(account.state.channelPrefs, link.chat) : null;
-  return account && target ? pickTarget(picks, account.deviceId, target) : picks;
+  return account && target ? { picks: pickTarget(picks, account.deviceId, target), awaited: target.rowKey } : { picks, awaited: null };
 }
 
 export function App({ manager }: { manager: AccountManager }) {
@@ -97,7 +97,9 @@ export function App({ manager }: { manager: AccountManager }) {
   const pending = usePendingSends(sends);
   const unread = useUnreadTracker(manager);
   const [saved, setPlace] = useState(() => initialPlace(manager.list(), location.hash, stored(PLACE_KEY), charactersOf));
-  const [picks, setPicks] = useState(() => initialPicks(manager.list()));
+  const [initial] = useState(() => initialPicks(manager.list()));
+  const [picks, setPicks] = useState(initial.picks);
+  const awaited = useRef<string | null>(initial.awaited);
   const [adding, setAdding] = useState(() => location.hash.startsWith("#pair="));
   const [pairingAgain, setPairingAgain] = useState(false);
   const [notified, setNotified] = useState(0);
@@ -133,7 +135,10 @@ export function App({ manager }: { manager: AccountManager }) {
     const account = manager.list().find((a) => a.deviceId === deviceId);
     if (!account) return;
     const target = chat ? chatTarget(account.state.channelPrefs, chat) : null;
-    if (target) setPicks((p) => pickTarget(p, deviceId, target));
+    if (target) {
+      awaited.current = target.rowKey;
+      setPicks((p) => pickTarget(p, deviceId, target));
+    }
     setPlace((current) => ({ deviceId, character: target?.character ?? (current?.deviceId === deviceId ? current.character : null) }));
     setAdding(false);
     setNotified((n) => n + 1);
@@ -168,6 +173,7 @@ export function App({ manager }: { manager: AccountManager }) {
       setPlace={setPlace}
       picks={picks}
       setPicks={setPicks}
+      awaited={awaited}
       sends={sends}
       pending={pending}
       unread={unread}
@@ -183,13 +189,14 @@ export function App({ manager }: { manager: AccountManager }) {
 
 type Settings = { app: true } | { deviceId: string };
 
-function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends, pending, unread, notified, onAdd, onPairAgain }: {
+function Workspace({ manager, accounts, place, setPlace, picks, setPicks, awaited, sends, pending, unread, notified, onAdd, onPairAgain }: {
   manager: AccountManager;
   accounts: AccountView[];
   place: Place;
   setPlace: (place: Place) => void;
   picks: Picks;
   setPicks: (update: (picks: Picks) => Picks) => void;
+  awaited: { current: string | null };
   sends: PendingSends;
   pending: PendingSend[];
   unread: UnreadTracker;
@@ -230,6 +237,18 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends,
   const rows = useMemo(() => (custom ? subRows(custom, partners) : []), [custom, partners]);
   const row = custom ? resolveRow(rows, picks.sub[viewKey(deviceId, customKey(custom))]) : null;
 
+  // Pin the shown row so a partner arriving later doesn't move the view.
+  useEffect(() => {
+    if (!loaded || !custom || !row) return;
+    const key = viewKey(deviceId, customKey(custom));
+    const stored = picks.sub[key];
+    if (stored === awaited.current) {
+      if (row.key === stored) awaited.current = null;
+    } else if (stored !== undefined && stored !== row.key) {
+      setPicks((p) => ({ ...p, sub: remember(p.sub, key, row.key) }));
+    }
+  }, [loaded, deviceId, custom, row, picks.sub]);
+
   // Before history loads the row can resolve to a fallback, which must not be cleared.
   const shownKey = loaded && row ? row.key : null;
   const includes = useMemo(() => (shownKey ? (key: string) => channelIncludes(prefs, shownKey, key) : null), [shownKey, prefs]);
@@ -255,12 +274,14 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends,
 
   function selectChannel(next: CustomChannel) {
     if (!character) return;
+    awaited.current = null;
     setPicks((p) => ({ ...p, server: remember(p.server, viewKey(deviceId, character), next.id) }));
     if (subRows(next, partners).length === 1) setDrawerOpen(false);
   }
 
   function openRow(next: SubRow) {
     if (!custom) return;
+    awaited.current = null;
     setPicks((p) => ({ ...p, sub: remember(p.sub, viewKey(deviceId, customKey(custom)), next.key) }));
     setDrawerOpen(false);
   }
@@ -385,6 +406,7 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends,
           groups={characterGroups(accounts, (a) => charactersOf(a, a.deviceId === deviceId ? items : []), (id, name) => characterUnread(unread, id, manager.session(id)?.getState().channelPrefs ?? EMPTY_CHANNEL_PREFS, name))}
           current={place}
           onPick={(next) => {
+            awaited.current = null;
             setSwitching(false);
             setPlace(next);
           }}
