@@ -10,14 +10,15 @@ public class FriendTests
     [Fact]
     public void Code_FormatsAndParsesLeniently()
     {
-        var code = new FriendCode("ABCD-EFGH", FriendCode.NewSecret());
+        var code = new FriendCode("ABCD-EFGH-JKMN", FriendCode.NewSecret());
         var formatted = code.Format();
-        Assert.Matches("^([0-9A-Z]{4}-){5}[0-9A-Z]{4}$", formatted);
+        Assert.Matches("^([0-9A-Z]{4}-){6}[0-9A-Z]{4}$", formatted);
         Assert.Equal(code, FriendCode.Parse(formatted));
         Assert.Equal(code, FriendCode.Parse(formatted.ToLowerInvariant().Replace("-", " ")));
-        Assert.Equal(FriendCode.Parse("0000-0000-0000-0000-0000-0000"), FriendCode.Parse("oooo-OOOO-0000-0000-0000-0000"));
+        Assert.Equal(FriendCode.Parse("0000-0000-0000-0000-0000-0000-0000"), FriendCode.Parse("oooo-OOOO-0000-0000-0000-0000-0000"));
         Assert.Null(FriendCode.Parse("ABCD-EFGH"));
-        Assert.Null(FriendCode.Parse("ABCD-EFGH-ABCD-EFGH-ABCD-EFGU"));
+        Assert.Null(FriendCode.Parse("ABCD-EFGH-ABCD-EFGH-ABCD-EFGH-ABCU"));
+        Assert.Null(FriendCode.Parse("ABCD-EFGH-0000-0000-0000-0000"));
         Assert.Null(FriendCode.Parse(""));
     }
 

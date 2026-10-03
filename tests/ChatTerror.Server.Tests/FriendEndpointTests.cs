@@ -29,10 +29,11 @@ public class FriendEndpointTests
 
         Assert.Equal(new FriendInviteInfo(a.InstallId, Base64Url.Encode(P256.PublicRaw(keyA)), A, tag), info);
         Assert.Equal(app.Time.GetUtcNow().Add(Limits.FriendInviteTtl).ToUnixTimeMilliseconds(), invite.ExpiresAt);
-        Assert.Matches("^[0-9A-Z]{4}-[0-9A-Z]{4}$", invite.Id);
+        Assert.Matches("^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$", invite.Id);
         Assert.Equal(HttpStatusCode.OK, (await app.Client(b.InstallToken).GetAsync($"/api/friends/invites/{invite.Id.ToLowerInvariant()}")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client().GetAsync($"/api/friends/invites/{invite.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync("/api/friends/invites/0000-0000")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/friends/invites/{invite.Id[..9]}")).StatusCode);
     }
 
     [Fact]
@@ -130,7 +131,8 @@ public class FriendEndpointTests
         Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
         Assert.Equal("invalidEnvelope", await ErrorAsync(empty));
         Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await app.PostFriendClaimAsync(b.InstallToken, "0000-0000")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.PostFriendClaimAsync(b.InstallToken, "0000-0000-0000")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.PostFriendClaimAsync(b.InstallToken, invite.Id[..9])).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await app.PostFriendClaimAsync(b.InstallToken, "garbage")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client().PostAsJsonAsync($"/api/friends/invites/{invite.Id}/claim", new { @sealed = "x" })).StatusCode);
     }

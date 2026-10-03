@@ -46,7 +46,7 @@ public static class FriendEndpoints
         {
             if (AuthHelpers.Install(context, store) is null)
                 return AuthHelpers.Unauthorized();
-            if (PairingCodes.Normalize(id) is not { } normalized || store.FindFriendInvite(normalized) is not { ClaimInstall: null } invite)
+            if (PairingCodes.Normalize(id, PairingCodes.FriendInviteLength) is not { } normalized || store.FindFriendInvite(normalized) is not { ClaimInstall: null } invite)
                 return AuthHelpers.NotFound();
             return Results.Ok(new FriendInviteInfoResponse(invite.InstallId, invite.InstallPublicKey, invite.Scope, invite.Tag));
         }).RequireRateLimiting(RequestLimits.PairingPolicy);
@@ -57,7 +57,7 @@ public static class FriendEndpoints
                 return AuthHelpers.Unauthorized();
             if (!IsEnvelope(body?.Sealed))
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidEnvelope");
-            if (PairingCodes.Normalize(id) is not { } normalized)
+            if (PairingCodes.Normalize(id, PairingCodes.FriendInviteLength) is not { } normalized)
                 return AuthHelpers.NotFound();
 
             var (status, inviter) = store.ClaimFriendInvite(normalized, install.Id, body!.Sealed!);
@@ -72,7 +72,7 @@ public static class FriendEndpoints
         {
             if (AuthHelpers.Install(context, store) is not { } install)
                 return AuthHelpers.Unauthorized();
-            if (PairingCodes.Normalize(id) is not { } normalized)
+            if (PairingCodes.Normalize(id, PairingCodes.FriendInviteLength) is not { } normalized)
                 return AuthHelpers.NotFound();
 
             var (status, claimant) = store.AcceptFriendInvite(normalized, install.Id);
@@ -88,7 +88,7 @@ public static class FriendEndpoints
         {
             if (AuthHelpers.Install(context, store) is not { } install)
                 return AuthHelpers.Unauthorized();
-            if (PairingCodes.Normalize(id) is not { } normalized || store.DeleteFriendInvite(normalized, install.Id) is not { } invite)
+            if (PairingCodes.Normalize(id, PairingCodes.FriendInviteLength) is not { } normalized || store.DeleteFriendInvite(normalized, install.Id) is not { } invite)
                 return AuthHelpers.NotFound();
 
             if (invite.ClaimInstall is { } claimant)

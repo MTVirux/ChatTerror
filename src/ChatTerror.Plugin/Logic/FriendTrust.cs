@@ -43,7 +43,7 @@ public enum TellOrigin { Friend, Own, Forged }
 
 public static class FriendTrust
 {
-    public const string BadCode = "Enter the full 24 character code.";
+    public const string BadCode = "Enter the full 28 character code.";
     public const string BadScope = "Pick which of your characters to share.";
     public const string InvalidCode = "Invalid or expired code.";
     public const string CodeSent = "Code sent. You are paired once your friend's game confirms it.";

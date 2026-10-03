@@ -317,13 +317,13 @@ public class FriendTrustTests
     [Fact]
     public void ParseRedeem_ReportsBadInputInsteadOfThrowing()
     {
-        Assert.Equal("Enter the full 24 character code.", FriendTrust.ParseRedeem("ABCD-EFGH", FriendScopes.Account).Error);
-        Assert.Equal("Enter the full 24 character code.", FriendTrust.ParseRedeem("", FriendScopes.Account).Error);
-        Assert.Equal("Pick which of your characters to share.", FriendTrust.ParseRedeem("0000-0000-0000-0000-0000-0000", "bad").Error);
+        Assert.Equal("Enter the full 28 character code.", FriendTrust.ParseRedeem("ABCD-EFGH", FriendScopes.Account).Error);
+        Assert.Equal("Enter the full 28 character code.", FriendTrust.ParseRedeem("", FriendScopes.Account).Error);
+        Assert.Equal("Pick which of your characters to share.", FriendTrust.ParseRedeem("0000-0000-0000-0000-0000-0000-0000", "bad").Error);
 
-        var (code, error) = FriendTrust.ParseRedeem("abcd efgh 0000 0000 0000 000o", MainHash);
+        var (code, error) = FriendTrust.ParseRedeem("abcd efgh jkmn 0000 0000 0000 000o", MainHash);
         Assert.Null(error);
-        Assert.Equal(new FriendCode("ABCD-EFGH", "0000000000000000"), code);
+        Assert.Equal(new FriendCode("ABCD-EFGH-JKMN", "0000000000000000"), code);
     }
 
     [Fact]

@@ -63,7 +63,7 @@ The plugin only ever sends plain chat lines with a channel prefix (`/p`, `/fc`, 
 Tells to and from a friend who also uses ChatTerror can be relayed through ChatTerror, end-to-end encrypted. You pair your installs once with a code.
 
 1. In the plugin, go to **Friends**. Under **Add friend**, pick what to share: **Account** (every character on this install, including ones you add later) or one of your characters. Click **Create code**.
-2. The code (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`) is hidden until you click **Show**. Use **Copy** and send it to your friend yourself, for example in an in-game tell or on Discord.
+2. The code (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`) is hidden until you click **Show**. Use **Copy** and send it to your friend yourself, for example in an in-game tell or on Discord.
 3. Your friend pastes it under **Enter code**, picks what they share in the same way and clicks **Pair**. Your plugin checks the code and completes the pairing.
 
 Codes are single use and expire after 24 hours. You can have up to 10 active codes and 100 paired friends. Unused codes can be cancelled.

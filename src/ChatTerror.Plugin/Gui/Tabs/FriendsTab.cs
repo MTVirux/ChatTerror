@@ -151,7 +151,7 @@ public sealed class FriendsTab(Configuration config, FriendDirectory friends) : 
     {
         ImGui.TextUnformatted("Enter code");
         ImGui.SetNextItemWidth(260);
-        ImGui.InputTextWithHint("##code", "XXXX-XXXX-XXXX-XXXX-XXXX-XXXX", ref codeInput, 64);
+        ImGui.InputTextWithHint("##code", "XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX", ref codeInput, 64);
         ScopeCombo("Share##redeem", ref redeemScope);
         ImGui.SameLine();
         using (ImRaii.Disabled(friends.Busy || config.InstallToken == null || codeInput.Trim().Length == 0))
@@ -160,7 +160,7 @@ public sealed class FriendsTab(Configuration config, FriendDirectory friends) : 
                 redeeming = (codeInput, friends.Redeem(codeInput, redeemScope));
         }
 
-        // Kept on a failure so a typo doesn't mean typing all 24 characters again.
+        // Kept on a failure so a typo doesn't mean typing all 28 characters again.
         if (redeeming is { Result.IsCompleted: true } done)
         {
             redeeming = null;

@@ -6,10 +6,13 @@ public static class PairingCodes
 {
     private const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-    public static string Generate() => Format(RandomNumberGenerator.GetItems<char>(Alphabet, 8));
+    public const int DeviceLength = 8;
+    public const int FriendInviteLength = 12;
+
+    public static string Generate(int length = DeviceLength) => Format(RandomNumberGenerator.GetItems<char>(Alphabet, length));
 
     // Accepts lowercase, missing hyphen and the Crockford look-alikes O, I and L.
-    public static string? Normalize(string input)
+    public static string? Normalize(string input, int length = DeviceLength)
     {
         var chars = input.ToUpperInvariant()
             .Where(c => c != '-' && c != ' ')
@@ -21,10 +24,10 @@ public static class PairingCodes
             })
             .ToArray();
 
-        if (chars.Length != 8 || chars.Any(c => !Alphabet.Contains(c)))
+        if (chars.Length != length || chars.Any(c => !Alphabet.Contains(c)))
             return null;
         return Format(chars);
     }
 
-    private static string Format(char[] chars) => $"{new string(chars, 0, 4)}-{new string(chars, 4, 4)}";
+    private static string Format(char[] chars) => string.Join('-', chars.Chunk(4).Select(group => new string(group)));
 }

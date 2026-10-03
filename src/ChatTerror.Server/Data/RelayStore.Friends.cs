@@ -49,7 +49,7 @@ public sealed partial class RelayStore
         var now = Now;
         while (true)
         {
-            var id = PairingCodes.Generate();
+            var id = PairingCodes.Generate(PairingCodes.FriendInviteLength);
             var inserted = Execute("INSERT OR IGNORE INTO friend_invites(id, install_id, scope, tag, created) VALUES($id, $install, $scope, $tag, $now)",
                 ("$id", id), ("$install", installId), ("$scope", scope), ("$tag", tag), ("$now", now));
             if (inserted == 1)

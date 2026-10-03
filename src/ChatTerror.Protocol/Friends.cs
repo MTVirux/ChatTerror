@@ -13,18 +13,19 @@ public static class FriendScopes
     public static bool Includes(string scope, string characterHash) => scope == Account || scope == characterHash;
 }
 
-// Id is the relay's lookup id ("XXXX-XXXX"), Secret never leaves the two plugins.
+// Id is the relay's lookup id ("XXXX-XXXX-XXXX"), Secret never leaves the two plugins.
 public sealed record FriendCode(string Id, string Secret)
 {
+    public const int IdLength = 12;
     public const int SecretLength = 16;
 
     public static string NewSecret() => new(RandomNumberGenerator.GetItems<char>(PairingSecret.Alphabet, SecretLength));
 
     public static FriendCode? Parse(string input)
     {
-        if (PairingSecret.NormalizeChars(input, 8 + SecretLength) is not { } chars)
+        if (PairingSecret.NormalizeChars(input, IdLength + SecretLength) is not { } chars)
             return null;
-        return new FriendCode($"{chars[..4]}-{chars[4..8]}", chars[8..]);
+        return new FriendCode($"{chars[..4]}-{chars[4..8]}-{chars[8..12]}", chars[IdLength..]);
     }
 
     public string Format()
