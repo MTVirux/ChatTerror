@@ -21,18 +21,20 @@ public class PortraitTests
     {
         public List<Uri> Requests { get; } = [];
 
+        public HttpStatusCode Status { get; set; } = status;
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             lock (Requests)
                 Requests.Add(request.RequestUri!);
             var response = request.RequestUri!.Host == "na.finalfantasyxiv.com"
-                ? new HttpResponseMessage(status) { Content = new StringContent(html) }
+                ? new HttpResponseMessage(Status) { Content = new StringContent(html) }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Face) };
             return Task.FromResult(response);
         }
     }
 
-    private static RelayApp App(FakeLodestone lodestone) => new()
+    private static RelayApp App(FakeLodestone lodestone, Dictionary<string, string>? overrides = null) => new(overrides)
     {
         ExtraServices = services => services.AddHttpClient(LodestonePortraits.ClientName).ConfigurePrimaryHttpMessageHandler(() => lodestone),
     };
@@ -145,5 +147,39 @@ public class PortraitTests
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
         Assert.Equal(2, lodestone.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Portrait_SurvivesRestartFromDisk()
+    {
+        var lodestone = new FakeLodestone(Entry("Jane Doe", "Gilgamesh [Aether]"));
+        using var first = App(lodestone);
+        await first.Client().GetAsync("/api/portrait?name=Jane%20Doe&world=Gilgamesh");
+        await first.Client().GetAsync("/api/portrait?name=John%20Doe&world=Gilgamesh");
+
+        using var second = App(lodestone, new() { ["Relay:DbPath"] = first.DbPath });
+        var hit = await second.Client().GetAsync("/api/portrait?name=Jane%20Doe&world=Gilgamesh");
+        var miss = await second.Client().GetAsync("/api/portrait?name=John%20Doe&world=Gilgamesh");
+
+        Assert.Equal(HttpStatusCode.OK, hit.StatusCode);
+        Assert.Equal(Face, await hit.Content.ReadAsByteArrayAsync());
+        Assert.Equal(HttpStatusCode.NotFound, miss.StatusCode);
+        Assert.Equal(3, lodestone.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Portrait_RefreshesAfterADay_AndKeepsStaleFaceWhenLodestoneFails()
+    {
+        var lodestone = new FakeLodestone(Entry("Jane Doe", "Gilgamesh [Aether]"));
+        using var app = App(lodestone);
+        var client = app.Client();
+        await client.GetAsync("/api/portrait?name=Jane%20Doe&world=Gilgamesh");
+
+        app.Time.Advance(TimeSpan.FromDays(2));
+        lodestone.Status = HttpStatusCode.ServiceUnavailable;
+        var stale = await client.GetAsync("/api/portrait?name=Jane%20Doe&world=Gilgamesh");
+
+        Assert.Equal(HttpStatusCode.OK, stale.StatusCode);
+        Assert.Equal(3, lodestone.Requests.Count);
     }
 }

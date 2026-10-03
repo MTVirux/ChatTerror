@@ -1,10 +1,12 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
 
 namespace ChatTerror.Server.Api;
 
-// Looks up character headshots on the Lodestone and keeps them in memory, so the web app can show them from 'self'.
-public sealed partial class LodestonePortraits(IHttpClientFactory clients, TimeProvider time, ILogger<LodestonePortraits> log)
+// Looks up character headshots on the Lodestone and keeps them on disk, so the web app can show them from 'self'.
+// The most recent lookups also stay in memory.
+public sealed partial class LodestonePortraits(IHttpClientFactory clients, TimeProvider time, IOptions<RelayOptions> options, ILogger<LodestonePortraits> log)
 {
     public const string ClientName = "lodestone";
 
@@ -13,6 +15,7 @@ public sealed partial class LodestonePortraits(IHttpClientFactory clients, TimeP
     private static readonly TimeSpan MissTtl = TimeSpan.FromHours(1);
     private static readonly TimeSpan ErrorTtl = TimeSpan.FromMinutes(1);
 
+    private readonly string directory = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(options.Value.DbPath))!, "portraits");
     private readonly Lock gate = new();
     private readonly Dictionary<string, (byte[]? Image, DateTimeOffset Expires)> cache = new();
     private readonly Dictionary<string, Task<byte[]?>> pending = new();
@@ -41,27 +44,57 @@ public sealed partial class LodestonePortraits(IHttpClientFactory clients, TimeP
     {
         // Lets FindAsync register the lookup as pending before it can finish and remove itself.
         await Task.Yield();
-        byte[]? image = null;
-        var ttl = ErrorTtl;
-        try
+        var (image, expires) = await ReadDiskAsync(key);
+        if (expires <= time.GetUtcNow())
         {
-            image = await LookupAsync(name, world);
-            ttl = image != null ? HitTtl : MissTtl;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            log.LogInformation("Lodestone lookup for {Key} failed: {Error}", key, ex.Message);
+            try
+            {
+                image = await LookupAsync(name, world);
+                expires = await WriteDiskAsync(key, image);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Keeps serving a stale headshot rather than none while the Lodestone is down.
+                log.LogInformation("Lodestone lookup for {Key} failed: {Error}", key, ex.Message);
+                expires = time.GetUtcNow() + ErrorTtl;
+            }
         }
 
         lock (gate)
         {
             pending.Remove(key);
-            var now = time.GetUtcNow();
             if (cache.Count >= MaxEntries)
-                Evict(now);
-            cache[key] = (image, now + ttl);
+                Evict(time.GetUtcNow());
+            cache[key] = (image, expires);
         }
         return image;
+    }
+
+    // Names are already limited to letters, apostrophes, hyphens and a space, so the key is a safe file name.
+    private string ImagePath(string key) => Path.Combine(directory, key + ".jpg");
+
+    private string MissPath(string key) => Path.Combine(directory, key + ".miss");
+
+    private async Task<(byte[]? Image, DateTimeOffset Expires)> ReadDiskAsync(string key)
+    {
+        var image = new FileInfo(ImagePath(key));
+        if (image.Exists)
+            return (await File.ReadAllBytesAsync(image.FullName), image.LastWriteTimeUtc + HitTtl);
+        var miss = new FileInfo(MissPath(key));
+        if (miss.Exists)
+            return (null, miss.LastWriteTimeUtc + MissTtl);
+        return (null, DateTimeOffset.MinValue);
+    }
+
+    private async Task<DateTimeOffset> WriteDiskAsync(string key, byte[]? image)
+    {
+        Directory.CreateDirectory(directory);
+        var (path, stale, ttl) = image != null ? (ImagePath(key), MissPath(key), HitTtl) : (MissPath(key), ImagePath(key), MissTtl);
+        await File.WriteAllBytesAsync(path, image ?? []);
+        var now = time.GetUtcNow();
+        File.SetLastWriteTimeUtc(path, now.UtcDateTime);
+        File.Delete(stale);
+        return now + ttl;
     }
 
     private async Task<byte[]?> LookupAsync(string name, string world)
