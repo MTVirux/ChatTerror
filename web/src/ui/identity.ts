@@ -10,3 +10,9 @@ export function initials(name: string): string {
 export function senderColor(name: string): string {
   return hashColor(name);
 }
+
+// Served by the relay that served the page, which looks the character up on the Lodestone.
+export function portraitUrl(name: string | undefined, world: string | undefined): string | undefined {
+  if (!name || !world) return undefined;
+  return `/api/portrait?name=${encodeURIComponent(name)}&world=${encodeURIComponent(world)}`;
+}

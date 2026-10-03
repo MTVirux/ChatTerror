@@ -3,6 +3,7 @@ import type { AccountManager, AccountView } from "../core/accounts";
 import { offerAndroidApp, STATUS_LABELS } from "./format";
 import { ChevronRightIcon } from "./icons";
 import { initials, senderColor } from "./identity";
+import { Portrait } from "./Portrait";
 import { SettingsGroup, SettingsSheet } from "./SettingsSheet";
 import { loadTheme, saveTheme, type ThemeChoice } from "./theme";
 
@@ -38,7 +39,10 @@ export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAc
       <SettingsGroup label="Accounts">
         {accounts.map((a) => (
           <button class="settings-row" key={a.deviceId} onClick={() => onOpenAccount(a.deviceId)}>
-            <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": senderColor(a.deviceId) }} aria-hidden="true">{initials(a.label)}</span>
+            <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": senderColor(a.deviceId) }} aria-hidden="true">
+              {initials(a.label)}
+              <Portrait name={a.character} world={a.characterWorld} />
+            </span>
             <span class="settings-text">
               {a.label}
               <small>{a.status === "revoked" ? "Removed" : STATUS_LABELS[a.state.status]}</small>

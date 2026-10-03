@@ -40,7 +40,7 @@ public class JsonTests
             new ChatPayload(SampleItem()) { Seq = 1 },
             new BacklogPayload(new[] { SampleItem() }, true) { Seq = 2 },
             new SendResultPayload("r1", false, SendErrors.TooLong) { Seq = 3 },
-            new SettingsPayload("Alpha Beta", new[] { ChatChannel.Tell }, new[] { ChatChannel.Party, ChatChannel.Linkshell8 }, 400) { Seq = 4 },
+            new SettingsPayload("Alpha Beta", new[] { ChatChannel.Tell }, new[] { ChatChannel.Party, ChatChannel.Linkshell8 }, 400, CharacterWorld: "Twintania") { Seq = 4 },
             new HelloPayload(123) { Seq = 5 },
             new SendChatPayload("r2", ChatChannel.Tell, "Y'shtola Rhul@Twintania", "hi") { Seq = 6 },
             new PrefsPayload(new[] { ChatChannel.Say, ChatChannel.Yell }) { Seq = 7 },
@@ -187,6 +187,7 @@ public class JsonTests
         Assert.Null(Assert.IsType<SendResultPayload>(result).Error);
         Assert.Null(Assert.IsType<ChatPayload>(chat).Item.SenderWorld);
         Assert.Null(Assert.IsType<SettingsPayload>(settings).Character);
+        Assert.Null(Assert.IsType<SettingsPayload>(settings).CharacterWorld);
         Assert.Null(Assert.IsType<SendChatPayload>(send).Target);
     }
 

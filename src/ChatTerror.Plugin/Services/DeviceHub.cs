@@ -77,6 +77,7 @@ public sealed class DeviceHub : IDisposable
     public event Action? FriendsChanged;
 
     public Func<IReadOnlyList<TellContact>> Contacts { get; set; } = () => [];
+    public Func<string?> CharacterWorld { get; set; } = () => null;
 
     public MessageHistory History { get; }
 
@@ -448,7 +449,8 @@ public sealed class DeviceHub : IDisposable
             RelayChannels: order.Where(c => settings.Channels.TryGetValue(c, out var s) && s.Relay).ToList(),
             SendChannels: order.Where(c => SendValidator.CanSend(c) && settings.Channels.TryGetValue(c, out var s) && s.Send).ToList(),
             MaxLength: Math.Min(config.Settings.MaxLengthBytes, Limits.MaxTextBytes),
-            Contacts: Contacts());
+            Contacts: Contacts(),
+            CharacterWorld: CharacterWorld());
     }
 
     private void SendTo(DeviceSession session, Payload payload, bool notify) =>

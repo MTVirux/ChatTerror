@@ -159,9 +159,9 @@ describe("account manager", () => {
     const { deps, online, fromPlugin } = fakeDeps();
     const manager = await createAccountManager(deps);
     online("a");
-    await fromPlugin("a", { type: "settings", seq: Date.now(), character: "Alpha Beta", relayChannels: ["say"], sendChannels: ["say"], maxLength: 500 });
+    await fromPlugin("a", { type: "settings", seq: Date.now(), character: "Alpha Beta", characterWorld: "Twintania", relayChannels: ["say"], sendChannels: ["say"], maxLength: 500 });
 
-    await vi.waitFor(() => expect(manager.list()[0].label).toBe("Alpha Beta"));
+    await vi.waitFor(() => expect(manager.list()[0]).toMatchObject({ label: "Alpha Beta", characterWorld: "Twintania" }));
     await vi.waitFor(async () => expect((await listAccounts())[0].label).toBe("Alpha Beta"));
   });
 

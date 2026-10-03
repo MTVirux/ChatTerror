@@ -31,7 +31,8 @@ public sealed record SettingsPayload(
     IReadOnlyList<ChatChannel> RelayChannels,
     IReadOnlyList<ChatChannel> SendChannels,
     int MaxLength,
-    IReadOnlyList<TellContact>? Contacts = null) : Payload;
+    IReadOnlyList<TellContact>? Contacts = null,
+    string? CharacterWorld = null) : Payload;
 
 public sealed record TellKeyPayload(string PublicKey) : Payload;
 

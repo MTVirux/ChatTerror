@@ -2,6 +2,7 @@ import type { ComponentChildren } from "preact";
 import type { AccountView } from "../core/accounts";
 import { initials } from "./identity";
 import type { Server } from "./nav";
+import { Portrait } from "./Portrait";
 import type { UnreadSummary, UnreadTracker } from "./unread";
 
 export function ServerRail({ accounts, server, unread, onSelect }: {
@@ -32,6 +33,7 @@ export function ServerRail({ accounts, server, unread, onSelect }: {
           onClick={() => onSelect(a.deviceId)}
         >
           {initials(a.label)}
+          <Portrait name={a.character} world={a.characterWorld} />
         </RailItem>
       ))}
       <RailItem label="Add a server" add selected={server === "add"} onClick={() => onSelect("add")}>

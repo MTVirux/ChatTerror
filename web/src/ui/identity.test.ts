@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initials, senderColor } from "./identity";
+import { initials, portraitUrl, senderColor } from "./identity";
 
 describe("identity", () => {
   it("takes the first letter of the first two words", () => {
@@ -13,5 +13,10 @@ describe("identity", () => {
   it("gives a stable color per name", () => {
     expect(senderColor("Y'shtola Rhul")).toBe(senderColor("Y'shtola Rhul"));
     expect(senderColor("Y'shtola Rhul")).toMatch(/^#[0-9a-f]{6}$/);
+  });
+  it("builds a portrait url only when the world is known", () => {
+    expect(portraitUrl("Y'shtola Rhul", "Twintania")).toBe("/api/portrait?name=Y'shtola%20Rhul&world=Twintania");
+    expect(portraitUrl("Y'shtola Rhul", undefined)).toBeUndefined();
+    expect(portraitUrl(undefined, "Twintania")).toBeUndefined();
   });
 });

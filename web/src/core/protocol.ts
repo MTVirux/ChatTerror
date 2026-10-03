@@ -109,6 +109,7 @@ export interface SettingsPayload {
   type: "settings";
   seq: number;
   character?: string;
+  characterWorld?: string;
   relayChannels: ChatChannel[];
   sendChannels: ChatChannel[];
   maxLength: number;
@@ -225,6 +226,7 @@ function isSettings(value: unknown): value is Record<string, unknown> {
   return (
     isObject(value) &&
     (value.character === undefined || value.character === null || isName(value.character)) &&
+    (value.characterWorld === undefined || value.characterWorld === null || isName(value.characterWorld)) &&
     isChannelList(value.relayChannels) &&
     isChannelList(value.sendChannels) &&
     Number.isInteger(value.maxLength) &&
