@@ -254,6 +254,40 @@ public class FriendTrustTests
     }
 
     [Fact]
+    public void VerifyClaim_RejectsAClaimantWithOurOwnKey()
+    {
+        using var a = P256.Generate();
+        var secret = FriendCode.NewSecret();
+        var claim = new FriendClaim(Key(a), AltHash, FriendProof.ClaimMac(secret, Key(a), MainHash, Key(a), AltHash));
+
+        Assert.False(FriendTrust.VerifyClaim(claim, Key(a), secret, Key(a), MainHash));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(true, secret, MainHash, true, claim, Key(a), Key(a)));
+    }
+
+    [Fact]
+    public void InviteError_RefusesBadTagsAndOurOwnKey()
+    {
+        using var a = P256.Generate();
+        using var b = P256.Generate();
+        var secret = FriendCode.NewSecret();
+        var tag = FriendProof.InviteTag(secret, Key(a), MainHash);
+
+        Assert.Null(FriendTrust.InviteError(secret, Key(a), MainHash, tag, Key(b)));
+        Assert.Equal(FriendTrust.InvalidCode, FriendTrust.InviteError(FriendCode.NewSecret(), Key(a), MainHash, tag, Key(b)));
+        Assert.Equal("That is your own code.", FriendTrust.InviteError(secret, Key(a), MainHash, tag, Key(a)));
+    }
+
+    [Fact]
+    public void Origin_OwnCopiesNeedOurInstallIdAndKey()
+    {
+        Assert.Equal(TellOrigin.Own, FriendTrust.Origin("me", "myKey", "me", "myKey"));
+        Assert.Equal(TellOrigin.Forged, FriendTrust.Origin("other", "myKey", "me", "myKey"));
+        Assert.Equal(TellOrigin.Forged, FriendTrust.Origin("me", "myKey", null, "myKey"));
+        Assert.Equal(TellOrigin.Friend, FriendTrust.Origin("me", "theirKey", "me", "myKey"));
+        Assert.Equal(TellOrigin.Friend, FriendTrust.Origin("bob", "bobKey", "me", "myKey"));
+    }
+
+    [Fact]
     public void DecideInvite_AcceptsOnlyVerifiedClaimsOnKnownCodes()
     {
         using var a = P256.Generate();

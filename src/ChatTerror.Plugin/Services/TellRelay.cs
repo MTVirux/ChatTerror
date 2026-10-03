@@ -226,13 +226,17 @@ public sealed class TellRelay : IDisposable
             return;
 
         // A copy of a tell one of our phones sent, which only this install can have sent.
-        if (tell.FromKey == keys.PublicKey)
+        switch (FriendTrust.Origin(tell.From, tell.FromKey, config.InstallId, keys.PublicKey))
         {
-            if (config.TellCharacters.Any(c => c.Hash == body.FromHash))
+            case TellOrigin.Own when config.TellCharacters.Any(c => c.Hash == body.FromHash):
                 ShowOutgoing(body);
-            else
+                return;
+            case TellOrigin.Own:
                 log.Warning("Dropped a relayed tell sent with our key from a character that is not ours.");
-            return;
+                return;
+            case TellOrigin.Forged:
+                log.Warning("Dropped a relayed tell sent with our key from another install.");
+                return;
         }
 
         if (FriendTrust.Incoming(config.TellCharacters, config.PairedFriends, tell.From, tell.FromKey, body) is not { } incoming

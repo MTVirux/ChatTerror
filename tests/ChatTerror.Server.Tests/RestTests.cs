@@ -35,6 +35,25 @@ public class RestTests
     }
 
     [Fact]
+    public async Task RegisterInstall_KeyInUseNeedsProofOfTheKey()
+    {
+        using var app = new RelayApp();
+        using var key = P256.Generate();
+        using var other = P256.Generate();
+        var publicKey = Base64Url.Encode(P256.PublicRaw(key));
+        await app.RegisterInstallAsync(key);
+
+        var copied = await app.Client().PostAsJsonAsync("/api/installs", new { publicKey });
+        var wrongProof = await app.Client().PostAsJsonAsync("/api/installs", new { publicKey, proof = InstallSignature.Proof(other) });
+        var proven = await app.Client().PostAsJsonAsync("/api/installs", new { publicKey, proof = InstallSignature.Proof(key) });
+
+        Assert.Equal(HttpStatusCode.Conflict, copied.StatusCode);
+        Assert.Equal("keyInUse", (await copied.Content.ReadFromJsonAsync<ErrorResponse>())!.Error);
+        Assert.Equal(HttpStatusCode.Conflict, wrongProof.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, proven.StatusCode);
+    }
+
+    [Fact]
     public async Task CreatePairing_RequiresInstallAuth()
     {
         using var app = new RelayApp();

@@ -48,9 +48,9 @@ public sealed class RelayApi : IDisposable
         this.relayUrl = relayUrl;
     }
 
-    public async Task<InstallResponse> RegisterInstall(string publicKey, CancellationToken ct)
+    public async Task<InstallResponse> RegisterInstall(string publicKey, string proof, CancellationToken ct)
     {
-        using var request = Request(HttpMethod.Post, "/api/installs", null, new { publicKey });
+        using var request = Request(HttpMethod.Post, "/api/installs", null, new { publicKey, proof });
         return await Send<InstallResponse>(request, ct);
     }
 

@@ -39,6 +39,8 @@ public sealed record FriendSync(List<PairedFriend> Paired, List<PendingFriend> P
 
 public enum InviteAction { Wait, Accept, Delete }
 
+public enum TellOrigin { Friend, Own, Forged }
+
 public static class FriendTrust
 {
     public const string BadCode = "Enter the full 24 character code.";
@@ -165,10 +167,19 @@ public static class FriendTrust
         }
     }
 
+    // Null when the redeemer may claim the invite. Our own key means our own code, or someone else registered it.
+    public static string? InviteError(string secret, string inviteKey, string inviteScope, string tag, string ownKey)
+    {
+        if (!VerifyInvite(secret, inviteKey, inviteScope, tag))
+            return InvalidCode;
+        return inviteKey == ownKey ? ClaimError(409, "selfInvite") : null;
+    }
+
     // The inviter's check of a claim. relayClaimKey is the claimant key the relay reports, which must be the sealed one.
+    // A claimant with our own key could later pass its tells off as ours.
     public static bool VerifyClaim(FriendClaim? claim, string relayClaimKey, string secret, string ownKey, string inviteScope)
     {
-        if (claim == null || claim.InstallPublicKey != relayClaimKey || !FriendScopes.IsValid(claim.Scope))
+        if (claim == null || claim.InstallPublicKey != relayClaimKey || claim.InstallPublicKey == ownKey || !FriendScopes.IsValid(claim.Scope))
             return false;
         try
         {
@@ -190,6 +201,14 @@ public static class FriendTrust
         return secret != null && ownScope != null && relayClaimKey != null && VerifyClaim(claim, relayClaimKey, secret, ownKey, ownScope)
             ? InviteAction.Accept
             : InviteAction.Delete;
+    }
+
+    // A relayed tell is a copy of our own only when both our install id and our key sent it.
+    public static TellOrigin Origin(string fromInstall, string fromKey, string? ownInstall, string ownKey)
+    {
+        if (fromKey != ownKey)
+            return TellOrigin.Friend;
+        return fromInstall == ownInstall ? TellOrigin.Own : TellOrigin.Forged;
     }
 
     public static string ClaimError(int status, string? code) => (status, code) switch

@@ -130,10 +130,10 @@ public sealed class FriendDirectory : IDisposable
     private async Task<string> Claim(string token, FriendCode code, string myScope)
     {
         var invite = await api.GetFriendInvite(token, code.Id);
-        if (invite == null || !FriendTrust.VerifyInvite(code.Secret, invite.InstallPublicKey, invite.Scope, invite.Tag))
+        if (invite == null)
             return FriendTrust.InvalidCode;
-        if (invite.InstallPublicKey == keys.PublicKey)
-            return FriendTrust.ClaimError(409, "selfInvite");
+        if (FriendTrust.InviteError(code.Secret, invite.InstallPublicKey, invite.Scope, invite.Tag, keys.PublicKey) is { } error)
+            return error;
 
         string sealedClaim;
         try

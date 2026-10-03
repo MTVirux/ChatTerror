@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 
 namespace ChatTerror.Protocol;
 
@@ -10,6 +11,13 @@ public static class InstallSignature
         using var ecdsa = ECDsa.Create(identity.ExportParameters(true));
         return Base64Url.Encode(ecdsa.SignData(data, HashAlgorithmName.SHA256));
     }
+
+    // Proves to the relay that an install registering a key holds its private half.
+    public static string Proof(ECDiffieHellman identity) => Sign(identity, ProofData(Base64Url.Encode(P256.PublicRaw(identity))));
+
+    public static bool VerifyProof(string publicKey, string proof) => Verify(publicKey, ProofData(publicKey), proof);
+
+    private static byte[] ProofData(string publicKey) => Encoding.UTF8.GetBytes("ct1:install-proof:" + publicKey);
 
     public static bool Verify(string publicKey, byte[] data, string signature)
     {
