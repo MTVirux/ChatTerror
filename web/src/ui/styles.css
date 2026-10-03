@@ -1228,6 +1228,17 @@ p {
   font-size: 0.75rem;
 }
 
+.chat-tag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: var(--c);
+  font-weight: 700;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
 .time {
   flex: none;
   color: var(--muted);

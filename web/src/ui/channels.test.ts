@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AccountView } from "../core/accounts";
 import { EMPTY_CHANNEL_PREFS, withDefaultChannels, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import type { ChatItem } from "../core/protocol";
-import { channelFor, channelSlug, charactersOf, customColor, itemKey, keyCharacter, partnersOf, railChannels, subRows } from "./channels";
+import { channelFor, channelSlug, charactersOf, customColor, itemKey, keyCharacter, partnersOf, railChannels, showsChatTags, subRows } from "./channels";
 
 function msg(over: Partial<ChatItem>): ChatItem {
   return { id: Math.random().toString(), ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
@@ -108,6 +108,20 @@ describe("subRows", () => {
 
   it("shows the chat type and partners of a channel with one type and tells", () => {
     expect(subRows(mixed, ["A B@W"]).map((r) => r.kind)).toEqual(["all", "type", "partner"]);
+  });
+});
+
+describe("showsChatTags", () => {
+  it("tags the all view of a channel with more than one chat", () => {
+    expect(showsChatTags(social, subRows(social, [])[0])).toBe(true);
+    expect(showsChatTags(mixed, subRows(mixed, [])[0])).toBe(true);
+  });
+
+  it("skips single chat channels and single chat rows", () => {
+    expect(showsChatTags(fc, subRows(fc, [])[0])).toBe(false);
+    expect(showsChatTags(tells, subRows(tells, [])[0])).toBe(false);
+    expect(showsChatTags(social, subRows(social, [])[1])).toBe(false);
+    expect(showsChatTags(mixed, subRows(mixed, ["A B@W"])[2])).toBe(false);
   });
 });
 

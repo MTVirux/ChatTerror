@@ -78,6 +78,11 @@ export function subRows(custom: CustomChannel, partners: string[]): SubRow[] {
   return rows;
 }
 
+// Only a channel's "all" view mixes chats, so only there does each message need its chat named.
+export function showsChatTags(custom: CustomChannel | null, row: SubRow | null): boolean {
+  return !!custom && row?.kind === "all" && custom.channels.length > 1;
+}
+
 // The logged-in character first, then the rest by name. items adds characters only seen in that client's messages.
 export function charactersOf(account: AccountView, items: ChatItem[] = []): string[] {
   const { seeded, custom } = account.state.channelPrefs;

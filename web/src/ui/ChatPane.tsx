@@ -1,7 +1,7 @@
 import { useMemo } from "preact/hooks";
 import type { AccountView, FeedItem } from "../core/accounts";
 import { channelIncludes, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
-import { customColor, itemKey, type SubRow } from "./channels";
+import { customColor, itemKey, showsChatTags, type SubRow } from "./channels";
 import { Composer, composerTab } from "./Composer";
 import { channelColor, STATUS_LABELS } from "./format";
 import { ChatBubbleIcon, MenuIcon } from "./icons";
@@ -62,6 +62,7 @@ export function ChatPane({ account, prefs, custom, row, items, unreadCount, send
         viewId={viewId}
         items={visible}
         unreadCount={unreadCount}
+        chatTags={showsChatTags(custom, row)}
         pending={visiblePending}
         accountOf={(id) => (id === account.deviceId ? account : undefined)}
         onRetry={(p) => void sends.retry(p)}

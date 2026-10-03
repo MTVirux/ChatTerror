@@ -1,16 +1,18 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { AccountView, FeedItem } from "../core/accounts";
 import { feedKey } from "./feed";
-import { channelLabel, timeOfDay } from "./format";
+import type { ChatChannel } from "../core/protocol";
+import { channelColor, channelLabel, timeOfDay } from "./format";
 import { initials, senderColor } from "./identity";
 import { buildRows, incomingAfter, type Row } from "./messages";
 import type { PendingSend } from "./pending";
 import { Portrait } from "./Portrait";
 
-export function MessageList({ viewId, items, unreadCount, pending, accountOf, onRetry, onDismiss }: {
+export function MessageList({ viewId, items, unreadCount, chatTags, pending, accountOf, onRetry, onDismiss }: {
   viewId: string;
   items: FeedItem[];
   unreadCount: number;
+  chatTags: boolean;
   pending: PendingSend[];
   accountOf: (deviceId: string) => AccountView | undefined;
   onRetry: (p: PendingSend) => void;
@@ -67,7 +69,7 @@ export function MessageList({ viewId, items, unreadCount, pending, accountOf, on
             <p class="hint">New chat from the game shows up here while the plugin is running.</p>
           </div>
         )}
-        {rows.map((row) => <MessageRow key={feedKey(row.item)} row={row} account={accountOf(row.item.deviceId)} />)}
+        {rows.map((row) => <MessageRow key={feedKey(row.item)} row={row} account={accountOf(row.item.deviceId)} chatTag={chatTags} />)}
         {pending.map((p) => {
           const account = accountOf(p.deviceId);
           return (
@@ -76,6 +78,7 @@ export function MessageList({ viewId, items, unreadCount, pending, accountOf, on
               send={p}
               character={account?.character ?? account?.label ?? ""}
               characterWorld={account?.characterWorld}
+              chatTag={chatTags}
               onRetry={onRetry}
               onDismiss={onDismiss}
             />
@@ -96,12 +99,16 @@ function Avatar({ name, world }: { name: string; world?: string }) {
   );
 }
 
+function ChatTag({ channel }: { channel: ChatChannel }) {
+  return <span class="chat-tag" style={{ "--c": channelColor(channel) }}>{channelLabel(channel)}</span>;
+}
+
 // The account only knows the world of the character it's logged in as.
 function ownWorld(account: AccountView | undefined, character: string): string | undefined {
   return account?.character === character ? account.characterWorld : undefined;
 }
 
-function MessageRow({ row, account }: { row: Row; account?: AccountView }) {
+function MessageRow({ row, account, chatTag }: { row: Row; account?: AccountView; chatTag: boolean }) {
   const { item } = row;
   const time = <time class="time" dateTime={new Date(item.ts).toISOString()}>{timeOfDay(item.ts)}</time>;
   // System lines like echo, errors or sales have no sender.
@@ -121,6 +128,7 @@ function MessageRow({ row, account }: { row: Row; account?: AccountView }) {
                 {item.channel === "tell" && item.outgoing ? `to ${name}` : name}
                 {world && <span class="world">{world}</span>}
               </span>
+              {chatTag && item.sender && <ChatTag channel={item.channel} />}
               {time}
             </div>
             <p class="msg-text">{item.text}</p>
@@ -135,10 +143,11 @@ function MessageRow({ row, account }: { row: Row; account?: AccountView }) {
   );
 }
 
-function PendingRow({ send, character, characterWorld, onRetry, onDismiss }: {
+function PendingRow({ send, character, characterWorld, chatTag, onRetry, onDismiss }: {
   send: PendingSend;
   character: string;
   characterWorld?: string;
+  chatTag: boolean;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
@@ -148,6 +157,7 @@ function PendingRow({ send, character, characterWorld, onRetry, onDismiss }: {
       <div class="msg-body">
         <div class="msg-head">
           <span class="sender own">{send.target ? `to ${send.target.split("@")[0]}` : character}</span>
+          {chatTag && <ChatTag channel={send.channel} />}
           <span class="time">{send.error ? "Not sent" : "Sending..."}</span>
         </div>
         <p class="msg-text">{send.text}</p>
