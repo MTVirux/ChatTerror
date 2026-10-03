@@ -236,6 +236,35 @@ public class FriendEndpointTests
     }
 
     [Fact]
+    public async Task Profile_NotifiesTheRecipientsPlugin()
+    {
+        using var app = new RelayApp();
+        var a = await app.RegisterInstallAsync();
+        var b = await app.RegisterInstallAsync();
+        await app.PairFriendsAsync(a, b);
+        await using var pluginB = await app.ConnectAsync(b.InstallToken);
+        await pluginB.BarrierAsync();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await app.Client(a.InstallToken).PutAsJsonAsync($"/api/friends/{b.InstallId}/profile", new { envelope = "forB" })).StatusCode);
+
+        await pluginB.ReceiveAsync<FriendsChangedFrame>();
+    }
+
+    [Fact]
+    public async Task RemoveFriend_RefusesOwnInstall()
+    {
+        using var app = new RelayApp();
+        var a = await app.RegisterInstallAsync();
+        var store = app.Services.GetRequiredService<RelayStore>();
+        store.EnqueueTell("copy", a.InstallId, TellTargets.Plugin, a.InstallId, "key", "env");
+
+        var response = await app.Client(a.InstallToken).DeleteAsync($"/api/friends/{a.InstallId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(["copy"], store.PendingTells(a.InstallId, TellTargets.Plugin).Select(tell => tell.Id));
+    }
+
+    [Fact]
     public async Task RemoveFriend_DropsProfilesAndQueuedTellsBothWays()
     {
         using var app = new RelayApp();

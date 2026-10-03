@@ -113,7 +113,7 @@ public static class FriendEndpoints
             return Results.Ok(new FriendsResponse(friends, invites));
         }).RequireRateLimiting(RequestLimits.TellPolicy);
 
-        app.MapPut("/api/friends/{installId}/profile", (string installId, FriendProfileRequest? body, HttpContext context, RelayStore store) =>
+        app.MapPut("/api/friends/{installId}/profile", (string installId, FriendProfileRequest? body, HttpContext context, RelayStore store, ConnectionRegistry registry) =>
         {
             if (AuthHelpers.Install(context, store) is not { } install)
                 return AuthHelpers.Unauthorized();
@@ -123,6 +123,7 @@ public static class FriendEndpoints
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidEnvelope");
 
             store.SetFriendProfile(install.Id, installId, body!.Envelope!);
+            registry.Plugin(installId)?.Send(new FriendsChangedFrame());
             return Results.NoContent();
         }).RequireRateLimiting(RequestLimits.TellPolicy);
 
@@ -130,6 +131,8 @@ public static class FriendEndpoints
         {
             if (AuthHelpers.Install(context, store) is not { } install)
                 return AuthHelpers.Unauthorized();
+            if (installId == install.Id)
+                return AuthHelpers.NotFound();
 
             if (store.RemoveFriend(install.Id, installId))
                 registry.Plugin(installId)?.Send(new FriendsChangedFrame());

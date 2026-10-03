@@ -29,7 +29,8 @@ public static class TellEndpoints
 
         app.MapGet("/api/tells/bundles/{installId}", (string installId, HttpContext context, RelayStore store) =>
         {
-            var callerInstall = AuthHelpers.Install(context, store)?.Id ?? AuthHelpers.Device(context, store)?.InstallId;
+            var callerInstall = AuthHelpers.Install(context, store)?.Id
+                ?? (AuthHelpers.Device(context, store) is { Status: DeviceStatus.Active } device ? device.InstallId : null);
             if (callerInstall == null)
                 return AuthHelpers.Unauthorized();
 

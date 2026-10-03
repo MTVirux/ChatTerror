@@ -37,6 +37,21 @@ public class TellEndpointTests
     }
 
     [Fact]
+    public async Task GetBundle_NeedsAnApprovedDevice()
+    {
+        using var app = new RelayApp();
+        using var key = P256.Generate();
+        var a = await app.RegisterInstallAsync(key);
+        await using var plugin = await app.ConnectAsync(a.InstallToken);
+        await app.PutTellBundleAsync(a.InstallToken, key);
+        var pending = await app.PairDeviceAsync(a, plugin, approve: false);
+
+        var response = await app.Client(pending.DeviceToken).GetAsync("/api/tells/bundles/self");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetBundle_ByInstallIdAndSelf()
     {
         using var app = new RelayApp();
