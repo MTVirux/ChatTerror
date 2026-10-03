@@ -1,5 +1,6 @@
 import type { AccountManager } from "../core/accounts";
-import { itemKey } from "./channels";
+import { channelIncludes, isItemMuted, type ChannelPrefs } from "../core/channelPrefs";
+import { itemKey, keyCharacter } from "./channels";
 
 export interface UnreadSummary {
   unread: boolean;
@@ -7,11 +8,11 @@ export interface UnreadSummary {
 }
 
 // includes tells which message keys the open channel shows.
-export type OpenChannel = { deviceId: string; includes: (key: string) => boolean } | "home" | null;
+export type OpenChannel = { deviceId: string; includes: (key: string) => boolean } | null;
 
 export interface UnreadTracker {
   count(deviceId: string, includes: (key: string) => boolean): number;
-  summary(deviceId: string): UnreadSummary;
+  summary(deviceId: string, character?: string): UnreadSummary;
   total(deviceIds: string[]): UnreadSummary;
   setOpen(open: OpenChannel): void;
   subscribe(cb: () => void): () => void;
@@ -33,11 +34,12 @@ export function createUnreadTracker(
     return m;
   };
   const notify = () => listeners.forEach((l) => l());
-  const summarize = (deviceId: string): UnreadSummary => {
+  const summarize = (deviceId: string, character?: string): UnreadSummary => {
     let unread = false;
     let tells = 0;
     for (const [key, n] of counts.get(deviceId) ?? []) {
       if (n <= 0 || isMuted(deviceId, key)) continue;
+      if (character !== undefined && keyCharacter(key) !== character) continue;
       unread = true;
       if (key.startsWith("t|")) tells += n;
     }
@@ -45,7 +47,6 @@ export function createUnreadTracker(
   };
 
   const off = manager.onMessages((items) => {
-    if (open === "home") return;
     let changed = false;
     for (const item of items) {
       if (item.outgoing) continue;
@@ -77,7 +78,7 @@ export function createUnreadTracker(
     },
     setOpen(next) {
       open = next;
-      if (!next || next === "home") return;
+      if (!next) return;
       let changed = false;
       for (const [key, n] of counts.get(next.deviceId) ?? []) {
         if (n <= 0 || !next.includes(key)) continue;
@@ -95,4 +96,10 @@ export function createUnreadTracker(
       listeners.clear();
     },
   };
+}
+
+// Unread in the view under key, leaving out muted messages; tells is the tell part of count.
+export function viewUnread(tracker: Pick<UnreadTracker, "count">, deviceId: string, prefs: ChannelPrefs, key: string): { count: number; tells: number } {
+  const shows = (k: string) => channelIncludes(prefs, key, k) && !isItemMuted(prefs, k);
+  return { count: tracker.count(deviceId, shows), tells: tracker.count(deviceId, (k) => k.startsWith("t|") && shows(k)) };
 }
