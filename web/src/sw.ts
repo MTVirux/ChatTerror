@@ -1,6 +1,8 @@
 import { notificationTitle, routePush, type RoutedPush } from "./core/pushRoute";
 import { FETCHED_AT_HEADER, isCacheable, isFresh } from "./core/portraitCache";
 import { referencedAssets, staleAssets } from "./core/shell";
+import { itemKey } from "./ui/channels";
+import { accountLink } from "./ui/place";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -99,7 +101,7 @@ async function handlePush(data: PushMessageData | null) {
     body: routed.item.text,
     tag: routed.deviceId + routed.item.channel + routed.item.sender,
     icon: "/icon-192.png",
-    data: { deviceId: routed.deviceId },
+    data: { deviceId: routed.deviceId, chat: itemKey(routed.item) },
   });
 }
 
@@ -107,19 +109,19 @@ self.addEventListener("push", (event) => {
   event.waitUntil(handlePush(event.data));
 });
 
-async function focusApp(deviceId: string | undefined) {
+async function focusApp(deviceId?: string, chat?: string) {
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   const existing = windows[0];
   if (existing) {
-    if (deviceId) existing.postMessage({ type: "openAccount", deviceId });
+    if (deviceId) existing.postMessage({ type: "openAccount", deviceId, chat });
     await existing.focus();
   } else {
-    await self.clients.openWindow(deviceId ? `/#account=${encodeURIComponent(deviceId)}` : "/");
+    await self.clients.openWindow(deviceId ? accountLink(deviceId, chat) : "/");
   }
 }
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const deviceId = (event.notification.data as { deviceId?: string } | null)?.deviceId;
-  event.waitUntil(focusApp(deviceId));
+  const data = event.notification.data as { deviceId?: string; chat?: string } | null;
+  event.waitUntil(focusApp(data?.deviceId, data?.chat));
 });
