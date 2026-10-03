@@ -12,15 +12,15 @@ function same(a: string, b: string): boolean {
 }
 
 // The sender's name comes from our own friend list, the sealed body could claim anything. The sender also sets ts,
-// which must not pass our clock or it would move the sync point.
-export function tellToItem(body: TellBody, from: string, contacts: TellContact[], now = Date.now()): ChatItem | null {
+// which must not pass our clock or it would move the sync point. The caller has already checked the sender's install.
+export function tellToItem(body: TellBody, contacts: TellContact[], own: boolean, now = Date.now()): ChatItem | null {
   const ts = Math.min(body.ts, now);
   if (ts < now - TELL_TTL_MS) return null;
   let item: ChatItem;
-  if (contacts.some((c) => c.characterHash === from)) {
+  if (own) {
     item = { id: body.id, ts, channel: "tell", sender: body.toName, senderWorld: body.toWorld, text: body.text, character: body.fromName, outgoing: true };
   } else {
-    const contact = contacts.find((c) => c.hash === from && c.characterHash === body.toHash);
+    const contact = contacts.find((c) => c.hash === body.fromHash && c.characterHash === body.toHash);
     if (!contact) return null;
     item = { id: body.id, ts, channel: "tell", sender: contact.name, senderWorld: contact.world, text: body.text, character: contact.character, outgoing: false };
   }
@@ -31,10 +31,6 @@ export function tellToItem(body: TellBody, from: string, contacts: TellContact[]
 export function findContact(contacts: TellContact[], target: string, character: string | undefined): TellContact | undefined {
   const [name = "", world = ""] = target.split("@");
   return contacts.find((c) => c.character === character && same(c.name, name) && same(c.world, world));
-}
-
-export function pinFor(pins: Record<string, string>, hash: string): string | undefined {
-  return Object.hasOwn(pins, hash) ? pins[hash] : undefined;
 }
 
 export async function buildCopies(body: TellBody, recipient: TellBundle, own: TellBundle | null, ownTarget: string): Promise<TellCopy[]> {
@@ -55,24 +51,19 @@ export async function buildCopies(body: TellBody, recipient: TellBundle, own: Te
   return copies;
 }
 
-// Shared by the session and the service worker. Null when the tell can't be opened, the sender is unknown, or the
-// sender's character now sends from another install than the one trusted for it.
+// Shared by the session and the service worker. Null when the tell can't be opened or doesn't come from the paired
+// install and key of a contact for that exact pair of characters. Copies of our own tells come from our plugin's key.
 export async function openTellFrame(store: AccountStore, from: string, id: string, envelope: string, fromKey: string): Promise<ChatItem | null> {
-  const [pairing, key, settings, pins] = await Promise.all([store.getPairing(), store.getMeta("tellKey"), store.getMeta("lastSettings"), store.getMeta("tellPins")]);
+  const [pairing, key, settings] = await Promise.all([store.getPairing(), store.getMeta("tellKey"), store.getMeta("lastSettings")]);
   const contacts = settings?.contacts ?? [];
-  const own = contacts.some((c) => c.characterHash === from);
-  // Our own characters only ever send from our own install.
-  if (own && fromKey !== pairing?.pluginPublicKey) return null;
-  const trusted = contacts.find((c) => c.hash === from)?.key ?? pinFor(pins, from);
-  if (!own && trusted !== undefined && trusted !== fromKey) return null;
   if (!key) return null;
   try {
     const plain = await openTell(key.privateKey, decode(key.publicKey), decode(envelope));
     const body = parseTellBody(JSON.parse(new TextDecoder().decode(plain)));
-    if (!body || body.id !== id || body.fromHash !== from) return null;
-    const item = tellToItem(body, from, contacts);
-    if (item && !own && trusted === undefined) await store.setMeta("tellPins", { ...pins, [from]: fromKey });
-    return item;
+    if (!body || body.id !== id) return null;
+    const own = fromKey === pairing?.pluginPublicKey && contacts.some((c) => c.characterHash === body.fromHash);
+    const known = contacts.some((c) => c.installId === from && c.key === fromKey && c.hash === body.fromHash && c.characterHash === body.toHash);
+    return own || known ? tellToItem(body, contacts, own) : null;
   } catch {
     return null;
   }

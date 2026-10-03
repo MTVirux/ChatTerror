@@ -25,8 +25,6 @@ export interface Meta {
   pushEnabled: boolean;
   // Key for relayed tells, separate from the pairing key whose private half is not kept.
   tellKey: { privateKey: CryptoKey; publicKey: string } | null;
-  // Install key first seen for each friend's character hash.
-  tellPins: Record<string, string>;
   // Newest tell bundle issuedAt accepted per install key, so the relay can't hand out an older bundle.
   tellBundles: Record<string, number>;
 }
@@ -45,7 +43,6 @@ const META_DEFAULTS: Meta = {
   approved: false,
   pushEnabled: false,
   tellKey: null,
-  tellPins: {},
   tellBundles: {},
 };
 
@@ -140,6 +137,8 @@ export interface AccountStore {
   setPairing(pairing: Pairing): Promise<void>;
   getMeta<K extends keyof Meta>(key: K): Promise<Meta[K]>;
   setMeta<K extends keyof Meta>(key: K, value: Meta[K]): Promise<void>;
+  // Also takes keys no longer in Meta, to clean up after older versions.
+  deleteMeta(key: string): Promise<void>;
   addMessages(items: ChatItem[], limit: number): Promise<ChatItem[]>;
   trimMessages(limit: number): Promise<void>;
   loadMessages(limit: number): Promise<ChatItem[]>;
@@ -169,6 +168,9 @@ export function openAccountStore(dbName: string): AccountStore {
     },
     setMeta: (key, value) => run("meta", "readwrite", async (tx) => {
       await result(tx.objectStore("meta").put(value, key));
+    }),
+    deleteMeta: (key) => run("meta", "readwrite", async (tx) => {
+      await result(tx.objectStore("meta").delete(key));
     }),
     addMessages: (items, limit) => run("messages", "readwrite", async (tx) => {
       const store = tx.objectStore("messages");

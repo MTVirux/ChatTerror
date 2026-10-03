@@ -108,7 +108,7 @@ describe("notificationTitle", () => {
 });
 
 describe("routePush for relayed tells", () => {
-  const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+  const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob", installId: "bob-install", key: "bob-key" };
 
   async function tellAccount(deviceId: string) {
     const store = openAccountStore(`chatterror-${deviceId}`);
@@ -119,7 +119,7 @@ describe("routePush for relayed tells", () => {
     const push = async (ts = Date.now()) => {
       const body = { id: "t1", fromHash: "bob", fromName: "Bob Smith", fromWorld: "Lich", toHash: "me", toName: "Me", toWorld: "Lich", text: "hi", ts };
       const envelope = encode(await sealTell(decode(publicKey), new TextEncoder().encode(JSON.stringify(body))));
-      return { t: "tell", i: "t1", f: "bob", e: envelope, k: "bob-install", d: deviceId };
+      return { t: "tell", i: "t1", f: "bob-install", e: envelope, k: "bob-key", d: deviceId };
     };
     return { store, push };
   }
@@ -161,6 +161,6 @@ describe("routePush for relayed tells", () => {
 
   it("returns null for a tell it can't open", async () => {
     await seed("b");
-    expect(await routePush({ t: "tell", i: "t1", f: "bob", e: "garbage", k: "bob-install", d: "b" })).toBeNull();
+    expect(await routePush({ t: "tell", i: "t1", f: "bob-install", e: "garbage", k: "bob-key", d: "b" })).toBeNull();
   });
 });

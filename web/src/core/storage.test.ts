@@ -55,6 +55,12 @@ describe("storage", () => {
     expect(await store.getMeta("mutedChannels")).toEqual(["say", "yell"]);
   });
 
+  it("deletes a meta value no longer in use", async () => {
+    await store.setMeta("lastSeenWs", 42);
+    await store.deleteMeta("lastSeenWs");
+    expect(await store.getMeta("lastSeenWs")).toBe(0);
+  });
+
   it("stores the pairing with a CryptoKey and wipes everything", async () => {
     const aesKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
     await store.setPairing({ deviceId: "dev", token: "d.dev.s", aesKey, pluginPublicKey: "p", devicePublicKey: "d", fingerprint: "123 456" });
