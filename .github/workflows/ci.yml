@@ -11,7 +11,33 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      unit: ${{ steps.filter.outputs.unit }}
+      integration: ${{ steps.filter.outputs.integration }}
+      web: ${{ steps.filter.outputs.web }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        run: bash .github/changes.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE_REF: ${{ github.base_ref }}
+          REPO: ${{ github.repository }}
+
   unit:
+    needs: changes
+    if: needs.changes.outputs.unit == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -36,6 +62,8 @@ jobs:
       - run: dotnet test tests/ChatTerror.Plugin.Tests --no-build
 
   integration:
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,6 +75,8 @@ jobs:
       - run: dotnet test tests/ChatTerror.Server.Tests
 
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -63,6 +93,8 @@ jobs:
       - run: npm run typecheck
 
   docker:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
