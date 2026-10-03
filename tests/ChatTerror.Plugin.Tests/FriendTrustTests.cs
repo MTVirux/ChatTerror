@@ -113,15 +113,6 @@ public class FriendTrustTests
     }
 
     [Fact]
-    public void Claimants_FilterByMyScope()
-    {
-        var friends = new[] { BobInstall(myScope: AltHash), CidInstall(BobHash) };
-
-        Assert.Equal(["cid-install"], FriendTrust.Claimants(friends, MainHash, BobHash).Select(f => f.InstallId));
-        Assert.Equal(2, FriendTrust.Claimants(friends, AltHash, BobHash).Count);
-    }
-
-    [Fact]
     public void HasConflict_FlagsBothFriends()
     {
         var friends = new[] { BobInstall(), CidInstall(BobHash), new PairedFriend { InstallId = "x", Characters = [CidHash] } };
@@ -263,6 +254,33 @@ public class FriendTrustTests
     }
 
     [Fact]
+    public void DecideInvite_AcceptsOnlyVerifiedClaimsOnKnownCodes()
+    {
+        using var a = P256.Generate();
+        using var b = P256.Generate();
+        using var swapped = P256.Generate();
+        var secret = FriendCode.NewSecret();
+        var claim = new FriendClaim(Key(b), AltHash, FriendProof.ClaimMac(secret, Key(a), MainHash, Key(b), AltHash));
+
+        Assert.Equal(InviteAction.Accept, FriendTrust.DecideInvite(true, secret, MainHash, true, claim, Key(b), Key(a)));
+        Assert.Equal(InviteAction.Wait, FriendTrust.DecideInvite(true, secret, MainHash, false, null, null, Key(a)));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(false, null, null, false, null, null, Key(a)));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(false, null, null, true, claim, Key(b), Key(a)));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(true, null, MainHash, true, claim, Key(b), Key(a)));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(true, secret, MainHash, true, null, Key(b), Key(a)));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(true, secret, MainHash, true, claim, Key(swapped), Key(a)));
+        Assert.Equal(InviteAction.Delete, FriendTrust.DecideInvite(true, secret, FriendScopes.Account, true, claim, Key(b), Key(a)));
+    }
+
+    [Fact]
+    public void Migration_DeletesTheBundleOnlyForOldConfigsWithTellsOff()
+    {
+        Assert.True(ConfigMigration.NeedsBundleDelete(2, tellsEnabled: false));
+        Assert.False(ConfigMigration.NeedsBundleDelete(2, tellsEnabled: true));
+        Assert.False(ConfigMigration.NeedsBundleDelete(ConfigMigration.CurrentVersion, tellsEnabled: false));
+    }
+
+    [Fact]
     public void ParseRedeem_ReportsBadInputInsteadOfThrowing()
     {
         Assert.Equal("Enter the full 24 character code.", FriendTrust.ParseRedeem("ABCD-EFGH", FriendScopes.Account).Error);
@@ -300,6 +318,9 @@ public class FriendTrustTests
         Assert.Equal(("bob-install", "bob-key", BobHash, AltHash), (bob.InstallId, bob.PublicKey, bob.TheirScope, bob.MyScope));
         Assert.Equal(["i2"], result.Pending.Select(p => p.InviteId));
         Assert.False(result.PendingExpired);
+        Assert.True(result.Promoted);
+        // Cid's pending entry is still waiting, its listed key just doesn't match yet.
+        Assert.Equal(["cid-install"], result.Unknown);
     }
 
     [Fact]
@@ -313,6 +334,8 @@ public class FriendTrustTests
         Assert.Equal(["bob-install"], result.Paired.Select(f => f.InstallId));
         Assert.Same(paired[0], result.Paired[0]);
         Assert.Single(result.Pending);
+        Assert.False(result.Promoted);
+        Assert.Equal(["unknown"], result.Unknown);
 
         var expired = FriendTrust.SyncFriends(paired, pending, [], now: 1001 + day);
         Assert.Empty(expired.Pending);

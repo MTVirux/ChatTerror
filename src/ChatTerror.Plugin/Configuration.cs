@@ -9,7 +9,7 @@ namespace ChatTerror.Plugin;
 
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = ConfigMigration.CurrentVersion;
 
     public bool Enabled { get; set; } = true;
 
@@ -62,11 +62,10 @@ public sealed class Configuration : IPluginConfiguration
     // could not be decrypted, e.g. a config copied from another machine or Windows user.
     public bool LoadInstallToken()
     {
-        // Version 2 trusted friends' keys on first use, those pins and registrations are not carried over. Its tell
-        // switch only unregistered characters, so a bundle may still be up while tells are off.
-        if (Version < 3 && !TellsEnabled)
+        // Version 2 trusted friends' keys on first use, those pins and registrations are not carried over.
+        if (ConfigMigration.NeedsBundleDelete(Version, TellsEnabled))
             TellBundleDeletePending = true;
-        Version = 3;
+        Version = ConfigMigration.CurrentVersion;
         if (plainInstallToken != null || InstallTokenProtected == null)
         {
             InstallToken = plainInstallToken;

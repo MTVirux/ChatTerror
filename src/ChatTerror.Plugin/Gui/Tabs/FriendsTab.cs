@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using ChatTerror.Plugin.Logic;
 using ChatTerror.Plugin.Services;
 using ChatTerror.Protocol;
@@ -17,6 +18,7 @@ public sealed class FriendsTab(Configuration config, FriendDirectory friends) : 
     private string redeemScope = FriendScopes.Account;
     private string codeInput = "";
     private string? confirmRemove;
+    private (string Code, Task<string> Result)? redeeming;
 
     // Codes are hidden by default for streams and screenshots.
     private string? revealedInvite;
@@ -155,11 +157,15 @@ public sealed class FriendsTab(Configuration config, FriendDirectory friends) : 
         using (ImRaii.Disabled(friends.Busy || config.InstallToken == null || codeInput.Trim().Length == 0))
         {
             if (ImGui.Button("Pair"))
-            {
-                var code = codeInput;
+                redeeming = (codeInput, friends.Redeem(codeInput, redeemScope));
+        }
+
+        // Kept on a failure so a typo doesn't mean typing all 24 characters again.
+        if (redeeming is { Result.IsCompleted: true } done)
+        {
+            redeeming = null;
+            if (done.Result.Result == FriendTrust.CodeSent && codeInput == done.Code)
                 codeInput = "";
-                _ = friends.Redeem(code, redeemScope);
-            }
         }
 
         if (config.PendingFriends.Count > 0)

@@ -34,21 +34,21 @@ public sealed record FriendRoute(TellCharacter From, TellFriend To, PairedFriend
 
 public enum RouteError { None, NotPaired, Conflict }
 
-public sealed record FriendSync(List<PairedFriend> Paired, List<PendingFriend> Pending, bool PendingExpired);
+// Unknown are friendships the relay lists that we have no record of, e.g. after an accept whose response was lost.
+public sealed record FriendSync(List<PairedFriend> Paired, List<PendingFriend> Pending, bool PendingExpired, bool Promoted, List<string> Unknown);
+
+public enum InviteAction { Wait, Accept, Delete }
 
 public static class FriendTrust
 {
     public const string BadCode = "Enter the full 24 character code.";
     public const string BadScope = "Pick which of your characters to share.";
     public const string InvalidCode = "Invalid or expired code.";
+    public const string CodeSent = "Code sent. You are paired once your friend's game confirms it.";
 
     // Characters of the friend that we may talk to: their profile, inside their scope.
     public static IEnumerable<string> Reachable(PairedFriend friend) =>
         friend.Characters.Where(h => FriendScopes.Includes(friend.TheirScope, h)).Distinct();
-
-    // Friends whose reachable characters include hash and whose MyScope includes ownHash.
-    public static List<PairedFriend> Claimants(IReadOnlyList<PairedFriend> friends, string ownHash, string hash) =>
-        friends.Where(f => FriendScopes.Includes(f.MyScope, ownHash) && Reachable(f).Contains(hash)).ToList();
 
     // The one friend a character of theirs belongs to, ignoring our scopes so a conflict is a conflict from every alt.
     // A friend listing one of our own characters never gets it.
@@ -180,6 +180,18 @@ public static class FriendTrust
         }
     }
 
+    // What to do with one of our invites the relay lists. An invite we have no secret for can never be verified.
+    public static InviteAction DecideInvite(bool known, string? secret, string? ownScope, bool claimed, FriendClaim? claim, string? relayClaimKey, string ownKey)
+    {
+        if (!known)
+            return InviteAction.Delete;
+        if (!claimed)
+            return InviteAction.Wait;
+        return secret != null && ownScope != null && relayClaimKey != null && VerifyClaim(claim, relayClaimKey, secret, ownKey, ownScope)
+            ? InviteAction.Accept
+            : InviteAction.Delete;
+    }
+
     public static string ClaimError(int status, string? code) => (status, code) switch
     {
         (404, _) => InvalidCode,
@@ -198,19 +210,22 @@ public static class FriendTrust
         var result = paired.Where(f => listed.Any(l => l.InstallId == f.InstallId)).ToList();
         var remaining = new List<PendingFriend>();
         var expired = false;
+        var promoted = false;
         foreach (var entry in pending)
         {
             if (listed.Any(l => l.InstallId == entry.InstallId && l.PublicKey == entry.PublicKey))
             {
                 result.RemoveAll(f => f.InstallId == entry.InstallId);
                 result.Add(new PairedFriend { InstallId = entry.InstallId, PublicKey = entry.PublicKey, TheirScope = entry.TheirScope, MyScope = entry.MyScope });
+                promoted = true;
             }
             else if (now - entry.CreatedAt > (long)Limits.FriendInviteTtl.TotalMilliseconds)
                 expired = true;
             else
                 remaining.Add(entry);
         }
-        return new FriendSync(result, remaining, expired);
+        var unknown = listed.Select(l => l.InstallId).Where(id => result.All(f => f.InstallId != id)).Distinct().ToList();
+        return new FriendSync(result, remaining, expired, promoted, unknown);
     }
 
     public static string MyScopeLabel(IReadOnlyList<TellCharacter> characters, string scope) =>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using ChatTerror.Plugin.Logic;
@@ -121,7 +122,7 @@ public sealed class FriendDirectory : IDisposable
         var (parsed, error) = FriendTrust.ParseRedeem(code, myScope);
         var result = parsed == null
             ? error!
-            : await Exclusive(token => Claim(token, parsed, myScope), ex => $"Could not reach the relay: {ex.Message}");
+            : await Exclusive(token => Claim(token, parsed, myScope), ex => $"Could not pair: {ex.Message}");
         status = result;
         return result;
     }
@@ -134,8 +135,17 @@ public sealed class FriendDirectory : IDisposable
         if (invite.InstallPublicKey == keys.PublicKey)
             return FriendTrust.ClaimError(409, "selfInvite");
 
-        var mac = FriendProof.ClaimMac(code.Secret, invite.InstallPublicKey, invite.Scope, keys.PublicKey, myScope);
-        var sealedClaim = FriendClaims.Seal(invite.InstallPublicKey, new FriendClaim(keys.PublicKey, myScope, mac));
+        string sealedClaim;
+        try
+        {
+            var mac = FriendProof.ClaimMac(code.Secret, invite.InstallPublicKey, invite.Scope, keys.PublicKey, myScope);
+            sealedClaim = FriendClaims.Seal(invite.InstallPublicKey, new FriendClaim(keys.PublicKey, myScope, mac));
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
+        {
+            return FriendTrust.InvalidCode;
+        }
+
         try
         {
             await api.ClaimFriendInvite(token, code.Id, sealedClaim);
@@ -156,7 +166,7 @@ public sealed class FriendDirectory : IDisposable
             config.PendingFriends.Add(pending);
             saveConfig();
         });
-        return "Code sent. You are paired once your friend's game confirms it.";
+        return FriendTrust.CodeSent;
     }
 
     public Task CancelInvite(string id) =>
@@ -195,11 +205,15 @@ public sealed class FriendDirectory : IDisposable
     {
         var list = await api.ListFriends(token);
         var listed = list.Friends.Select(f => (f.InstallId, f.PublicKey)).ToList();
+        var unknown = new List<string>();
         var friendKeys = await OnFramework(() =>
         {
             var sync = FriendTrust.SyncFriends(config.PairedFriends, config.PendingFriends, listed, Now());
-            if (sync.PendingExpired)
+            if (sync.Promoted)
+                status = "Paired with a new friend.";
+            else if (sync.PendingExpired)
                 status = "Your friend code was not accepted.";
+            unknown = sync.Unknown;
             config.PairedFriends = sync.Paired;
             config.PendingFriends = sync.Pending;
             var ids = list.Invites.Select(i => i.Id).ToHashSet();
@@ -228,27 +242,42 @@ public sealed class FriendDirectory : IDisposable
             hub.BroadcastSettings();
         });
 
+        // Accept, refresh and claims are serialized, so no pairing of ours can be half done here.
+        foreach (var installId in unknown)
+            await Try("Removing an unknown friendship", () => api.RemoveFriend(token, installId));
+
         foreach (var invite in list.Invites)
-            await HandleInvite(token, invite);
+            await Try("Handling a friend code", () => HandleInvite(token, invite));
 
         await UploadProfiles(token, await OnFramework(DueProfiles));
+    }
+
+    private async Task Try(string what, Func<Task> work)
+    {
+        try
+        {
+            await work();
+        }
+        catch (Exception ex) when (ex is not ObjectDisposedException)
+        {
+            log.Warning($"{what} failed: {ex.Message}");
+        }
     }
 
     // Accepts a verified claim on one of our codes and cancels codes with a bad claim or that we no longer know.
     private async Task HandleInvite(string token, RelayFriendInvite invite)
     {
         var own = await OnFramework(() => config.FriendInvites.FirstOrDefault(i => i.Id == invite.Id));
-        if (own != null && invite.Claim == null)
-            return;
-
         var claim = invite.Claim == null ? null : FriendClaims.Open(keys.Key, invite.Claim.Sealed);
-        if (own?.Secret is not { } secret || invite.Claim == null
-            || !FriendTrust.VerifyClaim(claim, invite.Claim.PublicKey, secret, keys.PublicKey, own.Scope))
+        switch (FriendTrust.DecideInvite(own != null, own?.Secret, own?.Scope, invite.Claim != null, claim, invite.Claim?.PublicKey, keys.PublicKey))
         {
-            if (own != null)
-                status = "Someone used one of your friend codes but it did not check out, so the code was cancelled.";
-            await DeleteInvite(token, invite.Id);
-            return;
+            case InviteAction.Wait:
+                return;
+            case InviteAction.Delete:
+                if (own != null)
+                    status = "Someone used one of your friend codes but it did not check out, so the code was cancelled.";
+                await DeleteInvite(token, invite.Id);
+                return;
         }
 
         try
@@ -264,7 +293,7 @@ public sealed class FriendDirectory : IDisposable
             return;
         }
 
-        var friend = new PairedFriend { InstallId = invite.Claim.InstallId, PublicKey = claim!.InstallPublicKey, TheirScope = claim.Scope, MyScope = own.Scope };
+        var friend = new PairedFriend { InstallId = invite.Claim!.InstallId, PublicKey = claim!.InstallPublicKey, TheirScope = claim.Scope, MyScope = own!.Scope };
         await OnFramework(() =>
         {
             config.PairedFriends.RemoveAll(f => f.InstallId == friend.InstallId);
