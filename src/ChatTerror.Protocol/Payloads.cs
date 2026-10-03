@@ -35,9 +35,8 @@ public sealed record SettingsPayload(
 
 public sealed record TellKeyPayload(string PublicKey) : Payload;
 
-// A registered ChatTerror friend of one of the install's characters.
-// Key is the friend's install key the plugin trusts, phones follow it.
-public sealed record TellContact(string Character, string CharacterWorld, string CharacterHash, string Name, string World, string Hash, string? Key = null);
+// A routable character of a paired friend. Key is that friend's paired install key.
+public sealed record TellContact(string Character, string CharacterWorld, string CharacterHash, string Name, string World, string Hash, string InstallId, string Key);
 
 public sealed record HelloPayload(long SinceTs) : Payload;
 

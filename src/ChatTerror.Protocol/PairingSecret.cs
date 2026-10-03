@@ -7,12 +7,14 @@ namespace ChatTerror.Protocol;
 public static class PairingSecret
 {
     public const int Length = 8;
-    private const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    public const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
     public static string Generate() => new(RandomNumberGenerator.GetItems<char>(Alphabet, Length));
 
     // Accepts lowercase, hyphens, spaces and the Crockford look-alikes O, I and L.
-    public static string? Normalize(string input)
+    public static string? Normalize(string input) => NormalizeChars(input, Length);
+
+    public static string? NormalizeChars(string input, int length)
     {
         var chars = input.ToUpperInvariant()
             .Where(c => c != '-' && c != ' ')
@@ -24,7 +26,7 @@ public static class PairingSecret
             })
             .ToArray();
 
-        if (chars.Length != Length || chars.Any(c => !Alphabet.Contains(c)))
+        if (chars.Length != length || chars.Any(c => !Alphabet.Contains(c)))
             return null;
         return new string(chars);
     }
