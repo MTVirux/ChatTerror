@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -34,6 +35,8 @@ public sealed class DeviceHub : IDisposable
     private readonly HashSet<string> onlineDevices = new();
     private readonly PairingGate pairingGate = new();
     private readonly HelloThrottle helloThrottle = new();
+    // RunOnFrameworkThread does not keep order, and a device's messages must be opened in seq order.
+    private readonly ConcurrentQueue<Action> relayEvents = new();
     private bool seqDirty;
     private long lastSeqSaveAt;
     private long savedHistoryVersion;
@@ -179,10 +182,8 @@ public sealed class DeviceHub : IDisposable
     }
 
     private void OnStateChanged(RelayState state) =>
-        framework.RunOnFrameworkThread(() =>
+        relayEvents.Enqueue(() =>
         {
-            if (disposed)
-                return;
             if (state == RelayState.Connected)
             {
                 Connected?.Invoke();
@@ -194,7 +195,7 @@ public sealed class DeviceHub : IDisposable
         });
 
     private void OnFrameReceived(RelayFrame frame) =>
-        framework.RunOnFrameworkThread(() =>
+        relayEvents.Enqueue(() =>
         {
             try
             {
@@ -208,6 +209,9 @@ public sealed class DeviceHub : IDisposable
 
     private void OnUpdate(IFramework _)
     {
+        while (!disposed && relayEvents.TryDequeue(out var relayEvent))
+            relayEvent();
+
         SaveSeqIfDue();
         var now = Environment.TickCount64;
         foreach (var (deviceId, sinceTs) in helloThrottle.TakeDue(now))
