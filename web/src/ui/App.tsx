@@ -141,6 +141,7 @@ export function App({ manager }: { manager: AccountManager }) {
     }
     setPlace((current) => ({ deviceId, character: target?.character ?? (current?.deviceId === deviceId ? current.character : null) }));
     setAdding(false);
+    setPairingAgain(false);
     setNotified((n) => n + 1);
   }
 
