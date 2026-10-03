@@ -1,9 +1,11 @@
 import { notificationTitle, routePush, type RoutedPush } from "./core/pushRoute";
+import { FETCHED_AT_HEADER, isCacheable, isFresh } from "./core/portraitCache";
 import { referencedAssets, staleAssets } from "./core/shell";
 
 declare const self: ServiceWorkerGlobalScope;
 
 const SHELL_CACHE = "chatterror-shell-v1";
+const PORTRAIT_CACHE = "chatterror-portraits-v1";
 const SHELL_FILES = ["/", "/index.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 async function cacheShell() {
@@ -50,12 +52,32 @@ async function cacheFirst(request: Request): Promise<Response> {
   return response;
 }
 
+async function fetchPortrait(request: Request): Promise<Response> {
+  const response = await fetch(request);
+  if (!isCacheable(response.status)) return response;
+  const headers = new Headers(response.headers);
+  headers.set(FETCHED_AT_HEADER, String(Date.now()));
+  const stored = new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers });
+  await (await caches.open(PORTRAIT_CACHE)).put(request, stored.clone());
+  return stored;
+}
+
+// Serves portraits from the device and refreshes old ones in the background, so the relay is only asked when needed.
+async function portrait(event: FetchEvent): Promise<Response> {
+  const cached = await (await caches.open(PORTRAIT_CACHE)).match(event.request);
+  if (!cached) return fetchPortrait(event.request);
+  if (!isFresh(cached.status, Number(cached.headers.get(FETCHED_AT_HEADER)), Date.now()))
+    event.waitUntil(fetchPortrait(event.request).catch(() => undefined));
+  return cached;
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (request.mode === "navigate") event.respondWith(networkFirst(request));
   else if (url.pathname.startsWith("/assets/")) event.respondWith(cacheFirst(request));
+  else if (url.pathname === "/api/portrait") event.respondWith(portrait(event));
 });
 
 async function handlePush(data: PushMessageData | null) {
