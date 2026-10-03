@@ -13,6 +13,7 @@ import {
   togglePinned,
   withDefaultChannels,
   withDefaults,
+  withTells,
   type CustomChannel,
 } from "./channelPrefs";
 
@@ -120,5 +121,26 @@ describe("default channels", () => {
     const fc = both.custom.find((c) => c.character === "Other One" && c.id === "fc")!;
     expect(saveCustom(both, { ...fc, name: "Guild" }).custom.filter((c) => c.name === "Guild")).toHaveLength(1);
     expect(deleteCustom(both, fc).custom.filter((c) => c.id === "fc").map((c) => c.character)).toEqual(["Alpha Beta"]);
+  });
+});
+
+describe("withTells", () => {
+  it("adds a Tells channel when the character has none", () => {
+    expect(withTells(EMPTY_CHANNEL_PREFS, "Alpha Beta").custom).toEqual([{ id: "tells", character: "Alpha Beta", name: "Tells", channels: ["tell"] }]);
+  });
+
+  it("keeps prefs that already have one", () => {
+    const seeded = withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta");
+    expect(withTells(seeded, "Alpha Beta")).toBe(seeded);
+  });
+
+  it("puts tells back into an edited Tells channel", () => {
+    const edited = { ...EMPTY_CHANNEL_PREFS, custom: [{ id: "tells", character: "Alpha Beta", name: "DMs", channels: ["freeCompany"] } as CustomChannel] };
+    expect(withTells(edited, "Alpha Beta").custom).toEqual([{ id: "tells", character: "Alpha Beta", name: "DMs", channels: ["tell", "freeCompany"] }]);
+  });
+
+  it("adds one per character", () => {
+    const one = withTells(EMPTY_CHANNEL_PREFS, "Alpha Beta");
+    expect(withTells(one, "Other One").custom.map((c) => c.character)).toEqual(["Other One", "Alpha Beta"]);
   });
 });
