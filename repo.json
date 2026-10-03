@@ -1,29 +1,29 @@
 [
-  {
-    "Author": "MTVirux",
-    "Name": "ChatTerror",
-    "Punchline": "Read and send FFXIV chat from your phone, end-to-end encrypted.",
-    "Description": "Relays chat to paired phones through an end-to-end encrypted relay and lets you reply from the phone.\n\nDM @mtvirux on discord for assistance or bug reports.",
-    "Tags": [
-      "Terror",
-      "Chat",
-      "Phone",
-      "Relay"
-    ],
-    "InternalName": "ChatTerror",
-    "AssemblyVersion": "0.0.1.0",
-    "TestingAssemblyVersion": "0.0.1.0",
-    "RepoUrl": "https://github.com/MTVirux/ChatTerror",
-    "ApplicableVersion": "any",
-    "DalamudApiLevel": 15,
-    "TestingDalamudApiLevel": 15,
-    "IsHide": "False",
-    "IsTestingExclusive": "False",
-    "DownloadCount": 0,
-    "LastUpdate": 1790812800,
-    "DownloadLinkInstall": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
-    "DownloadLinkUpdate": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
-    "DownloadLinkTesting": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
-    "IconUrl": "https://raw.githubusercontent.com/MTVirux/ChatTerror/master/web/public/icon-512.png"
-  }
+{
+  "Author": "MTVirux",
+  "Name": "ChatTerror",
+  "Punchline": "Read and send FFXIV chat from your phone, end-to-end encrypted.",
+  "Description": "Relays chat to paired phones through an end-to-end encrypted relay and lets you reply from the phone.\n\nDM @mtvirux on discord for assistance or bug reports.",
+  "Tags": [
+    "Terror",
+    "Chat",
+    "Phone",
+    "Relay"
+  ],
+  "InternalName": "ChatTerror",
+  "AssemblyVersion": "0.0.1.0",
+  "TestingAssemblyVersion": "0.0.1.0",
+  "RepoUrl": "https://github.com/MTVirux/ChatTerror",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "TestingDalamudApiLevel": 15,
+  "IsHide": "False",
+  "IsTestingExclusive": "False",
+  "DownloadCount": 0,
+  "LastUpdate": 1791059355,
+  "DownloadLinkInstall": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
+  "DownloadLinkUpdate": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
+  "DownloadLinkTesting": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
+  "IconUrl": "https://raw.githubusercontent.com/MTVirux/ChatTerror/master/web/public/icon-512.png"
+}
 ]
