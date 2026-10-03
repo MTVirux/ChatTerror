@@ -235,9 +235,12 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends,
   const includes = useMemo(() => (shownKey ? (key: string) => channelIncludes(prefs, shownKey, key) : null), [shownKey, prefs]);
   const unreadCount = useMemo(() => (includes ? unread.count(deviceId, includes) : 0), [deviceId, includes]);
 
+  const covered = !!settings || switching || !!menu || !!editing;
+  const watching = !drawerOpen && !covered;
+
   useEffect(() => {
-    unread.setOpen(includes ? { deviceId, includes } : null);
-  }, [unread, deviceId, includes]);
+    unread.setOpen(includes && watching ? { deviceId, includes } : null);
+  }, [unread, deviceId, includes, watching]);
 
   useEffect(() => () => unread.setOpen(null), [unread]);
 
@@ -364,8 +367,6 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends,
       />
     </div>
   );
-
-  const covered = !!settings || switching || !!menu || !!editing;
 
   // Sheets sit outside the drawer so its inert never covers them.
   return (
