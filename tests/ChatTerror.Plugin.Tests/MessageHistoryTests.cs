@@ -5,8 +5,8 @@ namespace ChatTerror.Plugin.Tests;
 
 public class MessageHistoryTests
 {
-    private static ChatItem Item(long ts, string character = "Alex Doe") =>
-        new(Guid.NewGuid().ToString("N"), ts, ChatChannel.Say, "Bob Smith", Text: $"m{ts}", Character: character, Outgoing: false);
+    private static ChatItem Item(long ts, string character = "Alex Doe", ChatChannel channel = ChatChannel.Say, string sender = "Bob Smith", bool outgoing = false) =>
+        new(Guid.NewGuid().ToString("N"), ts, channel, sender, "Gilgamesh", $"m{ts}", character, outgoing);
 
     [Fact]
     public void Add_OverCapacity_DropsOldest()
@@ -88,6 +88,30 @@ public class MessageHistoryTests
         h.Add(Item(5, "Sam Roe"));
 
         Assert.Equal([1L, 2L, 4L, 5L], h.Since(0).Select(i => i.Ts));
+    }
+
+    [Fact]
+    public void Capacity_IsPerChannel()
+    {
+        var h = new MessageHistory(2);
+        h.Add(Item(1, channel: ChatChannel.Party));
+        h.Add(Item(2, channel: ChatChannel.Say));
+        h.Add(Item(3, channel: ChatChannel.Say));
+        h.Add(Item(4, channel: ChatChannel.Say));
+
+        Assert.Equal([1L, 3L, 4L], h.Since(0).Select(i => i.Ts));
+    }
+
+    [Fact]
+    public void Capacity_IsPerTellPartner_BothDirections()
+    {
+        var h = new MessageHistory(2);
+        h.Add(Item(1, channel: ChatChannel.Tell, sender: "Bob Smith"));
+        h.Add(Item(2, channel: ChatChannel.Tell, sender: "Cat Lee"));
+        h.Add(Item(3, channel: ChatChannel.Tell, sender: "Cat Lee", outgoing: true));
+        h.Add(Item(4, channel: ChatChannel.Tell, sender: "cat lee"));
+
+        Assert.Equal([1L, 3L, 4L], h.Since(0).Select(i => i.Ts));
     }
 
     [Fact]

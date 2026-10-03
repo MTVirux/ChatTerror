@@ -17,7 +17,7 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
         var settings = config.Settings;
 
         var history = settings.HistorySize;
-        if (IntInput("History size per character (messages)", ref history, 100, ConfigStatic.MinHistorySize, ConfigStatic.MaxHistorySize))
+        if (IntInput("History size per channel (messages)", ref history, 100, ConfigStatic.MinHistorySize, ConfigStatic.MaxHistorySize))
         {
             settings.HistorySize = history;
             hub.History.Capacity = history;
