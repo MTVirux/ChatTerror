@@ -14,7 +14,6 @@ namespace ChatTerror.Plugin.Services;
 // framework thread; relay calls run one at a time in the background.
 public sealed class FriendDirectory : IDisposable
 {
-    private const long RefreshIntervalMs = 10 * 60_000;
     private const long ProfileCheckIntervalMs = 10_000;
 
     private readonly Configuration config;
@@ -28,10 +27,9 @@ public sealed class FriendDirectory : IDisposable
 
     // The character list last uploaded to each friend, framework thread only.
     private readonly Dictionary<string, string> uploadedProfiles = new();
+    private readonly FriendRefreshSchedule refreshes = new();
 
-    private long lastRefresh = long.MinValue / 2;
     private long lastProfileCheck = long.MinValue / 2;
-    private bool refreshDue = true;
     private bool running;
     private volatile bool busy;
     private volatile string? status;
@@ -69,10 +67,10 @@ public sealed class FriendDirectory : IDisposable
     private void OnConnected()
     {
         uploadedProfiles.Clear();
-        refreshDue = true;
+        refreshes.Request();
     }
 
-    private void OnFriendsChanged() => refreshDue = true;
+    private void OnFriendsChanged() => refreshes.Changed();
 
     private void OnUpdate(IFramework unused)
     {
@@ -80,10 +78,8 @@ public sealed class FriendDirectory : IDisposable
             return;
 
         var now = Environment.TickCount64;
-        if (refreshDue || now - lastRefresh >= RefreshIntervalMs)
+        if (refreshes.TryStart(now))
         {
-            refreshDue = false;
-            lastRefresh = now;
             Start(() => Refresh(token));
             return;
         }

@@ -26,6 +26,7 @@ builder.Services.AddSingleton<IPushSender, WebPushSender>();
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<RelaySocketHandler>();
 builder.Services.AddSingleton<PairingLimiter>();
+builder.Services.AddSingleton<FriendProfileLimiter>();
 builder.Services.AddSingleton<ExpiryService>();
 builder.Services.AddHostedService(services => services.GetRequiredService<ExpiryService>());
 builder.Services.AddCors();

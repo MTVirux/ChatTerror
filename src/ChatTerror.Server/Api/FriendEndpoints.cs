@@ -113,7 +113,8 @@ public static class FriendEndpoints
             return Results.Ok(new FriendsResponse(friends, invites));
         }).RequireRateLimiting(RequestLimits.TellPolicy);
 
-        app.MapPut("/api/friends/{installId}/profile", (string installId, FriendProfileRequest? body, HttpContext context, RelayStore store, ConnectionRegistry registry) =>
+        app.MapPut("/api/friends/{installId}/profile", (string installId, FriendProfileRequest? body, HttpContext context, RelayStore store,
+            ConnectionRegistry registry, FriendProfileLimiter limiter) =>
         {
             if (AuthHelpers.Install(context, store) is not { } install)
                 return AuthHelpers.Unauthorized();
@@ -122,8 +123,11 @@ public static class FriendEndpoints
             if (!IsEnvelope(body?.Envelope))
                 return AuthHelpers.Error(StatusCodes.Status400BadRequest, "invalidEnvelope");
 
-            store.SetFriendProfile(install.Id, installId, body!.Envelope!);
-            registry.Plugin(installId)?.Send(new FriendsChangedFrame());
+            if (!limiter.TryAcquire(install.Id, installId))
+                return AuthHelpers.Error(StatusCodes.Status429TooManyRequests, "rateLimited");
+
+            if (store.SetFriendProfile(install.Id, installId, body!.Envelope!))
+                registry.Plugin(installId)?.Send(new FriendsChangedFrame());
             return Results.NoContent();
         }).RequireRateLimiting(RequestLimits.TellPolicy);
 

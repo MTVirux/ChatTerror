@@ -149,12 +149,13 @@ public sealed partial class RelayStore
             """,
             reader => (reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)), ("$install", installId));
 
-    public void SetFriendProfile(string owner, string friend, string envelope) =>
+    // Returns whether the stored envelope changed.
+    public bool SetFriendProfile(string owner, string friend, string envelope) =>
         Execute("""
             INSERT INTO friend_profiles(owner_install, friend_install, envelope) VALUES($owner, $friend, $envelope)
-            ON CONFLICT(owner_install, friend_install) DO UPDATE SET envelope = excluded.envelope
+            ON CONFLICT(owner_install, friend_install) DO UPDATE SET envelope = excluded.envelope WHERE envelope <> excluded.envelope
             """,
-            ("$owner", owner), ("$friend", friend), ("$envelope", envelope));
+            ("$owner", owner), ("$friend", friend), ("$envelope", envelope)) == 1;
 
     // Returns whether they were friends.
     public bool RemoveFriend(string a, string b)
