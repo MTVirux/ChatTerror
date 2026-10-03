@@ -152,7 +152,7 @@ All settings live under `Relay` and default to the values below. Set them as env
 
 - Each phone and the plugin share a key derived from P-256 ECDH. Chat, backlog, settings and sends are encrypted with AES-256-GCM before they leave the plugin or the phone.
 - The relay stores the plugin and device public keys, device names, approval status, last seen times and push subscriptions. Tokens are stored as SHA-256 hashes. It can't read messages.
-- With relayed tells on, the relay also stores which installs are paired, a sealed list of your in-scope characters for each friend that only that friend can open, each install's signed key bundle, and sealed tell envelopes queued for up to 7 days. It no longer stores character hashes or friend lists.
+- Once you pair with a friend, the relay stores which installs are paired and a sealed list of your in-scope characters for each friend that only that friend can open, also while relayed tells are off. With relayed tells on, it also stores each install's signed key bundle and sealed tell envelopes queued for up to 7 days. It no longer stores character hashes or friend lists.
 - The secret half of a friend code never reaches the relay, so it can't complete a pairing or swap a key or scope in one.
 - Push notifications carry the same end-to-end encrypted payload, decrypted on the phone by the service worker. The push service (Google, Apple, Mozilla) sees only ciphertext.
 - The relay can still see metadata: when you are online, which phone receives how much traffic, and IP addresses.
