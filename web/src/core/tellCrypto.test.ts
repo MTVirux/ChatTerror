@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decode, encode } from "./b64url";
 import { exportPublicRaw, generateTellKey, importPublicRaw, openTell, sealTell, verifyBundle } from "./crypto";
-import { isValidSettings, parseServerFrame, parseTellBody } from "./protocol";
+import { parseServerFrame, parseSettings, parseTellBody } from "./protocol";
 import vector from "../../../test-vectors/tell-v1.json";
 
 const ECDH = { name: "ECDH", namedCurve: "P-256" } as const;
@@ -36,17 +36,18 @@ describe("sealed tells", () => {
     expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c","fromKey":"k"}')).toEqual({ t: "tell", id: "a", from: "b", envelope: "c", fromKey: "k" });
     expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c"}')).toBeNull();
     expect(parseServerFrame('{"t":"tell","id":"a"}')).toBeNull();
-    expect(parseServerFrame('{"t":"tellResult","id":"a","ok":false,"error":"notFriend"}')).not.toBeNull();
+    expect(parseServerFrame('{"t":"tellResult","id":"a","ok":false,"error":"notPaired"}')).not.toBeNull();
     expect(parseTellBody(JSON.parse(vector.plaintext))?.text).toBe("hello <3");
     expect(parseTellBody({ id: "x" })).toBeNull();
   });
 
   it("validates contacts in settings", () => {
     const base = { relayChannels: [], sendChannels: [], maxLength: 500 };
-    const contact = { character: "A B", characterWorld: "Lich", characterHash: "h1", name: "C D", world: "Lich", hash: "h2" };
-    expect(isValidSettings({ ...base, contacts: [contact] })).toBe(true);
-    expect(isValidSettings({ ...base, contacts: [{ ...contact, hash: 3 }] })).toBe(false);
-    expect(isValidSettings(base)).toBe(true);
+    const contact = { character: "A B", characterWorld: "Lich", characterHash: "h1", name: "C D", world: "Lich", hash: "h2", installId: "i1", key: "k1" };
+    const contactsOf = (contacts: unknown[]) => parseSettings({ ...base, contacts })?.contacts;
+    expect(contactsOf([contact])).toEqual([contact]);
+    expect(contactsOf([{ ...contact, hash: 3 }])).toEqual([]);
+    expect(parseSettings(base)).toEqual(base);
     for (const bad of [
       { name: "C|D" },
       { world: "x".repeat(65) },
@@ -56,10 +57,11 @@ describe("sealed tells", () => {
       { characterHash: "h".repeat(44) },
       { key: "k".repeat(88) },
       { key: 5 },
+      { installId: "i".repeat(65) },
     ]) {
-      expect(isValidSettings({ ...base, contacts: [{ ...contact, ...bad }] })).toBe(false);
+      expect(contactsOf([{ ...contact, ...bad }])).toEqual([]);
     }
-    expect(isValidSettings({ ...base, contacts: [{ ...contact, hash: "h".repeat(43), key: "k".repeat(87) }] })).toBe(true);
+    expect(contactsOf([{ ...contact, hash: "h".repeat(43), key: "k".repeat(87) }])).toHaveLength(1);
   });
 
   it("rejects tell bodies with bad timestamps or fields", () => {

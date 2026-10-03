@@ -58,6 +58,18 @@ You choose per channel what is relayed, what triggers a notification and what yo
 
 The plugin only ever sends plain chat lines with a channel prefix (`/p`, `/fc`, `/tell Name Surname@World` and so on). Text starting with `/`, containing line breaks or control characters, or longer than the limit is refused and the phone gets an error. Sends while logged out or zoning fail with an explicit error instead of being dropped.
 
+## Pairing with friends
+
+Tells to and from a friend who also uses ChatTerror can be relayed through ChatTerror, end-to-end encrypted. You pair your installs once with a code.
+
+1. In the plugin, go to **Friends**. Under **Add friend**, pick what to share: **Account** (every character on this install, including ones you add later) or one of your characters. Click **Create code**.
+2. The code (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`) is hidden until you click **Show**. Use **Copy** and send it to your friend yourself, for example in an in-game tell or on Discord.
+3. Your friend pastes it under **Enter code**, picks what they share in the same way and clicks **Pair**. Your plugin checks the code and completes the pairing.
+
+Codes are single use and expire after 24 hours. You can have up to 10 active codes and 100 paired friends. Unused codes can be cancelled.
+
+Relayed tells only flow between paired installs, and only between characters inside both scopes. Both characters must also still have each other on their in-game friend list. Scopes can't be changed later: **Remove** the friend and pair again. Removing a friend stops relayed tells between you right away.
+
 ## Self-hosting the relay
 
 The PWA always talks to the relay that served it, so self-hosting means opening the PWA from your own relay and pointing the plugin at the same URL.
@@ -124,9 +136,10 @@ All settings live under `Relay` and default to the values below. Set them as env
 | `Relay__InactiveInstallTtl` | `90.00:00:00` | Plugin installs are deleted with all their devices after not connecting for this long. |
 | `Relay__InactiveDeviceTtl` | `90.00:00:00` | Devices are deleted after not connecting for this long. |
 | `Relay__PushServiceHosts` | `fcm.googleapis.com,*.push.services.mozilla.com,*.push.apple.com,*.notify.windows.com` | Push service hosts a device may subscribe with, comma separated. `*.` matches any subdomain. Endpoints must also be https on port 443. |
-| `Relay__TellsPerRecipientPerMinute` | `30` | Relayed tells per minute from one character to one plugin install. |
-| `Relay__TellPushCooldown` | `00:00:10` | Minimum time between tell notifications from one character to one device. Tells inside the cooldown are still delivered. |
-| `Relay__MaxQueuedTellsPerSender` | `20` | Undelivered tells kept per sender for each recipient plugin or device. The oldest are dropped first. |
+| `Relay__TellRequestsPerMinute` | `60` | Tell and friend pairing API requests per minute per IP. |
+| `Relay__TellsPerRecipientPerMinute` | `30` | Relayed tells per minute from one plugin install to another. |
+| `Relay__TellPushCooldown` | `00:00:10` | Minimum time between tell notifications from one plugin install to one device. Tells inside the cooldown are still delivered. |
+| `Relay__MaxQueuedTellsPerSender` | `20` | Undelivered tells kept per sending install for each recipient plugin or device. The oldest are dropped first. |
 | `Relay__PushSubscriptionsPerMinute` | `10` | Push subscription updates per minute per IP. |
 | `Relay__MaxConcurrentPushes` | `32` | Push requests in flight across the relay. |
 | `Relay__MaxPushesPerInstall` | `4` | Push requests in flight per plugin install. |
@@ -138,7 +151,9 @@ All settings live under `Relay` and default to the values below. Set them as env
 ## Privacy
 
 - Each phone and the plugin share a key derived from P-256 ECDH. Chat, backlog, settings and sends are encrypted with AES-256-GCM before they leave the plugin or the phone.
-- The relay stores the plugin and device public keys, device names, approval status, last seen times and push subscriptions. Tokens are stored as SHA-256 hashes. It never stores or can read messages.
+- The relay stores the plugin and device public keys, device names, approval status, last seen times and push subscriptions. Tokens are stored as SHA-256 hashes. It can't read messages.
+- Once you pair with a friend, the relay stores which installs are paired and a sealed list of your in-scope characters for each friend that only that friend can open, also while relayed tells are off. With relayed tells on, it also stores each install's signed key bundle and sealed tell envelopes queued for up to 7 days. It no longer stores character hashes or friend lists.
+- The secret half of a friend code never reaches the relay, so it can't complete a pairing or swap a key or scope in one.
 - Push notifications carry the same end-to-end encrypted payload, decrypted on the phone by the service worker. The push service (Google, Apple, Mozilla) sees only ciphertext.
 - The relay can still see metadata: when you are online, which phone receives how much traffic, and IP addresses.
 - The 6 digit pairing code is derived from both public keys and the secret half of the pairing code, which the relay never sees, so a malicious relay cannot swap keys during pairing without the numbers differing. Compare it every time.

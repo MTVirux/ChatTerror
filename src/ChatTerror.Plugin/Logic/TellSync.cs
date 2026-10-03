@@ -4,21 +4,18 @@ using ChatTerror.Protocol;
 
 namespace ChatTerror.Plugin.Logic;
 
-public enum TellSyncStep { Idle, Unregister, Bundle, Character }
+public enum TellSyncStep { Idle, DeleteBundle, Bundle }
 
 public sealed record TellDevice(string DeviceId, string? TellKey, bool TellMuted);
 
 public static class TellSync
 {
-    // Unregistering is retried until it succeeds. Bundle and character uploads take turns, so a bundle the relay keeps
-    // rejecting can't block the character upload.
-    public static TellSyncStep Next(bool enabled, bool unregisterPending, bool bundleDue, bool characterDue, TellSyncStep last)
+    // Deleting the bundle is retried until it succeeds.
+    public static TellSyncStep Next(bool enabled, bool deletePending, bool bundleDue)
     {
         if (!enabled)
-            return unregisterPending ? TellSyncStep.Unregister : TellSyncStep.Idle;
-        if (bundleDue && (last != TellSyncStep.Bundle || !characterDue))
-            return TellSyncStep.Bundle;
-        return characterDue ? TellSyncStep.Character : TellSyncStep.Idle;
+            return deletePending ? TellSyncStep.DeleteBundle : TellSyncStep.Idle;
+        return bundleDue ? TellSyncStep.Bundle : TellSyncStep.Idle;
     }
 
     // known is the relay's device list; a device it already dropped would make it reject the whole bundle.

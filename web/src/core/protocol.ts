@@ -90,9 +90,8 @@ export interface TellBody {
 export interface TellBundleEntry { target: string; key: string; push: boolean }
 export interface TellBundle { installPublicKey: string; entries: TellBundleEntry[]; issuedAt: number }
 export interface SignedBundle { bundle: string; signature: string }
-// A registered ChatTerror friend of one of the plugin's characters.
-// key is the friend's install key the plugin trusts.
-export interface TellContact { character: string; characterWorld: string; characterHash: string; name: string; world: string; hash: string; key?: string }
+// A routable character of a paired friend. key is that friend's paired install key.
+export interface TellContact { character: string; characterWorld: string; characterHash: string; name: string; world: string; hash: string; installId: string; key: string }
 export interface TellCopy { self: boolean; target: string; envelope: string }
 export interface TellKeyPayload { type: "tellKey"; seq: number; publicKey: string }
 
@@ -115,8 +114,10 @@ export interface RevokedFrame { t: "revoked" }
 export interface ErrorFrame { t: "error"; code: "rateLimited" | "tooLarge" | "unknownDevice" | "notApproved" | "badFrame" }
 
 // What a device sends and receives; plugin-only frames are listed for completeness.
-export interface TellSendFrame { t: "tellSend"; id: string; from: string; to: string; copies: TellCopy[] }
+// to is the recipient install id.
+export interface TellSendFrame { t: "tellSend"; id: string; to: string; copies: TellCopy[] }
 export interface TellAckFrame { t: "tellAck"; ids: string[] }
+// from is the sending install id.
 export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string }
 export interface TellResultFrame { t: "tellResult"; id: string; ok: boolean; error?: string }
 
@@ -175,7 +176,7 @@ function isChannelList(value: unknown): value is ChatChannel[] {
   return Array.isArray(value) && value.every(isChatChannel);
 }
 
-export function isValidSettings(value: unknown): value is Omit<SettingsPayload, "type" | "seq"> {
+function isSettings(value: unknown): value is Record<string, unknown> {
   return (
     isObject(value) &&
     (value.character === undefined || value.character === null || isName(value.character)) &&
@@ -184,8 +185,15 @@ export function isValidSettings(value: unknown): value is Omit<SettingsPayload, 
     Number.isInteger(value.maxLength) &&
     (value.maxLength as number) >= 1 &&
     (value.maxLength as number) <= MAX_SEND_LENGTH &&
-    (value.contacts === undefined || (Array.isArray(value.contacts) && value.contacts.every(isTellContact)))
+    (value.contacts === undefined || Array.isArray(value.contacts))
   );
+}
+
+// A bad contact, e.g. from a plugin older than this page, drops only that contact and keeps the other settings.
+export function parseSettings(value: unknown): Omit<SettingsPayload, "type" | "seq"> | null {
+  if (!isSettings(value)) return null;
+  const settings = Array.isArray(value.contacts) ? { ...value, contacts: value.contacts.filter(isTellContact) } : value;
+  return settings as unknown as Omit<SettingsPayload, "type" | "seq">;
 }
 
 function hasStrings(value: unknown, keys: string[]): value is Record<string, unknown> {
@@ -201,7 +209,8 @@ function isTellContact(value: unknown): value is TellContact {
     isName(value.name) &&
     isName(value.world) &&
     isBoundedString(value.hash, MAX_HASH_LENGTH) &&
-    (value.key === undefined || isBoundedString(value.key, MAX_KEY_LENGTH))
+    isBoundedString(value.installId, MAX_NAME_LENGTH) &&
+    isBoundedString(value.key, MAX_KEY_LENGTH)
   );
 }
 
@@ -249,7 +258,7 @@ export function parsePluginPayload(value: unknown): PluginPayload | null {
         ? (value as unknown as SendResultPayload)
         : null;
     case "settings":
-      return isValidSettings(value) ? (value as unknown as SettingsPayload) : null;
+      return parseSettings(value) as SettingsPayload | null;
     default:
       return null;
   }

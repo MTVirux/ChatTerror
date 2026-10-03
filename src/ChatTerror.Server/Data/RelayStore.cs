@@ -25,6 +25,13 @@ public enum ClaimStatus
     TooManyDevices,
 }
 
+public enum CreateInstallStatus
+{
+    Ok,
+    LimitReached,
+    KeyInUse,
+}
+
 public sealed record ClaimResult(ClaimStatus Status, DeviceRecord? Device = null, string? Token = null);
 
 public sealed partial class RelayStore
@@ -59,7 +66,10 @@ public sealed partial class RelayStore
         CREATE INDEX IF NOT EXISTS installs_created ON installs(created);
         """;
 
-    private const string InstallIndexes = "CREATE INDEX IF NOT EXISTS installs_last_seen ON installs(last_seen)";
+    private const string InstallIndexes = """
+        CREATE INDEX IF NOT EXISTS installs_last_seen ON installs(last_seen);
+        CREATE INDEX IF NOT EXISTS installs_public_key ON installs(public_key);
+        """;
 
     // An install is stale when it has not connected within InstallTtl and has no devices, or within InactiveInstallTtl at all.
     private const string StaleInstall = """
@@ -78,7 +88,7 @@ public sealed partial class RelayStore
     private readonly int maxInstallsPerDay;
     private readonly int maxQueuedTellsPerSender;
     private readonly Lock claimLock = new();
-    private readonly Lock tellOwnerLock = new();
+    private readonly Lock friendLock = new();
     private readonly Lock installLock = new();
 
     public RelayStore(IOptions<RelayOptions> options, TimeProvider time)
@@ -96,6 +106,7 @@ public sealed partial class RelayStore
         connectionString = new SqliteConnectionStringBuilder { DataSource = path, Pooling = true }.ToString();
         Execute(Schema);
         Execute(TellSchema);
+        Execute(FriendSchema);
         AddInstallLastSeen();
         Execute(InstallIndexes);
     }
@@ -112,22 +123,26 @@ public sealed partial class RelayStore
 
     private long Now => time.GetUtcNow().ToUnixTimeMilliseconds();
 
-    // Returns null once MaxInstallsPerDay installs were created in the last 24 hours.
-    public (string Id, string Token)? CreateInstall(string publicKey)
+    // LimitReached once MaxInstallsPerDay installs were created in the last 24 hours. KeyInUse when another install has
+    // the key and the caller did not prove it holds it.
+    public (CreateInstallStatus Status, (string Id, string Token)? Install) CreateInstall(string publicKey, bool proven)
     {
         lock (installLock)
         {
+            if (!proven && QuerySingle("SELECT EXISTS(SELECT 1 FROM installs WHERE public_key = $key)", reader => reader.GetBoolean(0), ("$key", publicKey)))
+                return (CreateInstallStatus.KeyInUse, null);
+
             var now = Now;
             var since = now - (long)TimeSpan.FromDays(1).TotalMilliseconds;
             var recent = QuerySingle("SELECT COUNT(*) FROM installs WHERE created > $since", reader => reader.GetInt32(0), ("$since", since));
             if (recent >= maxInstallsPerDay)
-                return null;
+                return (CreateInstallStatus.LimitReached, null);
 
             var id = Tokens.NewId();
             var (token, hash) = Tokens.Create(Tokens.InstallPrefix, id);
             Execute("INSERT INTO installs(id, token_hash, public_key, created, last_seen) VALUES($id, $hash, $key, $now, $now)",
                 ("$id", id), ("$hash", hash), ("$key", publicKey), ("$now", now));
-            return (id, token);
+            return (CreateInstallStatus.Ok, (id, token));
         }
     }
 
@@ -302,6 +317,7 @@ public sealed partial class RelayStore
                 Execute("DELETE FROM devices WHERE install_id = $id", ("$id", id));
                 Execute("DELETE FROM pairings WHERE install_id = $id", ("$id", id));
                 DeleteTellData(id);
+                DeleteFriendData(id);
                 deleted.Add((id, devices));
             }
         }

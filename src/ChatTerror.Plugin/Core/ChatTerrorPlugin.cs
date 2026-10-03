@@ -26,6 +26,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
     private readonly ChatCapture capture;
     private readonly ChatSender sender;
     private readonly TellDirectory tellDirectory;
+    private readonly FriendDirectory friendDirectory;
     private readonly TellRelay tellRelay;
     private readonly TellCommandHook tellHook;
     private readonly WindowSystem windowSystem = new("ChatTerror");
@@ -67,9 +68,10 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         capture = new ChatCapture(chatGui, playerState, config, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);
         tellDirectory = new TellDirectory(config, SaveConfig, keys, api, hub, framework, playerState, dataManager, log);
+        friendDirectory = new FriendDirectory(config, SaveConfig, keys, api, hub, framework, log);
         tellRelay = new TellRelay(config, SaveConfig, keys, api, relay, hub, tellDirectory, capture, chatGui, framework, playerState, log);
         tellHook = new TellCommandHook(interop, tellRelay, log);
-        hub.Contacts = () => config.TellsEnabled ? TellContacts.ForDevices(config.TellCharacters, config.TellPins) : [];
+        hub.Contacts = () => config.TellsEnabled ? FriendTrust.ForDevices(config.TellCharacters, config.PairedFriends) : [];
 
         devicesTab = new DevicesTab(config, api, hub, framework);
         configWindow = new ConfigWindow(
@@ -79,6 +81,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
             new NotificationsTab(config, SettingsChanged),
             new FiltersTab(config, SettingsChanged),
             devicesTab,
+            new FriendsTab(config, friendDirectory),
             new HistoryTab(hub, CharacterName),
             new AdvancedTab(config, hub, SettingsChanged),
         ]);
@@ -123,6 +126,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         devicesTab.Dispose();
         tellHook.Dispose();
         tellRelay.Dispose();
+        friendDirectory.Dispose();
         tellDirectory.Dispose();
         sender.Dispose();
         capture.Dispose();

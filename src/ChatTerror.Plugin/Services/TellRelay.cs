@@ -43,7 +43,6 @@ public sealed class TellRelay : IDisposable
     private readonly SeenIds seen;
     private readonly InFlightTells<SentTell> inFlight = new();
     private readonly TellInbox inbox = new(Limits.MaxQueuedTells);
-    private readonly HashSet<string> keyChangeReported = new();
 
     private sealed record SentTell(TellBody Body, TellFriend To);
 
@@ -84,10 +83,13 @@ public sealed class TellRelay : IDisposable
             return null;
         var rewritten = reply.Rewrite(line);
         if (TellCommand.ParseTell(rewritten ?? line, CurrentWorld() ?? "") is { } tell
-            && TellContacts.Route(config.TellCharacters, directory.CurrentHash, tell.Target) != null)
+            && Route(tell.Target).Error != RouteError.NotPaired)
             fallback.Sent(tell.Target, tell.Text, Environment.TickCount64);
         return rewritten;
     }
+
+    private (FriendRoute? Route, RouteError Error) Route(TellTarget target) =>
+        FriendTrust.Route(config.TellCharacters, config.PairedFriends, directory.CurrentHash, target);
 
     private string? CurrentWorld() =>
         playerState.IsLoaded && playerState.CurrentWorld.IsValid ? playerState.CurrentWorld.Value.Name.ExtractText() : null;
@@ -132,20 +134,23 @@ public sealed class TellRelay : IDisposable
 
         foreach (var pending in fallback.Expired(Environment.TickCount64))
         {
-            if (TellContacts.Route(config.TellCharacters, directory.CurrentHash, pending.Target) is { } route)
+            var (route, error) = Route(pending.Target);
+            if (route != null)
                 _ = SendAsync(route, pending.Text);
+            else if (error == RouteError.Conflict)
+                PrintError(pending.Target.ToString(), "claimed by more than one paired friend");
         }
     }
 
-    private sealed class KeyChangedException : Exception;
+    private sealed class TellFailedException(string reason) : Exception(reason);
 
-    private async Task SendAsync(TellRoute route, string text)
+    private async Task SendAsync(FriendRoute route, string text)
     {
         try
         {
             if (config.InstallToken is not { } token)
                 throw new InvalidOperationException("Not registered with the relay.");
-            var recipient = await FetchBundle(token, route.To.Hash);
+            var recipient = await FetchBundle(token, route.Friend);
             var own = await api.GetTellBundle(token, "self") is { } signed ? TellBundles.Verify(signed, keys.PublicKey) : null;
             var body = new TellBody(Guid.NewGuid().ToString("N"), route.From.Hash, route.From.Name, route.From.World,
                 route.To.Hash, route.To.Name, route.To.World, text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -153,17 +158,16 @@ public sealed class TellRelay : IDisposable
             await framework.RunOnFrameworkThread(() =>
             {
                 inFlight.Add(body.Id, new SentTell(body, route.To));
-                if (!relay.Send(new TellSendFrame(body.Id, body.FromHash, body.ToHash, copies)))
+                if (!relay.Send(new TellSendFrame(body.Id, route.Friend.InstallId, copies)))
                 {
                     inFlight.Complete(body.Id);
                     PrintError(route.To, "not connected to the relay");
                 }
             });
         }
-        catch (KeyChangedException)
+        catch (TellFailedException ex)
         {
-            await framework.RunOnFrameworkThread(() =>
-                PrintError(route.To, "their ChatTerror key changed, forget it in the Advanced tab to trust the new one"));
+            await framework.RunOnFrameworkThread(() => PrintError(route.To, ex.Message));
         }
         catch (Exception ex)
         {
@@ -172,23 +176,20 @@ public sealed class TellRelay : IDisposable
         }
     }
 
-    // Pins the install key the first time, then refuses bundles signed by another key.
-    private async Task<TellBundle> FetchBundle(string token, string hash)
+    // The bundle must be signed with the key we paired with and not older than the newest one seen.
+    private async Task<TellBundle> FetchBundle(string token, PairedFriend friend)
     {
-        var signed = await api.GetTellBundle(token, hash) ?? throw new InvalidOperationException("They don't use ChatTerror.");
-        var pin = await framework.RunOnFrameworkThread(() => config.TellPins.GetValueOrDefault(hash));
-        var bundle = TellBundles.Verify(signed, pin);
-        if (bundle == null)
-            throw pin != null && TellBundles.Verify(signed, null) != null ? new KeyChangedException() : new InvalidOperationException("Invalid bundle.");
+        var signed = await api.GetTellBundle(token, friend.InstallId) ?? throw new TellFailedException(ErrorText(TellErrors.NotChatTerror));
+        var bundle = TellBundles.Verify(signed, friend.PublicKey)
+            ?? throw new TellFailedException("their ChatTerror key does not match the one you paired with");
         var current = await framework.RunOnFrameworkThread(() =>
         {
-            if (!TellContacts.AcceptBundle(config.TellBundleIssuedAt, hash, bundle.IssuedAt))
+            if (!FriendTrust.AcceptBundle(friend, bundle.IssuedAt))
                 return false;
-            config.TellPins.TryAdd(hash, bundle.InstallPublicKey);
             saveConfig();
             return true;
         });
-        return current ? bundle : throw new InvalidOperationException("The relay sent an outdated bundle.");
+        return current ? bundle : throw new TellFailedException("the relay sent an outdated bundle");
     }
 
     private void OnFrame(RelayFrame frame)
@@ -221,31 +222,27 @@ public sealed class TellRelay : IDisposable
             log.Warning("Dropped an undecryptable relayed tell.");
             return;
         }
-        if (body.Id != tell.Id || body.FromHash != tell.From || TellItems.IsExpired(body, Now()) || !seen.Add(body.Id))
+        if (body.Id != tell.Id || TellItems.IsExpired(body, Now()) || !seen.Add(body.Id))
             return;
 
         // A copy of a tell one of our phones sent, which only this install can have sent.
-        if (config.TellCharacters.Any(c => c.Hash == tell.From))
+        switch (FriendTrust.Origin(tell.From, tell.FromKey, config.InstallId, keys.PublicKey))
         {
-            if (tell.FromKey == keys.PublicKey)
+            case TellOrigin.Own when config.TellCharacters.Any(c => c.Hash == body.FromHash):
                 ShowOutgoing(body);
-            else
-                log.Warning("Dropped a relayed tell from one of our characters that another install sent.");
-            return;
+                return;
+            case TellOrigin.Own:
+                log.Warning("Dropped a relayed tell sent with our key from a character that is not ours.");
+                return;
+            case TellOrigin.Forged:
+                log.Warning("Dropped a relayed tell sent with our key from another install.");
+                return;
         }
 
-        if (TellItems.Incoming(body, tell.From, config.TellCharacters, Now()) is not { } item)
+        if (FriendTrust.Incoming(config.TellCharacters, config.PairedFriends, tell.From, tell.FromKey, body) is not { } incoming
+            || ChatFilter.IsIgnored(incoming.Sender.Name, incoming.Sender.World, config.Settings))
             return;
-        switch (TellContacts.TrustSender(config.TellPins, tell.From, tell.FromKey))
-        {
-            case SenderTrust.KeyChanged:
-                if (keyChangeReported.Add(tell.From))
-                    chatGui.PrintError($"[ChatTerror] Dropped a relayed tell from {item.Sender}@{item.SenderWorld}: their ChatTerror key changed. Forget them in the Advanced tab if they reinstalled.");
-                return;
-            case SenderTrust.Pinned:
-                saveConfig();
-                break;
-        }
+        var item = TellItems.Incoming(body, incoming.Character, incoming.Sender, Now());
         if (TellText.Clean(body.Text, Limits.MaxTextBytes) is not { Length: > 0 } text)
             return;
         Print(XivChatType.TellIncoming, $"{item.Sender}@{item.SenderWorld}", text);
@@ -277,14 +274,15 @@ public sealed class TellRelay : IDisposable
 
     private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    private void PrintError(TellFriend to, string reason) =>
-        chatGui.PrintError($"[ChatTerror] Tell to {to.Name}@{to.World} could not be relayed: {reason}.");
+    private void PrintError(TellFriend to, string reason) => PrintError($"{to.Name}@{to.World}", reason);
+
+    private void PrintError(string to, string reason) =>
+        chatGui.PrintError($"[ChatTerror] Tell to {to} could not be relayed: {reason}.");
 
     private static string ErrorText(string? code) => code switch
     {
-        TellErrors.NotFriend => "you are not on their friend list",
-        TellErrors.NotChatTerror => "they don't use ChatTerror",
-        TellErrors.NotOwner => "this character is registered to another ChatTerror install",
+        TellErrors.NotPaired => "you are not paired with them",
+        TellErrors.NotChatTerror => "they don't use ChatTerror or turned relayed tells off",
         TellErrors.RateLimited => "too many messages, try again in a moment",
         _ => "the relay refused it",
     };

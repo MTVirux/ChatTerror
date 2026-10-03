@@ -20,7 +20,7 @@ describe("composer channel", () => {
 });
 
 describe("composer blocking", () => {
-  const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+  const contact = { character: "Me", characterWorld: "Lich", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob", installId: "bob-install", key: "bob-key" };
 
   it("lets tells to ChatTerror friends through while the game is offline", () => {
     expect(blockedReason("gameOffline", [contact], "tell", "Bob Smith@Lich", "Me")).toBeNull();

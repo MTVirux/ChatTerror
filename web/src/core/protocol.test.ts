@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isChatItem, parsePluginPayload, type ChatItem } from "./protocol";
+import { isChatItem, parsePluginPayload, parseSettings, type ChatItem, type SettingsPayload } from "./protocol";
 
 const item: ChatItem = { id: "a1", ts: 1_700_000_000_000, channel: "say", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false };
 
@@ -46,6 +46,17 @@ describe("parsePluginPayload", () => {
     for (const maxLength of [0, -5, 1.5, 1e9, NaN, "500"]) {
       expect(parsePluginPayload({ ...settings, maxLength })).toBeNull();
     }
+  });
+
+  it("drops contacts without the paired install id and key but keeps the settings", () => {
+    const contact = { character: "A B", characterWorld: "Lich", characterHash: "h1", name: "C D", world: "Lich", hash: "h2", installId: "i1", key: "k1" };
+    const contactsOf = (contacts: unknown) => (parsePluginPayload({ ...settings, contacts }) as SettingsPayload | null)?.contacts;
+    expect(contactsOf([contact])).toEqual([contact]);
+    expect(contactsOf([{ ...contact, installId: undefined }, contact])).toEqual([contact]);
+    expect(contactsOf([{ ...contact, key: undefined }])).toEqual([]);
+    expect(contactsOf([{ ...contact, installId: 5 }])).toEqual([]);
+    expect(parsePluginPayload({ ...settings, contacts: "nope" })).toBeNull();
+    expect(parseSettings({ ...settings, contacts: [{ ...contact, key: undefined }] })?.maxLength).toBe(settings.maxLength);
   });
 
   it("validates a send result error", () => {

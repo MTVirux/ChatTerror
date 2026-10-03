@@ -18,9 +18,24 @@ public sealed record PairingResponse(string Code, long ExpiresAt);
 
 public sealed record DeviceInfo(string DeviceId, string Name, string Status, string PublicKey, long? LastSeen = null);
 
-public sealed class RelayApiException(int statusCode, string message) : Exception(message)
+public sealed record FriendInviteCreated(string Id, long ExpiresAt);
+
+public sealed record FriendInviteInfo(string InstallId, string InstallPublicKey, string Scope, string Tag);
+
+public sealed record FriendClaimInfo(string InstallId, string PublicKey, string Sealed);
+
+public sealed record RelayFriendInvite(string Id, string Scope, long ExpiresAt, FriendClaimInfo? Claim);
+
+// Profile is the envelope that friend uploaded for us.
+public sealed record RelayFriend(string InstallId, string PublicKey, string? Profile);
+
+public sealed record FriendList(List<RelayFriend> Friends, List<RelayFriendInvite> Invites);
+
+public sealed class RelayApiException(int statusCode, string message, string? code = null) : Exception(message)
 {
     public int StatusCode { get; } = statusCode;
+
+    public string? Code { get; } = code;
 }
 
 public sealed class RelayApi : IDisposable
@@ -33,9 +48,9 @@ public sealed class RelayApi : IDisposable
         this.relayUrl = relayUrl;
     }
 
-    public async Task<InstallResponse> RegisterInstall(string publicKey, CancellationToken ct)
+    public async Task<InstallResponse> RegisterInstall(string publicKey, string proof, CancellationToken ct)
     {
-        using var request = Request(HttpMethod.Post, "/api/installs", null, new { publicKey });
+        using var request = Request(HttpMethod.Post, "/api/installs", null, new { publicKey, proof });
         return await Send<InstallResponse>(request, ct);
     }
 
@@ -61,20 +76,46 @@ public sealed class RelayApi : IDisposable
         await EnsureSuccess(response);
     }
 
-    private sealed record TellCharacterResponse(List<string> Registered);
-
-    public async Task<List<string>> PutTellCharacter(string token, string hash, IReadOnlyList<string> friends)
+    public async Task<FriendInviteCreated> CreateFriendInvite(string token, string scope, string tag)
     {
-        using var request = Request(HttpMethod.Put, $"/api/tells/characters/{Uri.EscapeDataString(hash)}", token, new { friends });
-        return (await Send<TellCharacterResponse>(request)).Registered;
+        using var request = Request(HttpMethod.Post, "/api/friends/invites", token, new { scope, tag });
+        return await Send<FriendInviteCreated>(request);
     }
 
-    public async Task DeleteTellCharacters(string token)
+    // Null when the invite is unknown, expired or already claimed.
+    public async Task<FriendInviteInfo?> GetFriendInvite(string token, string id)
     {
-        using var request = Request(HttpMethod.Delete, "/api/tells/characters", token, null);
+        using var request = Request(HttpMethod.Get, $"/api/friends/invites/{Uri.EscapeDataString(id)}", token, null);
         using var response = await http.SendAsync(request);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
         await EnsureSuccess(response);
+        return await response.Content.ReadFromJsonAsync<FriendInviteInfo>(ProtocolJson.Options);
     }
+
+    public Task ClaimFriendInvite(string token, string id, string @sealed) =>
+        SendEmpty(Request(HttpMethod.Post, $"/api/friends/invites/{Uri.EscapeDataString(id)}/claim", token, new { @sealed }));
+
+    public Task AcceptFriendInvite(string token, string id) =>
+        SendEmpty(Request(HttpMethod.Post, $"/api/friends/invites/{Uri.EscapeDataString(id)}/accept", token, new { }));
+
+    // An invite the relay no longer knows is gone already.
+    public Task DeleteFriendInvite(string token, string id) =>
+        SendEmpty(Request(HttpMethod.Delete, $"/api/friends/invites/{Uri.EscapeDataString(id)}", token, null), allowNotFound: true);
+
+    public async Task<FriendList> ListFriends(string token)
+    {
+        using var request = Request(HttpMethod.Get, "/api/friends", token, null);
+        return await Send<FriendList>(request);
+    }
+
+    public Task PutFriendProfile(string token, string installId, string envelope) =>
+        SendEmpty(Request(HttpMethod.Put, $"/api/friends/{Uri.EscapeDataString(installId)}/profile", token, new { envelope }));
+
+    public Task RemoveFriend(string token, string installId) =>
+        SendEmpty(Request(HttpMethod.Delete, $"/api/friends/{Uri.EscapeDataString(installId)}", token, null), allowNotFound: true);
+
+    public Task DeleteTellBundle(string token) => SendEmpty(Request(HttpMethod.Delete, "/api/tells/bundle", token, null));
 
     public async Task PutTellBundle(string token, SignedTellBundle bundle)
     {
@@ -83,10 +124,10 @@ public sealed class RelayApi : IDisposable
         await EnsureSuccess(response);
     }
 
-    // Null when the character is not a ChatTerror user.
-    public async Task<SignedTellBundle?> GetTellBundle(string token, string hash)
+    // installId is a paired friend's install or "self". Null when they have no bundle, e.g. relayed tells are off.
+    public async Task<SignedTellBundle?> GetTellBundle(string token, string installId)
     {
-        using var request = Request(HttpMethod.Get, $"/api/tells/bundles/{Uri.EscapeDataString(hash)}", token, null);
+        using var request = Request(HttpMethod.Get, $"/api/tells/bundles/{Uri.EscapeDataString(installId)}", token, null);
         using var response = await http.SendAsync(request);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
@@ -118,6 +159,17 @@ public sealed class RelayApi : IDisposable
             ?? throw new RelayApiException((int)response.StatusCode, "Empty response from relay.");
     }
 
+    private async Task SendEmpty(HttpRequestMessage request, bool allowNotFound = false)
+    {
+        using (request)
+        {
+            using var response = await http.SendAsync(request);
+            if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound)
+                return;
+            await EnsureSuccess(response);
+        }
+    }
+
     private static async Task EnsureSuccess(HttpResponseMessage response)
     {
         if (response.IsSuccessStatusCode)
@@ -134,6 +186,6 @@ public sealed class RelayApi : IDisposable
         {
         }
 
-        throw new RelayApiException((int)response.StatusCode, $"Relay returned {(int)response.StatusCode}{(code != null ? $" ({code})" : "")}.");
+        throw new RelayApiException((int)response.StatusCode, $"Relay returned {(int)response.StatusCode}{(code != null ? $" ({code})" : "")}.", code);
     }
 }

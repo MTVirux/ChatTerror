@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ChatTerror.Protocol;
 using Dalamud.Plugin.Services;
 
 namespace ChatTerror.Plugin.Services;
@@ -192,7 +193,7 @@ public sealed class ConnectionManager : IDisposable
         {
             try
             {
-                return await api.RegisterInstall(keys.PublicKey, ct);
+                return await api.RegisterInstall(keys.PublicKey, InstallSignature.Proof(keys.Key), ct);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {

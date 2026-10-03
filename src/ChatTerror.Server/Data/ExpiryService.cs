@@ -10,6 +10,7 @@ public sealed class ExpiryService(RelayStore store, ConnectionRegistry registry,
             registry.Revoke(deviceId, installId, notifyPlugin: true);
 
         store.DeleteExpiredTells();
+        store.DeleteExpiredFriendInvites();
 
         var devices = store.DeleteInactiveDevices(deviceId => registry.Device(deviceId) != null);
         foreach (var (deviceId, installId) in devices)

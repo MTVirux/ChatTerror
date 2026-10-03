@@ -2,12 +2,12 @@ import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaults, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, generateTellKey, openPayload, sealPayload, verifyBundle } from "./crypto";
-import { isValidSettings, isValidTs, parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
+import { isValidTs, parsePluginPayload, parseSettings, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
 import type { PushControl } from "./push";
 import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
 import { DEFAULT_CACHE_LIMIT, type AccountStore, type Pairing } from "./storage";
-import { buildCopies, findContact, openTellFrame, pinFor, tellToItem } from "./tells";
+import { buildCopies, findContact, openTellFrame, tellToItem } from "./tells";
 
 export type SessionStatus = "unpaired" | "pending" | "connecting" | "online" | "gameOffline" | "relayOffline" | "revoked";
 
@@ -169,10 +169,11 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       deps.store.getMeta("syncTs"),
       deps.store.getMeta("approved"),
     ]);
+    void deps.store.deleteMeta("tellPins").catch(() => undefined);
     guard = new SeqGuard(lastSeenWs);
     counter = new SeqCounter(lastSeqSent);
     // Stored values may predate payload validation.
-    const settings = isValidSettings(storedSettings) ? storedSettings : null;
+    const settings = parseSettings(storedSettings);
     syncTs = isValidTs(storedSyncTs) ? storedSyncTs : 0;
     cacheLimit = deps.cacheLimit;
     approved = storedApproved;
@@ -370,26 +371,23 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
   async function sendRelayedTell(contact: TellContact, text: string): Promise<SendResult> {
     if (!pairing) return { ok: false, error: "offline" };
     const { token, deviceId, pluginPublicKey } = pairing;
-    const [pins, issued] = await Promise.all([deps.store.getMeta("tellPins"), deps.store.getMeta("tellBundles")]);
+    const issued = await deps.store.getMeta("tellBundles");
     const isStale = (bundle: TellBundle) => Object.hasOwn(issued, bundle.installPublicKey) && bundle.issuedAt < issued[bundle.installPublicKey];
     let recipient: TellBundle | null;
     let own: TellBundle | null;
     try {
       const [theirs, mine] = await Promise.all([
-        deps.api.getTellBundle(token, contact.hash),
+        deps.api.getTellBundle(token, contact.installId),
         deps.api.getTellBundle(token, "self").catch(() => null),
       ]);
-      // The plugin's pin wins, so forgetting a friend in the plugin also fixes the phones.
-      const expected = contact.key ?? pinFor(pins, contact.hash);
-      recipient = await verifyBundle(theirs, expected);
-      if (!recipient) return { ok: false, error: expected && (await verifyBundle(theirs)) ? "keyChanged" : "notChatTerror" };
+      recipient = await verifyBundle(theirs, contact.key);
+      if (!recipient) return { ok: false, error: (await verifyBundle(theirs)) ? "keyChanged" : "notChatTerror" };
       if (isStale(recipient)) return { ok: false, error: "staleBundle" };
       own = mine && (await verifyBundle(mine, pluginPublicKey));
       if (own && isStale(own)) own = null;
     } catch (error) {
       return { ok: false, error: error instanceof ApiError && error.status === 404 ? "notChatTerror" : "offline" };
     }
-    if (pinFor(pins, contact.hash) !== recipient.installPublicKey) await deps.store.setMeta("tellPins", { ...pins, [contact.hash]: recipient.installPublicKey });
     await deps.store.setMeta("tellBundles", { ...issued, [recipient.installPublicKey]: recipient.issuedAt, ...(own ? { [own.installPublicKey]: own.issuedAt } : {}) });
 
     const body: TellBody = {
@@ -408,13 +406,13 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       const finish = (result: SendResult) => {
         clearTimeout(timer);
         pendingTells.delete(body.id);
-        const item = result.ok ? tellToItem(body, body.fromHash, state.contacts) : null;
+        const item = result.ok ? tellToItem(body, state.contacts, true) : null;
         if (item) void receiveItems([item], false);
         resolve(result);
       };
       const timer = setTimeout(() => finish({ ok: false, error: "timeout" }), sendTimeoutMs);
       pendingTells.set(body.id, finish);
-      if (!connection?.send({ t: "tellSend", id: body.id, from: body.fromHash, to: body.toHash, copies })) finish({ ok: false, error: "offline" });
+      if (!connection?.send({ t: "tellSend", id: body.id, to: contact.installId, copies })) finish({ ok: false, error: "offline" });
     });
   }
 

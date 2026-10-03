@@ -63,9 +63,10 @@ public class TellTests
     [Fact]
     public void Frames_UseTheirDiscriminators()
     {
-        var json = ProtocolJson.Serialize<RelayFrame>(new TellSendFrame("id", "a", "b", [new TellCopy(true, "plugin", "env")]));
+        var json = ProtocolJson.Serialize<RelayFrame>(new TellSendFrame("id", "b", [new TellCopy(true, "plugin", "env")]));
         Assert.Contains("\"t\":\"tellSend\"", json);
         Assert.Equal("{\"t\":\"tellAck\",\"ids\":[\"x\"]}", ProtocolJson.Serialize<RelayFrame>(new TellAckFrame(["x"])));
+        Assert.Equal("{\"t\":\"friendsChanged\"}", ProtocolJson.Serialize<RelayFrame>(new FriendsChangedFrame()));
         Assert.IsType<TellResultFrame>(ProtocolJson.Deserialize<RelayFrame>("{\"t\":\"tellResult\",\"id\":\"x\",\"ok\":true}"));
         Assert.IsType<TellKeyPayload>(ProtocolJson.Deserialize<Payload>("{\"type\":\"tellKey\",\"seq\":1,\"publicKey\":\"k\"}"));
     }

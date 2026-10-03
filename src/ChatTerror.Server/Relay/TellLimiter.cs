@@ -1,6 +1,6 @@
 namespace ChatTerror.Server.Relay;
 
-// Caps tells per sender character and recipient install, and pushes per sender character and device.
+// Caps tells per sender install and recipient install, and pushes per sender install and device.
 // Entries are dropped once their window has passed, so only recently active pairs are kept.
 public sealed class TellLimiter(int tellsPerMinute, TimeSpan pushCooldown, TimeProvider time)
 {
@@ -11,13 +11,13 @@ public sealed class TellLimiter(int tellsPerMinute, TimeSpan pushCooldown, TimeP
     private readonly Dictionary<(string, string), DateTimeOffset> pushes = new();
     private DateTimeOffset nextPrune;
 
-    public bool TryTell(string sender, string recipientInstall)
+    public bool TryTell(string senderInstall, string recipientInstall)
     {
         lock (gate)
         {
             var now = time.GetUtcNow();
             Prune(now);
-            var key = (sender, recipientInstall);
+            var key = (senderInstall, recipientInstall);
             if (!tells.TryGetValue(key, out var window) || now - window.Start >= Window)
                 window = (now, 0);
             if (window.Count >= tellsPerMinute)
@@ -28,13 +28,13 @@ public sealed class TellLimiter(int tellsPerMinute, TimeSpan pushCooldown, TimeP
         }
     }
 
-    public bool TryPush(string sender, string deviceId)
+    public bool TryPush(string senderInstall, string deviceId)
     {
         lock (gate)
         {
             var now = time.GetUtcNow();
             Prune(now);
-            var key = (sender, deviceId);
+            var key = (senderInstall, deviceId);
             if (pushes.TryGetValue(key, out var last) && now - last < pushCooldown)
                 return false;
 
