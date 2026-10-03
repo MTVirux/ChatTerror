@@ -11,8 +11,8 @@ interface Feed {
   loaded: boolean;
 }
 
-// Messages for one account, or every account when deviceId is null.
-export function useFeed(manager: AccountManager, deviceId: string | null, epoch: number): { items: FeedItem[]; loaded: boolean } {
+// Messages for one account.
+export function useFeed(manager: AccountManager, deviceId: string, epoch: number): { items: FeedItem[]; loaded: boolean } {
   const key = `${deviceId}|${epoch}`;
   const [feed, setFeed] = useState<Feed>({ key, items: [], loaded: false });
   useEffect(() => {
@@ -26,12 +26,10 @@ export function useFeed(manager: AccountManager, deviceId: string | null, epoch:
       });
     };
     const off = manager.onMessages((incoming) => {
-      const mine = deviceId ? incoming.filter((i) => i.deviceId === deviceId) : incoming;
+      const mine = incoming.filter((i) => i.deviceId === deviceId);
       if (mine.length > 0) add(mine, false);
     });
-    const history = deviceId
-      ? (manager.session(deviceId)?.loadHistory(HISTORY) ?? Promise.resolve([])).then((list) => list.map((i) => ({ ...i, deviceId })))
-      : manager.loadMerged(HISTORY);
+    const history = (manager.session(deviceId)?.loadHistory(HISTORY) ?? Promise.resolve([])).then((list) => list.map((i) => ({ ...i, deviceId })));
     history.then((list) => add(list, true), () => add([], true));
     return () => {
       alive = false;

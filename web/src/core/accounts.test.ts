@@ -231,20 +231,6 @@ describe("account manager", () => {
     expect(unread("b")).toBe(0);
   });
 
-  it("merges history from every account by time", async () => {
-    await seed("a");
-    await seed("b");
-    await openAccountStore(accountDbName("a")).addMessages([item("1", 1), item("3", 3)], 100);
-    await openAccountStore(accountDbName("b")).addMessages([item("2", 2)], 100);
-    const { deps } = fakeDeps();
-    const manager = await createAccountManager(deps);
-
-    const all = await manager.loadMerged(10);
-    expect(all.map((i) => i.id)).toEqual(["1", "2", "3"]);
-    expect(all.map((i) => i.deviceId)).toEqual(["a", "b", "a"]);
-    expect((await manager.loadMerged(2)).map((i) => i.id)).toEqual(["2", "3"]);
-  });
-
   it("drops an active account whose pairing is gone", async () => {
     await addAccount({ deviceId: "z", dbName: accountDbName("z"), pluginPublicKey: "pk-z", label: "", addedAt: 1, status: "active" });
     const { deps } = fakeDeps();

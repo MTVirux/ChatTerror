@@ -1,5 +1,7 @@
 import type { AccountManager } from "../core/accounts";
+import type { CustomChannel } from "../core/channelPrefs";
 import type { ChatChannel } from "../core/protocol";
+import type { SubRow } from "./channels";
 import { sendErrorText } from "./format";
 
 export interface PendingSend {
@@ -66,4 +68,14 @@ export function createPendingSends(manager: AccountManager): PendingSends {
       set(list.filter((p) => p.localId !== localId));
     },
   };
+}
+
+export function pendingIn(p: PendingSend, deviceId: string, custom: CustomChannel | null, row: SubRow | null): boolean {
+  if (p.deviceId !== deviceId) return false;
+  // With no channels yet, failed sends still need somewhere to show Retry and Dismiss.
+  if (!custom || !row) return true;
+  if (p.character && p.character !== custom.character) return false;
+  if (row.kind === "partner") return p.channel === "tell" && p.target === row.partner;
+  if (row.kind === "type") return p.channel === row.channel;
+  return custom.channels.includes(p.channel);
 }

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import type { CustomChannel } from "../core/channelPrefs";
 import type { ChatChannel, TellContact } from "../core/protocol";
 import type { SessionState, SessionStatus } from "../core/session";
 import { findContact } from "../core/tells";
-import { channelSlug } from "./channels";
+import { channelSlug, type SubRow } from "./channels";
 import { byteLength, channelColor, channelLabel, sendBlockedReason, sendPrefix, TELL_TARGET } from "./format";
 
-// latest is the channel of the newest message in a custom channel, its default target.
-export type Tab = { kind: "all" } | { kind: "custom"; channels: ChatChannel[]; latest?: ChatChannel } | { kind: "tell"; character: string; partner: string };
+// latest is the channel of the newest message in the view, its default target.
+export type Tab = { kind: "custom"; channels: ChatChannel[]; latest?: ChatChannel } | { kind: "tell"; character: string; partner: string };
 
 // Tells to ChatTerror friends still go out through the relay while the game is closed.
 export function blockedReason(status: SessionStatus, contacts: TellContact[], channel?: ChatChannel, target?: string, character?: string): string | null {
@@ -15,8 +16,13 @@ export function blockedReason(status: SessionStatus, contacts: TellContact[], ch
 }
 
 export function pickable(tab: Tab, sendChannels: ChatChannel[]): ChatChannel[] {
-  if (tab.kind === "custom") return sendChannels.filter((c) => tab.channels.includes(c));
-  return tab.kind === "all" ? sendChannels : [];
+  return tab.kind === "custom" ? sendChannels.filter((c) => tab.channels.includes(c)) : [];
+}
+
+export function composerTab(custom: CustomChannel, row: SubRow, latest?: ChatChannel): Tab {
+  if (row.kind === "partner" && row.partner) return { kind: "tell", character: custom.character, partner: row.partner };
+  if (row.kind === "type" && row.channel) return { kind: "custom", channels: [row.channel], latest: row.channel };
+  return { kind: "custom", channels: custom.channels, latest };
 }
 
 export function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current: ChatChannel | undefined): ChatChannel | undefined {
@@ -27,16 +33,9 @@ export function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current:
   return options.find((c) => c !== "tell") ?? options[0];
 }
 
-export interface AccountPicker {
-  options: { deviceId: string; label: string; color: string; online: boolean }[];
-  value: string;
-  onChange: (deviceId: string) => void;
-}
-
-export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
+export function Composer({ state, tab, blocked: blockedBy, onSend }: {
   state: SessionState;
   tab: Tab;
-  account?: AccountPicker;
   blocked?: string;
   onSend: (channel: ChatChannel, text: string, target?: string, character?: string) => void;
 }) {
@@ -107,17 +106,6 @@ export function Composer({ state, tab, account, blocked: blockedBy, onSend }: {
     <form class={`composer${blocked ? " blocked" : ""}`} style={{ "--c": color }} onSubmit={submit}>
       {tab.kind !== "tell" && (
         <div class="composer-meta">
-          {account && (
-            <select
-              class="account-select"
-              style={{ "--c": account.options.find((o) => o.deviceId === account.value)?.color }}
-              aria-label="Send as"
-              value={account.value}
-              onChange={(e) => account.onChange(e.currentTarget.value)}
-            >
-              {account.options.map((o) => <option value={o.deviceId}>{o.online ? o.label : `${o.label} (offline)`}</option>)}
-            </select>
-          )}
           <select
             class="channel-select"
             aria-label="Channel"

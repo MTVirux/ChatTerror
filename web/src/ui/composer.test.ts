@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { blockedReason, pickable, preferredChannel, type Tab } from "./Composer";
+import type { CustomChannel } from "../core/channelPrefs";
+import { blockedReason, composerTab, pickable, preferredChannel, type Tab } from "./Composer";
 
 describe("composer channel", () => {
   const tab: Tab = { kind: "custom", channels: ["freeCompany", "linkshell1", "tell"], latest: "linkshell1" };
@@ -35,5 +36,21 @@ describe("composer blocking", () => {
     expect(blockedReason("gameOffline", [contact], "tell", "Cid Garlond@Lich")).not.toBeNull();
     expect(blockedReason("gameOffline", [contact], "party", undefined)).not.toBeNull();
     expect(blockedReason("relayOffline", [contact], "tell", "Bob Smith@Lich", "Me")).not.toBeNull();
+  });
+});
+
+describe("composerTab", () => {
+  const social: CustomChannel = { id: "s", character: "Alpha Beta", name: "Social", channels: ["freeCompany", "tell"] };
+
+  it("tells the partner from a partner row", () => {
+    expect(composerTab(social, { key: "t|Alpha Beta|A B@W", kind: "partner", label: "A B", hash: false, partner: "A B@W" })).toEqual({ kind: "tell", character: "Alpha Beta", partner: "A B@W" });
+  });
+
+  it("sends only to a type row's chat type", () => {
+    expect(composerTab(social, { key: "c|Alpha Beta|freeCompany", kind: "type", label: "fc", hash: true, channel: "freeCompany" })).toEqual({ kind: "custom", channels: ["freeCompany"], latest: "freeCompany" });
+  });
+
+  it("offers every type of the channel from the all row", () => {
+    expect(composerTab(social, { key: "x|Alpha Beta|s", kind: "all", label: "all", hash: true }, "tell")).toEqual({ kind: "custom", channels: ["freeCompany", "tell"], latest: "tell" });
   });
 });
