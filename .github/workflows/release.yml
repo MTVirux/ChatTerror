@@ -9,7 +9,11 @@ permissions:
   contents: read
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: ci
     runs-on: windows-latest
     permissions:
       contents: write
@@ -45,8 +49,6 @@ jobs:
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
           (Get-FileHash dalamud.zip -Algorithm SHA256).Hash
           Expand-Archive -Force dalamud.zip $env:DALAMUD_HOME
-      - name: Test
-        run: dotnet test ChatTerror.sln -c Release --no-restore
       - name: Build
         run: |
           $ver = $env:TAG
