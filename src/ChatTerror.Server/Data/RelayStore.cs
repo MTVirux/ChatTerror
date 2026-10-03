@@ -78,7 +78,7 @@ public sealed partial class RelayStore
     private readonly int maxInstallsPerDay;
     private readonly int maxQueuedTellsPerSender;
     private readonly Lock claimLock = new();
-    private readonly Lock tellOwnerLock = new();
+    private readonly Lock friendLock = new();
     private readonly Lock installLock = new();
 
     public RelayStore(IOptions<RelayOptions> options, TimeProvider time)
@@ -96,6 +96,7 @@ public sealed partial class RelayStore
         connectionString = new SqliteConnectionStringBuilder { DataSource = path, Pooling = true }.ToString();
         Execute(Schema);
         Execute(TellSchema);
+        Execute(FriendSchema);
         AddInstallLastSeen();
         Execute(InstallIndexes);
     }
@@ -302,6 +303,7 @@ public sealed partial class RelayStore
                 Execute("DELETE FROM devices WHERE install_id = $id", ("$id", id));
                 Execute("DELETE FROM pairings WHERE install_id = $id", ("$id", id));
                 DeleteTellData(id);
+                DeleteFriendData(id);
                 deleted.Add((id, devices));
             }
         }

@@ -7,53 +7,6 @@ namespace ChatTerror.Server.Tests;
 
 public class TellEndpointTests
 {
-    private static readonly string A = TellHash.Compute(1);
-    private static readonly string B = TellHash.Compute(2);
-    private static readonly string C = TellHash.Compute(3);
-
-    [Fact]
-    public async Task PutCharacter_ReturnsRegisteredFriends()
-    {
-        using var app = new RelayApp();
-        using var keyA = P256.Generate();
-        using var keyB = P256.Generate();
-        var a = await app.RegisterInstallAsync(keyA);
-        var b = await app.RegisterInstallAsync(keyB);
-
-        Assert.Empty(await app.PutTellCharacterAsync(a.InstallToken, A, B));
-        Assert.Equal([A], await app.PutTellCharacterAsync(b.InstallToken, B, A));
-    }
-
-    [Fact]
-    public async Task PutCharacter_RejectsBadInput()
-    {
-        using var app = new RelayApp();
-        var a = await app.RegisterInstallAsync();
-        var client = app.Client(a.InstallToken);
-
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/tells/characters/nope", new { friends = Array.Empty<string>() })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync($"/api/tells/characters/{A}", new { friends = new[] { "x" } })).StatusCode);
-        var tooMany = Enumerable.Range(0, Limits.MaxFriends + 1).Select(i => TellHash.Compute((ulong)i + 10)).ToArray();
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync($"/api/tells/characters/{A}", new { friends = tooMany })).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client().PutAsJsonAsync($"/api/tells/characters/{A}", new { friends = Array.Empty<string>() })).StatusCode);
-    }
-
-    [Fact]
-    public async Task DeleteCharacters_Unregisters()
-    {
-        using var app = new RelayApp();
-        using var key = P256.Generate();
-        var a = await app.RegisterInstallAsync(key);
-        var b = await app.RegisterInstallAsync();
-        await app.PutTellCharacterAsync(a.InstallToken, A);
-        await app.PutTellBundleAsync(a.InstallToken, key);
-
-        Assert.Equal(HttpStatusCode.NoContent, (await app.Client(a.InstallToken).DeleteAsync("/api/tells/characters")).StatusCode);
-
-        Assert.Empty(await app.PutTellCharacterAsync(b.InstallToken, B, A));
-        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
-    }
-
     [Fact]
     public async Task Bundle_MustBeSignedByTheInstallKey()
     {
@@ -84,71 +37,74 @@ public class TellEndpointTests
     }
 
     [Fact]
-    public async Task GetBundle_ByHashAndSelf()
+    public async Task GetBundle_ByInstallIdAndSelf()
     {
         using var app = new RelayApp();
         using var key = P256.Generate();
         var a = await app.RegisterInstallAsync(key);
         await using var plugin = await app.ConnectAsync(a.InstallToken);
         var device = await app.PairDeviceAsync(a, plugin);
-        await app.PutTellCharacterAsync(a.InstallToken, A);
         await app.PutTellBundleAsync(a.InstallToken, key, new TellBundleEntry(device.DeviceId, RelayApp.NewPublicKey(), true));
         var expected = Base64Url.Encode(P256.PublicRaw(key));
 
-        var byHash = await app.Client(device.DeviceToken).GetFromJsonAsync<SignedTellBundle>($"/api/tells/bundles/{A}", ProtocolJson.Options);
+        var byId = await app.Client(device.DeviceToken).GetFromJsonAsync<SignedTellBundle>($"/api/tells/bundles/{a.InstallId}", ProtocolJson.Options);
         var self = await app.Client(device.DeviceToken).GetFromJsonAsync<SignedTellBundle>("/api/tells/bundles/self", ProtocolJson.Options);
+        var pluginSelf = await app.Client(a.InstallToken).GetFromJsonAsync<SignedTellBundle>("/api/tells/bundles/self", ProtocolJson.Options);
 
-        Assert.Equal(2, TellBundles.Verify(byHash!, expected)!.Entries.Count);
-        Assert.Equal(byHash, self);
-        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(device.DeviceToken).GetAsync($"/api/tells/bundles/{B}")).StatusCode);
+        Assert.Equal(2, TellBundles.Verify(byId!, expected)!.Entries.Count);
+        Assert.Equal(byId, self);
+        Assert.Equal(byId, pluginSelf);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client().GetAsync("/api/tells/bundles/self")).StatusCode);
     }
 
     [Fact]
-    public async Task PutCharacter_CapsCharactersPerInstall()
-    {
-        using var app = new RelayApp();
-        var a = await app.RegisterInstallAsync();
-        for (var i = 0; i < Limits.MaxTellCharacters; i++)
-            await app.PutTellCharacterAsync(a.InstallToken, TellHash.Compute((ulong)i + 100));
-
-        var extra = await app.Client(a.InstallToken).PutAsJsonAsync($"/api/tells/characters/{TellHash.Compute(5000)}", new { friends = Array.Empty<string>() });
-
-        Assert.Equal(HttpStatusCode.Conflict, extra.StatusCode);
-        Assert.Empty(await app.PutTellCharacterAsync(a.InstallToken, TellHash.Compute(100)));
-    }
-
-    [Fact]
-    public async Task GetBundle_OnlyForMutualFriendsOfTheCallersCharacters()
+    public async Task GetBundle_OnlyForFriendsAndTheirDevices()
     {
         using var app = new RelayApp();
         using var keyA = P256.Generate();
         var a = await app.RegisterInstallAsync(keyA);
         var b = await app.RegisterInstallAsync();
-        await app.PutTellCharacterAsync(a.InstallToken, A);
         await app.PutTellBundleAsync(a.InstallToken, keyA);
-        await app.PutTellCharacterAsync(b.InstallToken, B);
+        await using var pluginB = await app.ConnectAsync(b.InstallToken);
+        var phoneB = await app.PairDeviceAsync(b, pluginB);
 
-        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+        var stranger = await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{a.InstallId}");
+        Assert.Equal(HttpStatusCode.NotFound, stranger.StatusCode);
+        Assert.Equal(TellErrors.NotChatTerror, (await stranger.Content.ReadFromJsonAsync<ErrorResponse>())!.Error);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(phoneB.DeviceToken).GetAsync($"/api/tells/bundles/{a.InstallId}")).StatusCode);
 
-        await app.PutTellCharacterAsync(b.InstallToken, B, A);
-        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+        await app.PairFriendsAsync(a, b);
 
-        await app.PutTellCharacterAsync(a.InstallToken, A, B);
-        Assert.Equal(HttpStatusCode.OK, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{A}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{a.InstallId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Client(phoneB.DeviceToken).GetAsync($"/api/tells/bundles/{a.InstallId}")).StatusCode);
     }
 
     [Fact]
-    public async Task PutCharacter_HidesRegisteredHashesThatDoNotListTheCaller()
+    public async Task DeleteBundle_HidesItFromFriends()
+    {
+        using var app = new RelayApp();
+        using var keyA = P256.Generate();
+        var a = await app.RegisterInstallAsync(keyA);
+        var b = await app.RegisterInstallAsync();
+        await app.PairFriendsAsync(a, b);
+        await app.PutTellBundleAsync(a.InstallToken, keyA);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await app.Client(a.InstallToken).DeleteAsync("/api/tells/bundle")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(b.InstallToken).GetAsync($"/api/tells/bundles/{a.InstallId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Client(a.InstallToken).GetAsync("/api/tells/bundles/self")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await app.Client().DeleteAsync("/api/tells/bundle")).StatusCode);
+    }
+
+    [Fact]
+    public async Task CharacterEndpoints_AreGone()
     {
         using var app = new RelayApp();
         var a = await app.RegisterInstallAsync();
-        var b = await app.RegisterInstallAsync();
-        var c = await app.RegisterInstallAsync();
-        await app.PutTellCharacterAsync(a.InstallToken, A, C);
-        await app.PutTellCharacterAsync(b.InstallToken, B);
+        var client = app.Client(a.InstallToken);
 
-        Assert.Equal([A], await app.PutTellCharacterAsync(c.InstallToken, C, A, B));
-        Assert.Empty(await app.PutTellCharacterAsync(c.InstallToken, C, B));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync($"/api/tells/characters/{TellHash.Compute(1)}", new { friends = Array.Empty<string>() })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/tells/characters")).StatusCode);
     }
 
     [Fact]
@@ -162,32 +118,5 @@ public class TellEndpointTests
         await client.GetAsync("/api/tells/bundles/self");
 
         Assert.Equal(HttpStatusCode.TooManyRequests, (await client.GetAsync("/api/tells/bundles/self")).StatusCode);
-    }
-
-    [Fact]
-    public async Task PutCharacter_StaysWithAnActiveInstall()
-    {
-        using var app = new RelayApp();
-        var owner = await app.RegisterInstallAsync();
-        var other = await app.RegisterInstallAsync();
-        await app.PutTellCharacterAsync(owner.InstallToken, A);
-
-        var taken = await app.Client(other.InstallToken).PutAsJsonAsync($"/api/tells/characters/{A}", new { friends = Array.Empty<string>() });
-        Assert.Equal(HttpStatusCode.Conflict, taken.StatusCode);
-
-        app.Time.Advance(Limits.TellOwnerTtl + TimeSpan.FromMinutes(1));
-        Assert.Empty(await app.PutTellCharacterAsync(other.InstallToken, A));
-    }
-
-    [Fact]
-    public async Task PutCharacter_FreedAfterTheOwnerUnregisters()
-    {
-        using var app = new RelayApp();
-        var owner = await app.RegisterInstallAsync();
-        var other = await app.RegisterInstallAsync();
-        await app.PutTellCharacterAsync(owner.InstallToken, A);
-        await app.Client(owner.InstallToken).DeleteAsync("/api/tells/characters");
-
-        Assert.Empty(await app.PutTellCharacterAsync(other.InstallToken, A));
     }
 }

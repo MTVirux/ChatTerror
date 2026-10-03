@@ -9,26 +9,22 @@ namespace ChatTerror.Server.Tests;
 
 public class TellRelayTests
 {
-    private static readonly string A = TellHash.Compute(1);
-    private static readonly string B = TellHash.Compute(2);
-
     private sealed record Side(InstallResponse Install, ECDiffieHellman Key);
 
-    // A and B are friends both ways, each with only the plugin in its bundle.
+    // A and B are paired friends, each with only the plugin in its bundle.
     private static async Task<(Side A, Side B)> FriendsAsync(RelayApp app)
     {
         var keyA = P256.Generate();
         var keyB = P256.Generate();
         var a = new Side(await app.RegisterInstallAsync(keyA), keyA);
         var b = new Side(await app.RegisterInstallAsync(keyB), keyB);
-        await app.PutTellCharacterAsync(a.Install.InstallToken, A, B);
-        await app.PutTellCharacterAsync(b.Install.InstallToken, B, A);
+        await app.PairFriendsAsync(a.Install, b.Install);
         await app.PutTellBundleAsync(a.Install.InstallToken, a.Key);
         await app.PutTellBundleAsync(b.Install.InstallToken, b.Key);
         return (a, b);
     }
 
-    private static TellSendFrame Send(string id, string from, string to, params TellCopy[] copies) => new(id, from, to, copies);
+    private static TellSendFrame Send(string id, Side to, params TellCopy[] copies) => new(id, to.Install.InstallId, copies);
 
     [Fact]
     public async Task Tell_ReachesOnlineRecipientPlugin()
@@ -38,46 +34,69 @@ public class TellRelayTests
         await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
         await using var pluginB = await app.ConnectAsync(b.Install.InstallToken);
 
-        await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t1", b, new TellCopy(false, TellTargets.Plugin, "env")));
 
         Assert.Equal(new TellResultFrame("t1", true), await pluginA.ReceiveAsync<TellResultFrame>());
-        Assert.Equal(new TellFrame("t1", A, "env", Base64Url.Encode(P256.PublicRaw(a.Key))), await pluginB.ReceiveAsync<TellFrame>());
+        Assert.Equal(new TellFrame("t1", a.Install.InstallId, "env", Base64Url.Encode(P256.PublicRaw(a.Key))), await pluginB.ReceiveAsync<TellFrame>());
     }
 
     [Fact]
-    public async Task Tell_RefusedWhenRecipientDoesNotListSender()
+    public async Task Tell_RefusedForStrangersAndWithoutABundle()
     {
         using var app = new RelayApp();
         var (a, b) = await FriendsAsync(app);
-        await app.PutTellCharacterAsync(b.Install.InstallToken, B);
+        using var keyC = P256.Generate();
+        var c = new Side(await app.RegisterInstallAsync(keyC), keyC);
+        await app.PutTellBundleAsync(c.Install.InstallToken, c.Key);
         await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+        await using var pluginC = await app.ConnectAsync(c.Install.InstallToken);
 
-        await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t1", c, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.Equal(new TellResultFrame("t1", false, TellErrors.NotPaired), await pluginA.ReceiveAsync<TellResultFrame>());
+        await pluginA.SendAsync(Send("t2", a, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.Equal(TellErrors.NotPaired, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
+        await pluginA.SendAsync(new TellSendFrame("t3", "unknown-install", [new TellCopy(false, TellTargets.Plugin, "env")]));
+        Assert.Equal(TellErrors.NotPaired, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
+        await pluginC.SendAsync(Send("t4", a, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.Equal(TellErrors.NotPaired, (await pluginC.ReceiveAsync<TellResultFrame>()).Error);
 
-        Assert.Equal(new TellResultFrame("t1", false, TellErrors.NotChatTerror), await pluginA.ReceiveAsync<TellResultFrame>());
+        await app.Client(b.Install.InstallToken).DeleteAsync("/api/tells/bundle");
+        await pluginA.SendAsync(Send("t5", b, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.Equal(TellErrors.NotChatTerror, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
     }
 
     [Fact]
-    public async Task Tell_RefusedForForeignSenderUnknownTargetAndBadCopies()
+    public async Task Tell_RefusedForBadCopies()
     {
         using var app = new RelayApp();
-        var (a, _) = await FriendsAsync(app);
+        var (a, b) = await FriendsAsync(app);
         await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
 
-        await pluginA.SendAsync(Send("t1", B, A, new TellCopy(false, TellTargets.Plugin, "env")));
-        Assert.Equal(TellErrors.NotOwner, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
-
-        await pluginA.SendAsync(Send("t2", A, TellHash.Compute(99), new TellCopy(false, TellTargets.Plugin, "env")));
-        Assert.Equal(TellErrors.NotChatTerror, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
-
-        await pluginA.SendAsync(Send("t3", A, B, new TellCopy(false, "not-in-bundle", "env")));
+        await pluginA.SendAsync(Send("t3", b, new TellCopy(false, "not-in-bundle", "env")));
         Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
 
-        await pluginA.SendAsync(Send("t4", A, B, new TellCopy(false, TellTargets.Plugin, new string('x', Limits.MaxTellEnvelopeChars + 1))));
+        await pluginA.SendAsync(Send("t4", b, new TellCopy(false, TellTargets.Plugin, new string('x', Limits.MaxTellEnvelopeChars + 1))));
         Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
 
-        await pluginA.SendAsync(Send("t5", A, B, new TellCopy(false, TellTargets.Plugin, "env1"), new TellCopy(false, TellTargets.Plugin, "env2")));
+        await pluginA.SendAsync(Send("t5", b, new TellCopy(false, TellTargets.Plugin, "env1"), new TellCopy(false, TellTargets.Plugin, "env2")));
         Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
+
+        await pluginA.SendAsync(Send("", b, new TellCopy(false, TellTargets.Plugin, "env")));
+        Assert.Equal(TellErrors.BadCopies, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
+    }
+
+    [Fact]
+    public async Task Tell_StopsOnceTheFriendIsRemoved()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+
+        await app.Client(b.Install.InstallToken).DeleteAsync($"/api/friends/{a.Install.InstallId}");
+        await pluginA.ReceiveAsync<FriendsChangedFrame>();
+        await pluginA.SendAsync(Send("t1", b, new TellCopy(false, TellTargets.Plugin, "env")));
+
+        Assert.Equal(TellErrors.NotPaired, (await pluginA.ReceiveAsync<TellResultFrame>()).Error);
     }
 
     [Fact]
@@ -87,8 +106,8 @@ public class TellRelayTests
         var (a, b) = await FriendsAsync(app);
         await using (var pluginA = await app.ConnectAsync(a.Install.InstallToken))
         {
-            await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env1")));
-            await pluginA.SendAsync(Send("t2", A, B, new TellCopy(false, TellTargets.Plugin, "env2")));
+            await pluginA.SendAsync(Send("t1", b, new TellCopy(false, TellTargets.Plugin, "env1")));
+            await pluginA.SendAsync(Send("t2", b, new TellCopy(false, TellTargets.Plugin, "env2")));
             await pluginA.ReceiveAsync<TellResultFrame>();
             await pluginA.ReceiveAsync<TellResultFrame>();
         }
@@ -120,7 +139,7 @@ public class TellRelayTests
         await app.PutTellBundleAsync(a.Install.InstallToken, a.Key, new TellBundleEntry(phoneA.DeviceId, RelayApp.NewPublicKey(), false));
         await using var phoneASocket = await app.ConnectAsync(phoneA.DeviceToken);
 
-        await phoneASocket.SendAsync(Send("t1", A, B,
+        await phoneASocket.SendAsync(Send("t1", b,
             new TellCopy(false, TellTargets.Plugin, "toB"),
             new TellCopy(false, phoneB.DeviceId, "toPhoneB"),
             new TellCopy(true, TellTargets.Plugin, "toA"),
@@ -133,6 +152,7 @@ public class TellRelayTests
         var (_, body) = Assert.Single(app.Push.Calls);
         Assert.Contains("\"t\":\"tell\"", body);
         Assert.Contains("toPhoneB", body);
+        Assert.Contains($"\"f\":\"{a.Install.InstallId}\"", body);
         Assert.Contains($"\"k\":\"{Base64Url.Encode(P256.PublicRaw(a.Key))}\"", body);
         Assert.DoesNotContain(await phoneASocket.BarrierAsync(), f => f is TellFrame);
     }
@@ -141,11 +161,11 @@ public class TellRelayTests
     public async Task Tell_RateLimitedGetsATellResult()
     {
         using var app = new RelayApp(new() { ["Relay:FramesPerSecond"] = "0.001", ["Relay:FrameBurst"] = "1" });
-        var (a, _) = await FriendsAsync(app);
+        var (a, b) = await FriendsAsync(app);
         await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
 
-        await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
-        await pluginA.SendAsync(Send("t2", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t1", b, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t2", b, new TellCopy(false, TellTargets.Plugin, "env")));
 
         Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
         Assert.Equal(new TellResultFrame("t2", false, TellErrors.RateLimited), await pluginA.ReceiveAsync<TellResultFrame>());
@@ -158,7 +178,7 @@ public class TellRelayTests
         var (a, b) = await FriendsAsync(app);
         await using (var pluginA = await app.ConnectAsync(a.Install.InstallToken))
         {
-            await pluginA.SendAsync(Send("t1", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+            await pluginA.SendAsync(Send("t1", b, new TellCopy(false, TellTargets.Plugin, "env")));
             await pluginA.ReceiveAsync<TellResultFrame>();
         }
 
@@ -170,19 +190,19 @@ public class TellRelayTests
     public async Task Tell_RateLimitedPerSenderAndRecipient()
     {
         using var app = new RelayApp(new() { ["Relay:TellsPerRecipientPerMinute"] = "2" });
-        var (a, _) = await FriendsAsync(app);
+        var (a, b) = await FriendsAsync(app);
         await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
 
         for (var i = 0; i < 2; i++)
         {
-            await pluginA.SendAsync(Send($"t{i}", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+            await pluginA.SendAsync(Send($"t{i}", b, new TellCopy(false, TellTargets.Plugin, "env")));
             Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
         }
-        await pluginA.SendAsync(Send("t2", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t2", b, new TellCopy(false, TellTargets.Plugin, "env")));
         Assert.Equal(new TellResultFrame("t2", false, TellErrors.RateLimited), await pluginA.ReceiveAsync<TellResultFrame>());
 
         app.Time.Advance(TimeSpan.FromMinutes(1));
-        await pluginA.SendAsync(Send("t3", A, B, new TellCopy(false, TellTargets.Plugin, "env")));
+        await pluginA.SendAsync(Send("t3", b, new TellCopy(false, TellTargets.Plugin, "env")));
         Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
     }
 
@@ -201,13 +221,13 @@ public class TellRelayTests
 
         foreach (var id in new[] { "t1", "t2" })
         {
-            await pluginA.SendAsync(Send(id, A, B, new TellCopy(false, phoneB.DeviceId, "env")));
+            await pluginA.SendAsync(Send(id, b, new TellCopy(false, phoneB.DeviceId, "env")));
             Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
         }
         Assert.Single(app.Push.Calls);
 
         app.Time.Advance(TimeSpan.FromSeconds(10));
-        await pluginA.SendAsync(Send("t3", A, B, new TellCopy(false, phoneB.DeviceId, "env")));
+        await pluginA.SendAsync(Send("t3", b, new TellCopy(false, phoneB.DeviceId, "env")));
         Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
         Assert.Equal(2, app.Push.Calls.Count);
 

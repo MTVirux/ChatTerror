@@ -7,57 +7,8 @@ namespace ChatTerror.Server.Tests;
 
 public class TellStoreTests
 {
-    private static readonly string A = TellHash.Compute(1);
-    private static readonly string B = TellHash.Compute(2);
-    private static readonly string C = TellHash.Compute(3);
-
-    [Fact]
-    public void Character_MovesWhenTheOwnerInstallIsUnknown()
-    {
-        using var app = new RelayApp();
-        var store = app.Services.GetRequiredService<RelayStore>();
-
-        store.SetTellCharacter("install1", A, [B]);
-        Assert.True(store.SetTellCharacter("install2", A, []));
-
-        Assert.Equal("install2", store.TellCharacterOwner(A));
-        Assert.False(store.IsTellFriend(A, B));
-        Assert.Null(store.TellCharacterOwner(B));
-    }
-
-    [Fact]
-    public void Friends_AndRegisteredLookup()
-    {
-        using var app = new RelayApp();
-        var store = app.Services.GetRequiredService<RelayStore>();
-
-        store.SetTellCharacter("install1", A, [B]);
-
-        Assert.True(store.IsTellFriend(A, B));
-        Assert.False(store.IsTellFriend(B, A));
-        Assert.Empty(store.MutualTellFriends(A, [B]));
-
-        store.DeleteTellCharacters("install1");
-        Assert.Null(store.TellCharacterOwner(A));
-    }
-
-    [Fact]
-    public void MutualFriends_NeedBothSidesToListEachOther()
-    {
-        using var app = new RelayApp();
-        var store = app.Services.GetRequiredService<RelayStore>();
-
-        store.SetTellCharacter("install1", A, [B, C]);
-        store.SetTellCharacter("install2", B, [A]);
-        store.SetTellCharacter("install3", C, []);
-
-        Assert.Equal([B], store.MutualTellFriends(A, [B, C]));
-        Assert.True(store.CanSeeTellCharacter("install1", A));
-        Assert.True(store.CanSeeTellCharacter("install1", B));
-        Assert.False(store.CanSeeTellCharacter("install1", C));
-        Assert.True(store.CanSeeTellCharacter("install2", A));
-        Assert.False(store.CanSeeTellCharacter("install3", A));
-    }
+    private const string A = "senderA";
+    private const string B = "senderB";
 
     [Fact]
     public void Queue_KeepsNewestAndAckRemoves()
@@ -68,13 +19,13 @@ public class TellStoreTests
         for (var i = 0; i < Limits.MaxQueuedTells + 5; i++)
         {
             app.Time.Advance(TimeSpan.FromMilliseconds(1));
-            store.EnqueueTell($"id{i}", "install1", TellTargets.Plugin, TellHash.Compute((ulong)i + 100), "key", $"env{i}");
+            store.EnqueueTell($"id{i}", "install1", TellTargets.Plugin, $"sender{i}", "key", $"env{i}");
         }
         store.EnqueueTell("other", "install1", "device1", A, "key", "env");
 
         var pending = store.PendingTells("install1", TellTargets.Plugin);
         Assert.Equal(Limits.MaxQueuedTells, pending.Count);
-        Assert.Equal(new TellFrame("id5", TellHash.Compute(105), "env5", "key"), pending[0]);
+        Assert.Equal(new TellFrame("id5", "sender5", "env5", "key"), pending[0]);
 
         store.AckTells("install1", TellTargets.Plugin, ["id5", "other"]);
         Assert.Equal(Limits.MaxQueuedTells - 1, store.PendingTells("install1", TellTargets.Plugin).Count);
@@ -116,7 +67,26 @@ public class TellStoreTests
     }
 
     [Fact]
-    public void Bundle_IsReplaced()
+    public void Queue_DeletesTellsBetweenTwoInstallsOnly()
+    {
+        using var app = new RelayApp();
+        var store = app.Services.GetRequiredService<RelayStore>();
+        store.EnqueueTell("ab", "installB", TellTargets.Plugin, "installA", "key", "env");
+        store.EnqueueTell("ab", "installB", "device1", "installA", "key", "env");
+        store.EnqueueTell("ba", "installA", TellTargets.Plugin, "installB", "key", "env");
+        store.EnqueueTell("cb", "installB", TellTargets.Plugin, "installC", "key", "env");
+        store.EnqueueTell("self", "installA", "device2", "installA", "key", "env");
+
+        store.DeleteQueuedTellsBetween("installA", "installB");
+
+        Assert.Equal(["cb"], store.PendingTells("installB", TellTargets.Plugin).Select(tell => tell.Id));
+        Assert.Empty(store.PendingTells("installB", "device1"));
+        Assert.Empty(store.PendingTells("installA", TellTargets.Plugin));
+        Assert.Single(store.PendingTells("installA", "device2"));
+    }
+
+    [Fact]
+    public void Bundle_IsReplacedAndDeleted()
     {
         using var app = new RelayApp();
         var store = app.Services.GetRequiredService<RelayStore>();
@@ -126,5 +96,8 @@ public class TellStoreTests
 
         Assert.Equal(new SignedTellBundle("c", "d"), store.FindTellBundle("install1"));
         Assert.Null(store.FindTellBundle("install2"));
+
+        store.DeleteTellBundle("install1");
+        Assert.Null(store.FindTellBundle("install1"));
     }
 }

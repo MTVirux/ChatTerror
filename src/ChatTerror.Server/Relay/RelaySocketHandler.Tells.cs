@@ -35,17 +35,17 @@ public sealed partial class RelaySocketHandler
             if (copy.Self && copy.Target == TellTarget(conn))
                 continue;
 
-            store.EnqueueTell(frame.Id, install, copy.Target, frame.From, senderKey, copy.Envelope);
+            store.EnqueueTell(frame.Id, install, copy.Target, conn.InstallId, senderKey, copy.Envelope);
             if (Online(install, copy.Target) is { } online)
             {
-                online.Send(new TellFrame(frame.Id, frame.From, copy.Envelope, senderKey));
+                online.Send(new TellFrame(frame.Id, conn.InstallId, copy.Envelope, senderKey));
             }
             else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
                 && device.InstallId == install
-                && tellLimiter.TryPush(frame.From, device.Id))
+                && tellLimiter.TryPush(conn.InstallId, device.Id))
             {
-                var body = JsonSerializer.Serialize(new { t = "tell", i = frame.Id, f = frame.From, e = copy.Envelope, k = senderKey, d = device.Id });
+                var body = JsonSerializer.Serialize(new { t = "tell", i = frame.Id, f = conn.InstallId, e = copy.Envelope, k = senderKey, d = device.Id });
                 _ = PushAsync(device, subscription, body);
             }
         }
@@ -57,15 +57,14 @@ public sealed partial class RelaySocketHandler
     {
         recipientInstall = null;
         recipient = null;
-        if (frame.Id.Length is 0 or > MaxTellIdLength || !TellHash.IsValid(frame.From) || !TellHash.IsValid(frame.To))
+        if (frame.Id.Length is 0 or > MaxTellIdLength)
             return TellErrors.BadCopies;
-        if (store.TellCharacterOwner(frame.From) != conn.InstallId)
-            return TellErrors.NotOwner;
+        if (!store.AreFriends(conn.InstallId, frame.To))
+            return TellErrors.NotPaired;
 
-        recipientInstall = store.TellCharacterOwner(frame.To);
-        recipient = recipientInstall != null && store.FindTellBundle(recipientInstall) is { } signed ? TellBundles.Read(signed) : null;
-        // Same answer as for an unregistered hash, so a stranger can't learn who uses ChatTerror or whose friend list they are on.
-        if (recipient == null || !store.IsTellFriend(frame.To, frame.From))
+        recipientInstall = frame.To;
+        recipient = store.FindTellBundle(recipientInstall) is { } signed ? TellBundles.Read(signed) : null;
+        if (recipient == null)
             return TellErrors.NotChatTerror;
 
         var own = store.FindTellBundle(conn.InstallId) is { } ownSigned ? TellBundles.Read(ownSigned) : null;
@@ -79,7 +78,7 @@ public sealed partial class RelaySocketHandler
             if (bundle == null || copy.Envelope.Length is 0 or > Limits.MaxTellEnvelopeChars || bundle.Entries.All(e => e.Target != copy.Target))
                 return TellErrors.BadCopies;
         }
-        return tellLimiter.TryTell(frame.From, recipientInstall!) ? null : TellErrors.RateLimited;
+        return tellLimiter.TryTell(conn.InstallId, recipientInstall) ? null : TellErrors.RateLimited;
     }
 
     private Conn? Online(string installId, string target) =>

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -19,7 +20,12 @@ public record DeviceInfo(string DeviceId, string Name, string Status, long LastS
 public record DeviceMe(string DeviceId, string Status);
 public record ErrorResponse(string Error);
 public record VapidResponse(string PublicKey);
-public record TellCharacterResponse(List<string> Registered);
+public record FriendInviteResponse(string Id, long ExpiresAt);
+public record FriendInviteInfo(string InstallId, string InstallPublicKey, string Scope, string Tag);
+public record FriendClaimInfo(string InstallId, string PublicKey, string Sealed);
+public record FriendInviteEntry(string Id, string Scope, long ExpiresAt, FriendClaimInfo? Claim);
+public record FriendEntry(string InstallId, string PublicKey, string? Profile);
+public record FriendsResponse(List<FriendEntry> Friends, List<FriendInviteEntry> Invites);
 
 public sealed class RelayApp : WebApplicationFactory<Program>
 {
@@ -103,11 +109,29 @@ public sealed class RelayApp : WebApplicationFactory<Program>
         return (await response.Content.ReadFromJsonAsync<InstallResponse>())!;
     }
 
-    public async Task<List<string>> PutTellCharacterAsync(string installToken, string hash, params string[] friends)
+    public static string NewTag() => Base64Url.Encode(RandomNumberGenerator.GetBytes(32));
+
+    public async Task<FriendInviteResponse> CreateFriendInviteAsync(string installToken, string scope = FriendScopes.Account)
     {
-        var response = await Client(installToken).PutAsJsonAsync($"/api/tells/characters/{hash}", new { friends });
+        var response = await Client(installToken).PostAsJsonAsync("/api/friends/invites", new { scope, tag = NewTag() });
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<TellCharacterResponse>())!.Registered;
+        return (await response.Content.ReadFromJsonAsync<FriendInviteResponse>())!;
+    }
+
+    public Task<HttpResponseMessage> PostFriendClaimAsync(string installToken, string inviteId, string sealedClaim = "sealed") =>
+        Client(installToken).PostAsJsonAsync($"/api/friends/invites/{inviteId}/claim", new { @sealed = sealedClaim });
+
+    public Task<HttpResponseMessage> PostFriendAcceptAsync(string installToken, string inviteId) =>
+        Client(installToken).PostAsync($"/api/friends/invites/{inviteId}/accept", null);
+
+    public async Task<FriendsResponse> GetFriendsAsync(string installToken) =>
+        (await Client(installToken).GetFromJsonAsync<FriendsResponse>("/api/friends"))!;
+
+    public async Task PairFriendsAsync(InstallResponse inviter, InstallResponse redeemer)
+    {
+        var invite = await CreateFriendInviteAsync(inviter.InstallToken);
+        Assert.Equal(HttpStatusCode.Accepted, (await PostFriendClaimAsync(redeemer.InstallToken, invite.Id)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await PostFriendAcceptAsync(inviter.InstallToken, invite.Id)).StatusCode);
     }
 
     // The bundle always lists the plugin itself with the install key.

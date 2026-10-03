@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ChatTerror.Protocol;
 
 namespace ChatTerror.Server.Data;
@@ -6,12 +5,6 @@ namespace ChatTerror.Server.Data;
 public sealed partial class RelayStore
 {
     private const string TellSchema = """
-        CREATE TABLE IF NOT EXISTS tell_characters(
-            hash TEXT PRIMARY KEY,
-            install_id TEXT NOT NULL,
-            friends TEXT NOT NULL,
-            updated INTEGER NOT NULL);
-        CREATE INDEX IF NOT EXISTS tell_characters_install ON tell_characters(install_id);
         CREATE TABLE IF NOT EXISTS tell_bundles(
             install_id TEXT PRIMARY KEY,
             bundle TEXT NOT NULL,
@@ -28,65 +21,8 @@ public sealed partial class RelayStore
         CREATE INDEX IF NOT EXISTS tell_queue_target ON tell_queue(install_id, target, created);
         """;
 
-    // The relay can't prove who is logged in as a character, so a character only moves to another install once its
-    // current install has been gone for TellOwnerTtl. Returns false when it belongs to an active install.
-    public bool SetTellCharacter(string installId, string hash, IReadOnlyCollection<string> friends)
-    {
-        lock (tellOwnerLock)
-        {
-            var owner = TellCharacterOwner(hash);
-            if (owner != null && owner != installId)
-            {
-                var ownerSeen = QuerySingle<long?>("SELECT last_seen FROM installs WHERE id = $id", reader => reader.GetInt64(0), ("$id", owner));
-                if (ownerSeen > Now - (long)Limits.TellOwnerTtl.TotalMilliseconds)
-                    return false;
-            }
-
-            Execute("""
-                INSERT INTO tell_characters(hash, install_id, friends, updated) VALUES($hash, $install, $friends, $now)
-                ON CONFLICT(hash) DO UPDATE SET install_id = excluded.install_id, friends = excluded.friends, updated = excluded.updated
-                """,
-                ("$hash", hash), ("$install", installId), ("$friends", JsonSerializer.Serialize(friends)), ("$now", Now));
-            return true;
-        }
-    }
-
     public string? InstallPublicKey(string installId) =>
         QuerySingle("SELECT public_key FROM installs WHERE id = $id", reader => reader.GetString(0), ("$id", installId));
-
-    public int CountTellCharacters(string installId) =>
-        QuerySingle("SELECT COUNT(*) FROM tell_characters WHERE install_id = $install", reader => reader.GetInt32(0), ("$install", installId));
-
-    // Bundles are only handed out for the install's own characters and mutual friends of them. The caller picks its own
-    // friend lists, so a one-sided entry must not reveal whether a hash is registered.
-    public bool CanSeeTellCharacter(string installId, string hash)
-    {
-        if (TellCharacterOwner(hash) == installId)
-            return true;
-        var theirFriends = TellFriends(hash);
-        var own = Query("SELECT hash, friends FROM tell_characters WHERE install_id = $install",
-            reader => (Hash: reader.GetString(0), Friends: ParseFriends(reader.GetString(1))), ("$install", installId));
-        return own.Any(character => character.Friends.Contains(hash) && theirFriends.Contains(character.Hash));
-    }
-
-    public void DeleteTellCharacters(string installId) =>
-        Execute("DELETE FROM tell_characters WHERE install_id = $install", ("$install", installId));
-
-    public string? TellCharacterOwner(string hash) =>
-        QuerySingle("SELECT install_id FROM tell_characters WHERE hash = $hash", reader => reader.GetString(0), ("$hash", hash));
-
-    public bool IsTellFriend(string hash, string friendHash) => TellFriends(hash).Contains(friendHash);
-
-    // Only friends that list the character back, so the answer can't be used to probe arbitrary hashes.
-    public List<string> MutualTellFriends(string hash, IEnumerable<string> friends) =>
-        friends.Distinct().Where(friend => IsTellFriend(friend, hash)).ToList();
-
-    private List<string> TellFriends(string hash) =>
-        QuerySingle("SELECT friends FROM tell_characters WHERE hash = $hash", reader => reader.GetString(0), ("$hash", hash)) is { } friends
-            ? ParseFriends(friends)
-            : [];
-
-    private static List<string> ParseFriends(string json) => JsonSerializer.Deserialize<List<string>>(json) ?? [];
 
     public void SetTellBundle(string installId, SignedTellBundle bundle) =>
         Execute("""
@@ -94,6 +30,9 @@ public sealed partial class RelayStore
             ON CONFLICT(install_id) DO UPDATE SET bundle = excluded.bundle, signature = excluded.signature
             """,
             ("$install", installId), ("$bundle", bundle.Bundle), ("$signature", bundle.Signature));
+
+    public void DeleteTellBundle(string installId) =>
+        Execute("DELETE FROM tell_bundles WHERE install_id = $install", ("$install", installId));
 
     public SignedTellBundle? FindTellBundle(string installId) =>
         QuerySingle("SELECT bundle, signature FROM tell_bundles WHERE install_id = $install",
@@ -134,13 +73,15 @@ public sealed partial class RelayStore
                 ("$id", id), ("$install", installId), ("$target", target));
     }
 
+    public void DeleteQueuedTellsBetween(string a, string b) =>
+        Execute("DELETE FROM tell_queue WHERE (install_id = $a AND sender = $b) OR (install_id = $b AND sender = $a)", ("$a", a), ("$b", b));
+
     public int DeleteExpiredTells() =>
         Execute("DELETE FROM tell_queue WHERE created <= $cutoff", ("$cutoff", Now - (long)Limits.TellTtl.TotalMilliseconds));
 
     private void DeleteTellData(string installId)
     {
-        DeleteTellCharacters(installId);
-        Execute("DELETE FROM tell_bundles WHERE install_id = $install", ("$install", installId));
+        DeleteTellBundle(installId);
         Execute("DELETE FROM tell_queue WHERE install_id = $install", ("$install", installId));
     }
 }
