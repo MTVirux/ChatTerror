@@ -38,9 +38,28 @@ public sealed partial class RelayStore
         QuerySingle("SELECT bundle, signature FROM tell_bundles WHERE install_id = $install",
             reader => new SignedTellBundle(reader.GetString(0), reader.GetString(1)), ("$install", installId));
 
+    // The sender's own install, or a friend of it.
+    private const string FromFriendOrSelf = """
+        (sender = install_id OR EXISTS(SELECT 1 FROM friends
+            WHERE (install_a = sender AND install_b = install_id) OR (install_a = install_id AND install_b = sender)))
+        """;
+
+    // Returns false, queuing nothing, when the sender is no longer a friend. The lock keeps an unfriend from landing
+    // between the check and the insert, which would leave the tell queued.
+    public bool EnqueueTell(string id, string installId, string target, string sender, string senderKey, string envelope)
+    {
+        lock (friendLock)
+        {
+            if (sender != installId && !AreFriends(sender, installId))
+                return false;
+            QueueTell(id, installId, target, sender, senderKey, envelope);
+            return true;
+        }
+    }
+
     // Only the newest copies per target are kept, so a flood can't grow the queue without bound, and each sender only
     // gets a share of them, so one sender can't push out everyone else's tells.
-    public void EnqueueTell(string id, string installId, string target, string sender, string senderKey, string envelope)
+    private void QueueTell(string id, string installId, string target, string sender, string senderKey, string envelope)
     {
         Execute("""
             INSERT OR IGNORE INTO tell_queue(id, install_id, target, sender, sender_key, envelope, created)
@@ -61,10 +80,15 @@ public sealed partial class RelayStore
             ("$install", installId), ("$target", target), ("$max", Limits.MaxQueuedTells));
     }
 
-    public List<TellFrame> PendingTells(string installId, string target) =>
-        Query("SELECT id, sender, envelope, sender_key FROM tell_queue WHERE install_id = $install AND target = $target ORDER BY created, rowid",
+    // Tells from senders who are no longer friends are dropped rather than delivered.
+    public List<TellFrame> PendingTells(string installId, string target)
+    {
+        Execute($"DELETE FROM tell_queue WHERE install_id = $install AND target = $target AND NOT {FromFriendOrSelf}",
+            ("$install", installId), ("$target", target));
+        return Query("SELECT id, sender, envelope, sender_key FROM tell_queue WHERE install_id = $install AND target = $target ORDER BY created, rowid",
             reader => new TellFrame(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)),
             ("$install", installId), ("$target", target));
+    }
 
     public void AckTells(string installId, string target, IEnumerable<string> ids)
     {

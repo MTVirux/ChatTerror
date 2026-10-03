@@ -29,13 +29,18 @@ public sealed partial class RelaySocketHandler
         }
 
         var senderKey = store.InstallPublicKey(conn.InstallId)!;
-        foreach (var copy in frame.Copies)
+        // Recipient copies go first, so an unfriend since CheckTell refuses the tell before any self copy is queued.
+        foreach (var copy in frame.Copies.OrderBy(copy => copy.Self))
         {
             var install = copy.Self ? conn.InstallId : recipientInstall!;
             if (copy.Self && copy.Target == TellTarget(conn))
                 continue;
 
-            store.EnqueueTell(frame.Id, install, copy.Target, conn.InstallId, senderKey, copy.Envelope);
+            if (!store.EnqueueTell(frame.Id, install, copy.Target, conn.InstallId, senderKey, copy.Envelope))
+            {
+                conn.Send(new TellResultFrame(frame.Id, false, TellErrors.NotPaired));
+                return;
+            }
             if (Online(install, copy.Target) is { } online)
             {
                 online.Send(new TellFrame(frame.Id, conn.InstallId, copy.Envelope, senderKey));

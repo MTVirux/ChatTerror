@@ -19,8 +19,10 @@ public class TellStoreTests
         for (var i = 0; i < Limits.MaxQueuedTells + 5; i++)
         {
             app.Time.Advance(TimeSpan.FromMilliseconds(1));
+            store.AddFriend("install1", $"sender{i}");
             store.EnqueueTell($"id{i}", "install1", TellTargets.Plugin, $"sender{i}", "key", $"env{i}");
         }
+        store.AddFriend("install1", A);
         store.EnqueueTell("other", "install1", "device1", A, "key", "env");
 
         var pending = store.PendingTells("install1", TellTargets.Plugin);
@@ -37,6 +39,8 @@ public class TellStoreTests
     {
         using var app = new RelayApp(new() { ["Relay:MaxQueuedTellsPerSender"] = "3" });
         var store = app.Services.GetRequiredService<RelayStore>();
+        store.AddFriend("install1", A);
+        store.AddFriend("install1", B);
 
         store.EnqueueTell("b1", "install1", TellTargets.Plugin, B, "key", "env");
         for (var i = 0; i < 10; i++)
@@ -55,6 +59,7 @@ public class TellStoreTests
     {
         using var app = new RelayApp();
         var store = app.Services.GetRequiredService<RelayStore>();
+        store.AddFriend("install1", A);
         store.EnqueueTell("id", "install1", TellTargets.Plugin, A, "key", "env");
 
         app.Time.Advance(Limits.TellTtl - TimeSpan.FromMinutes(1));
@@ -71,6 +76,8 @@ public class TellStoreTests
     {
         using var app = new RelayApp();
         var store = app.Services.GetRequiredService<RelayStore>();
+        store.AddFriend("installA", "installB");
+        store.AddFriend("installB", "installC");
         store.EnqueueTell("ab", "installB", TellTargets.Plugin, "installA", "key", "env");
         store.EnqueueTell("ab", "installB", "device1", "installA", "key", "env");
         store.EnqueueTell("ba", "installA", TellTargets.Plugin, "installB", "key", "env");
@@ -83,6 +90,21 @@ public class TellStoreTests
         Assert.Empty(store.PendingTells("installB", "device1"));
         Assert.Empty(store.PendingTells("installA", TellTargets.Plugin));
         Assert.Single(store.PendingTells("installA", "device2"));
+    }
+
+    [Fact]
+    public void Queue_RefusesTellsFromExFriendsButKeepsSelfCopies()
+    {
+        using var app = new RelayApp();
+        var store = app.Services.GetRequiredService<RelayStore>();
+        store.AddFriend("installA", "installB");
+        store.RemoveFriend("installA", "installB");
+
+        Assert.False(store.EnqueueTell("ab", "installB", TellTargets.Plugin, "installA", "key", "env"));
+        Assert.True(store.EnqueueTell("self", "installA", "device1", "installA", "key", "env"));
+
+        Assert.Empty(store.PendingTells("installB", TellTargets.Plugin));
+        Assert.Single(store.PendingTells("installA", "device1"));
     }
 
     [Fact]
