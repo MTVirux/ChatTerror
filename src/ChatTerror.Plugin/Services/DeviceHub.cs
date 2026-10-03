@@ -71,6 +71,8 @@ public sealed class DeviceHub : IDisposable
 
     public event Action<RelayFrame>? TellFrameReceived;
 
+    public event Action? FriendsChanged;
+
     public Func<IReadOnlyList<TellContact>> Contacts { get; set; } = () => [];
 
     public MessageHistory History { get; }
@@ -300,6 +302,9 @@ public sealed class DeviceHub : IDisposable
                 break;
             case TellFrame or TellResultFrame:
                 TellFrameReceived?.Invoke(frame);
+                break;
+            case FriendsChangedFrame:
+                FriendsChanged?.Invoke();
                 break;
             case ErrorFrame error:
                 log.Warning($"Relay error: {error.Code}");

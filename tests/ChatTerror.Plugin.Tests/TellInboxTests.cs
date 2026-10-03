@@ -48,14 +48,11 @@ public class TellInboxTests
     [Fact]
     public void Incoming_UsesTheFriendListNameAndNeverAFutureTime()
     {
-        var item = TellItems.Incoming(Body(ts: 9_999_999), "bob", [Me], now: 5000);
+        var item = TellItems.Incoming(Body(ts: 9_999_999), Me, Me.Friends[0], now: 5000);
 
         Assert.Equal(new ChatItem("t1", 5000, ChatChannel.Tell, "Bob Smith", "Lich", "hi", "Main Char", false), item);
-        Assert.Equal(1000, TellItems.Incoming(Body(ts: 1000), "bob", [Me], now: 5000)!.Ts);
+        Assert.Equal(1000, TellItems.Incoming(Body(ts: 1000), Me, Me.Friends[0], now: 5000).Ts);
     }
-
-    [Fact]
-    public void Incoming_DropsUnknownSenders() => Assert.Null(TellItems.Incoming(Body(), "stranger", [Me], now: 5000));
 
     [Fact]
     public void Outgoing_ClampsTheTime()
@@ -75,16 +72,5 @@ public class TellInboxTests
         Assert.Null(inFlight.Complete("a"));
         Assert.Equal(["second"], inFlight.DropAll());
         Assert.Empty(inFlight.DropAll());
-    }
-
-    [Fact]
-    public void Contacts_CarryThePinnedKey()
-    {
-        var registered = new TellCharacter { Hash = "me", Name = "Main Char", World = "Twintania", Friends = Me.Friends, Registered = ["bob"] };
-
-        var contacts = TellContacts.ForDevices([registered], new Dictionary<string, string> { ["bob"] = "key" });
-
-        Assert.Equal("key", Assert.Single(contacts).Key);
-        Assert.Null(Assert.Single(TellContacts.ForDevices([registered], new Dictionary<string, string>())).Key);
     }
 }

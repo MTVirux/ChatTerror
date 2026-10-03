@@ -6,19 +6,17 @@ namespace ChatTerror.Plugin.Tests;
 public class TellSyncTests
 {
     [Fact]
-    public void Off_UnregistersUntilItSucceeds()
+    public void Off_DeletesTheBundleUntilItSucceeds()
     {
-        Assert.Equal(TellSyncStep.Unregister, TellSync.Next(enabled: false, unregisterPending: true, bundleDue: true, characterDue: true, TellSyncStep.Unregister));
-        Assert.Equal(TellSyncStep.Idle, TellSync.Next(enabled: false, unregisterPending: false, bundleDue: true, characterDue: true, TellSyncStep.Idle));
+        Assert.Equal(TellSyncStep.DeleteBundle, TellSync.Next(enabled: false, deletePending: true, bundleDue: true));
+        Assert.Equal(TellSyncStep.Idle, TellSync.Next(enabled: false, deletePending: false, bundleDue: true));
     }
 
     [Fact]
-    public void FailingBundle_DoesNotStarveTheCharacter()
+    public void On_UploadsTheBundleWhenItChanged()
     {
-        Assert.Equal(TellSyncStep.Bundle, TellSync.Next(true, false, bundleDue: true, characterDue: true, TellSyncStep.Idle));
-        Assert.Equal(TellSyncStep.Character, TellSync.Next(true, false, bundleDue: true, characterDue: true, TellSyncStep.Bundle));
-        Assert.Equal(TellSyncStep.Bundle, TellSync.Next(true, false, bundleDue: true, characterDue: false, TellSyncStep.Bundle));
-        Assert.Equal(TellSyncStep.Idle, TellSync.Next(true, false, bundleDue: false, characterDue: false, TellSyncStep.Character));
+        Assert.Equal(TellSyncStep.Bundle, TellSync.Next(enabled: true, deletePending: false, bundleDue: true));
+        Assert.Equal(TellSyncStep.Idle, TellSync.Next(enabled: true, deletePending: false, bundleDue: false));
     }
 
     [Fact]

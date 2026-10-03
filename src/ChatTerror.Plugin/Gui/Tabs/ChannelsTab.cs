@@ -19,14 +19,14 @@ public sealed class ChannelsTab(Configuration config, TellDirectory tells, Actio
     public void Draw()
     {
         var relayed = config.TellsEnabled;
-        if (ImGui.Checkbox("Relay tells to ChatTerror friends", ref relayed))
+        if (ImGui.Checkbox("Relay tells to paired ChatTerror friends", ref relayed))
         {
             config.TellsEnabled = relayed;
             changed();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Tells to friends who also use ChatTerror are delivered through the relay when the game can't reach them.");
-        ImGui.TextDisabled("Uploads hashed IDs of your characters and friend lists to the relay. ChatTerror friends can see you use it.");
+            ImGui.SetTooltip("Tells to friends you paired with in the Friends tab are delivered through the relay when the game can't reach them.");
+        ImGui.TextDisabled("Only paired friends can send you relayed tells. The relay never sees your characters or friend lists.");
         if (config.TellsEnabled && tells.Status is { } status)
             ImGui.TextDisabled(status);
         ImGui.Spacing();

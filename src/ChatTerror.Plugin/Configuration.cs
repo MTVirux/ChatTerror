@@ -9,7 +9,7 @@ namespace ChatTerror.Plugin;
 
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = ConfigMigration.CurrentVersion;
 
     public bool Enabled { get; set; } = true;
 
@@ -44,16 +44,16 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool TellsEnabled { get; set; } = true;
 
-    // Set when tells were turned off and the relay has not confirmed removing this install's characters yet.
-    public bool TellsUnregisterPending { get; set; }
+    // Set when tells were turned off and the relay has not confirmed deleting this install's bundle yet.
+    public bool TellBundleDeletePending { get; set; }
 
     public List<TellCharacter> TellCharacters { get; set; } = new();
 
-    // Install key first seen for each friend's character hash.
-    public Dictionary<string, string> TellPins { get; set; } = new();
+    public List<PairedFriend> PairedFriends { get; set; } = new();
 
-    // IssuedAt of the newest bundle accepted for each friend's character hash.
-    public Dictionary<string, long> TellBundleIssuedAt { get; set; } = new();
+    public List<OwnFriendInvite> FriendInvites { get; set; } = new();
+
+    public List<PendingFriend> PendingFriends { get; set; } = new();
 
     // Recently received relayed tell ids, oldest first, so a replay after a restart is still caught.
     public List<string> SeenTellIds { get; set; } = new();
@@ -62,7 +62,10 @@ public sealed class Configuration : IPluginConfiguration
     // could not be decrypted, e.g. a config copied from another machine or Windows user.
     public bool LoadInstallToken()
     {
-        Version = 2;
+        // Version 2 trusted friends' keys on first use, those pins and registrations are not carried over.
+        if (ConfigMigration.NeedsBundleDelete(Version, TellsEnabled))
+            TellBundleDeletePending = true;
+        Version = ConfigMigration.CurrentVersion;
         if (plainInstallToken != null || InstallTokenProtected == null)
         {
             InstallToken = plainInstallToken;
@@ -95,4 +98,34 @@ public sealed class PairedDevice
 
     // The phone's key for relayed tells, separate from the pairing key.
     public string? TellKey { get; set; }
+}
+
+// A friend code we created. The secret never goes to the relay.
+public sealed class OwnFriendInvite
+{
+    public string Id { get; set; } = "";
+
+    // DPAPI encrypted, base64.
+    public string? SecretProtected { get; set; }
+
+    // Only used when DPAPI is unavailable.
+    public string? PlainSecret { get; set; }
+
+    public string Scope { get; set; } = FriendScopes.Account;
+
+    public long ExpiresAt { get; set; }
+
+    private string? secret;
+
+    [JsonIgnore]
+    public string? Secret
+    {
+        get => secret ??= PlainSecret ?? (SecretProtected is { } value ? Secrets.UnprotectString(value) : null);
+        set
+        {
+            secret = value;
+            SecretProtected = value == null ? null : Secrets.ProtectString(value);
+            PlainSecret = SecretProtected == null ? value : null;
+        }
+    }
 }
