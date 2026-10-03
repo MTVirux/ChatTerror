@@ -36,7 +36,6 @@ export interface AccountManager {
   subscribe(cb: (accounts: AccountView[]) => void): () => void;
   session(deviceId: string): Session | undefined;
   onMessages(cb: (items: FeedItem[]) => void): () => void;
-  loadMerged(limit: number): Promise<FeedItem[]>;
   pair(code: string, deviceName: string): Promise<{ deviceId: string; fingerprint: string }>;
   remove(deviceId: string): Promise<void>;
   rename(deviceId: string, name: string): Promise<void>;
@@ -169,13 +168,6 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
     onMessages(cb) {
       messageListeners.add(cb);
       return () => messageListeners.delete(cb);
-    },
-
-    async loadMerged(limit) {
-      const lists = await Promise.all(
-        ordered().map(async (e) => (await e.session.loadHistory(limit)).map((i) => ({ ...i, deviceId: e.record.deviceId }))),
-      );
-      return lists.flat().sort((a, b) => a.ts - b.ts).slice(-limit);
     },
 
     async pair(code, deviceName) {

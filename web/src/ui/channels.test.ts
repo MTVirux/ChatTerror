@@ -1,25 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "../core/channelPrefs";
+import type { AccountView } from "../core/accounts";
+import { EMPTY_CHANNEL_PREFS, withDefaultChannels, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import type { ChatItem } from "../core/protocol";
-import { arrange, buildChannelTree, channelKey, channelSlug, firstChannel, inChannel, isCollapsed, itemKey, parseChannelKey, pinFirst, toggleCategory, type ChannelRef } from "./channels";
+import { channelFor, channelSlug, charactersOf, customColor, itemKey, keyCharacter, partnersOf, railChannels, subRows } from "./channels";
 
 function msg(over: Partial<ChatItem>): ChatItem {
   return { id: Math.random().toString(), ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
 }
 
-const prefs: ChannelPrefs = { ...EMPTY_CHANNEL_PREFS, custom: [{ id: "s", character: "Alpha Beta", name: "Social", channels: ["freeCompany", "linkshell1", "tell"] }] };
-const socialRef: ChannelRef = { kind: "custom", character: "Alpha Beta", id: "s" };
+const tells: CustomChannel = { id: "tells", character: "Alpha Beta", name: "Tells", channels: ["tell"] };
+const fc: CustomChannel = { id: "fc", character: "Alpha Beta", name: "FC", channels: ["freeCompany"] };
+const social: CustomChannel = { id: "s", character: "Alpha Beta", name: "Social", channels: ["linkshell1", "say"] };
+const mixed: CustomChannel = { id: "m", character: "Alpha Beta", name: "Mixed", channels: ["freeCompany", "tell"] };
+const prefs: ChannelPrefs = { ...EMPTY_CHANNEL_PREFS, custom: [fc, social, tells, { ...fc, character: "Other One" }] };
 
-describe("channel keys", () => {
-  it("round trips custom and tell refs", () => {
-    const tell = { kind: "tell", character: "Alpha Beta", partner: "Thancred Waters@Gilgamesh" } as const;
-    expect(parseChannelKey(channelKey(socialRef))).toEqual(socialRef);
-    expect(parseChannelKey(channelKey(tell))).toEqual(tell);
-    expect(parseChannelKey("c|Alpha Beta|say")).toBeNull();
-    expect(parseChannelKey("nonsense")).toBeNull();
-  });
-
-  it("puts both directions of a tell in one channel", () => {
+describe("keys", () => {
+  it("puts both directions of a tell in one key", () => {
     const incoming = msg({ channel: "tell", sender: "Thancred Waters", senderWorld: "Gilgamesh" });
     const outgoing = msg({ channel: "tell", sender: "Thancred Waters@Gilgamesh", senderWorld: undefined, outgoing: true });
     expect(itemKey(incoming)).toBe("t|Alpha Beta|Thancred Waters@Gilgamesh");
@@ -30,116 +26,112 @@ describe("channel keys", () => {
     expect(itemKey(msg({ channel: "tell", sender: "Thancred Waters", senderWorld: undefined }))).toBe("t|Alpha Beta|Thancred Waters");
   });
 
+  it("reads the character out of item, row and custom keys", () => {
+    expect(keyCharacter("c|Alpha Beta|party")).toBe("Alpha Beta");
+    expect(keyCharacter("t|Alpha Beta|A B@W")).toBe("Alpha Beta");
+    expect(keyCharacter("x|Alpha Beta|fc")).toBe("Alpha Beta");
+    expect(keyCharacter("nonsense")).toBeUndefined();
+    expect(keyCharacter("q|Alpha Beta|x")).toBeUndefined();
+  });
+
   it("slugs channel labels", () => {
     expect(channelSlug("freeCompany")).toBe("fc");
-    expect(channelSlug("party")).toBe("party");
+    expect(channelSlug("linkshell1")).toBe("ls1");
   });
 });
 
-describe("inChannel", () => {
-  it("shows a custom channel's members of that character only", () => {
-    expect(inChannel(msg({ channel: "freeCompany" }), socialRef, prefs)).toBe(true);
-    expect(inChannel(msg({ channel: "tell", sender: "A B", senderWorld: "W" }), socialRef, prefs)).toBe(true);
-    expect(inChannel(msg({ channel: "party" }), socialRef, prefs)).toBe(false);
-    expect(inChannel(msg({ channel: "freeCompany", character: "Other One" }), socialRef, prefs)).toBe(false);
+describe("railChannels", () => {
+  it("puts Tells first, then the character's channels in creation order", () => {
+    expect(railChannels(prefs, "Alpha Beta")).toEqual([tells, fc, social]);
   });
 
-  it("shows nothing for a deleted custom channel", () => {
-    expect(inChannel(msg({ channel: "freeCompany" }), socialRef, EMPTY_CHANNEL_PREFS)).toBe(false);
+  it("applies the saved order and appends channels it doesn't know", () => {
+    const ordered = { ...prefs, order: { "Alpha Beta": ["x|Alpha Beta|s", "t|Alpha Beta|A B@W", "x|Alpha Beta|gone"] } };
+    expect(railChannels(ordered, "Alpha Beta")).toEqual([tells, social, fc]);
   });
 
-  it("shows one partner in a tell channel", () => {
-    const tell: ChannelRef = { kind: "tell", character: "Alpha Beta", partner: "A B@W" };
-    expect(inChannel(msg({ channel: "tell", sender: "A B", senderWorld: "W" }), tell, prefs)).toBe(true);
-    expect(inChannel(msg({ channel: "tell", sender: "C D", senderWorld: "W" }), tell, prefs)).toBe(false);
-  });
-});
-
-describe("buildChannelTree", () => {
-  it("shows the logged-in character first with only custom channels and tells", () => {
-    const items = [msg({ character: "Other One", ts: 50 }), msg({ channel: "say" }), msg({ channel: "tell", sender: "A B", senderWorld: "W", ts: 5 })];
-    const tree = buildChannelTree(items, { character: "Alpha Beta", prefs });
-    expect(tree.map((c) => [c.character, c.active])).toEqual([["Alpha Beta", true], ["Other One", false]]);
-    expect(tree[0].refs).toEqual([socialRef, { kind: "tell", character: "Alpha Beta", partner: "A B@W" }]);
-    expect(tree[1].refs).toEqual([]);
+  it("keeps Tells first even when the saved order moves it", () => {
+    const ordered = { ...prefs, order: { "Alpha Beta": ["x|Alpha Beta|fc", "x|Alpha Beta|tells"] } };
+    expect(railChannels(ordered, "Alpha Beta")).toEqual([tells, fc, social]);
   });
 
   it("handles characters named like Object.prototype keys", () => {
-    const items = [msg({ character: "__proto__", channel: "tell" }), msg({ character: "constructor", channel: "tell" })];
-    const tree = buildChannelTree(items, { prefs });
-    expect(tree.map((c) => c.character).sort()).toEqual(["Alpha Beta", "__proto__", "constructor"]);
-  });
-
-  it("keeps a character that only has custom channels", () => {
-    expect(buildChannelTree([], { prefs }).map((c) => c.character)).toEqual(["Alpha Beta"]);
-  });
-
-  it("orders other characters by latest activity and tells newest first", () => {
-    const items = [
-      msg({ character: "Old Char", ts: 10 }),
-      msg({ character: "New Char", ts: 20 }),
-      msg({ character: "New Char", channel: "tell", sender: "A B", senderWorld: "W", ts: 21 }),
-      msg({ character: "New Char", channel: "tell", sender: "C D", senderWorld: "W", ts: 30 }),
-    ];
-    const tree = buildChannelTree(items, { prefs: EMPTY_CHANNEL_PREFS });
-    expect(tree.map((c) => c.character)).toEqual(["New Char", "Old Char"]);
-    expect(tree[0].refs.map(channelKey)).toEqual(["t|New Char|C D@W", "t|New Char|A B@W"]);
-  });
-
-  it("applies the saved order", () => {
-    const items = [msg({ channel: "tell", sender: "A B", senderWorld: "W" })];
-    const ordered = { ...prefs, order: { "Alpha Beta": ["t|Alpha Beta|A B@W", "x|Alpha Beta|s"] } };
-    expect(buildChannelTree(items, { character: "Alpha Beta", prefs: ordered })[0].refs.map(channelKey)).toEqual(["t|Alpha Beta|A B@W", "x|Alpha Beta|s"]);
-  });
-
-  it("finds the first channel", () => {
-    expect(firstChannel(buildChannelTree([], { character: "Alpha Beta", prefs }))).toEqual(socialRef);
-    expect(firstChannel(buildChannelTree([], { character: "Alpha Beta", prefs: EMPTY_CHANNEL_PREFS }))).toBeNull();
-    expect(firstChannel([])).toBeNull();
+    expect(railChannels(prefs, "__proto__")).toEqual([]);
   });
 });
 
-describe("category collapse", () => {
-  it("expands only the logged-in character by default", () => {
-    expect(isCollapsed({ character: "A", active: true }, [])).toBe(false);
-    expect(isCollapsed({ character: "B", active: false }, [])).toBe(true);
-  });
-  it("flips a toggled character and keeps new ones on the default", () => {
-    const toggled = toggleCategory(toggleCategory([], "A"), "B");
-    expect(isCollapsed({ character: "A", active: true }, toggled)).toBe(true);
-    expect(isCollapsed({ character: "B", active: false }, toggled)).toBe(false);
-    expect(isCollapsed({ character: "C", active: false }, toggled)).toBe(true);
-  });
-  it("toggles back to the default", () => {
-    expect(toggleCategory(toggleCategory([], "A"), "A")).toEqual([]);
+describe("channelFor", () => {
+  it("finds the first channel showing a message", () => {
+    expect(channelFor(prefs, "Alpha Beta", "t|Alpha Beta|A B@W")).toEqual(tells);
+    expect(channelFor(prefs, "Alpha Beta", "c|Alpha Beta|say")).toEqual(social);
+    expect(channelFor(prefs, "Alpha Beta", "c|Alpha Beta|yell")).toBeUndefined();
   });
 });
 
-describe("arrange", () => {
-  const a: ChannelRef = { kind: "custom", character: "A", id: "a" };
-  const b: ChannelRef = { kind: "custom", character: "A", id: "b" };
-  const tell: ChannelRef = { kind: "tell", character: "A", partner: "Foo Bar@World" };
+describe("partnersOf", () => {
+  const items = [
+    msg({ channel: "tell", sender: "A B", senderWorld: "W", ts: 10 }),
+    msg({ channel: "tell", sender: "C D", senderWorld: "W", ts: 30 }),
+    msg({ channel: "tell", sender: "A B@W", senderWorld: undefined, outgoing: true, ts: 20 }),
+    msg({ channel: "tell", sender: "E F", senderWorld: "W", ts: 40, character: "Other One" }),
+    msg({ channel: "party", ts: 50 }),
+  ];
 
-  it("puts saved rows first and new ones after in default order", () => {
-    expect(arrange([a, b, tell], [channelKey(b)])).toEqual([b, a, tell]);
+  it("lists one character's partners newest first", () => {
+    expect(partnersOf(items, "Alpha Beta", [])).toEqual(["C D@W", "A B@W"]);
   });
-  it("lets pins lead the saved order", () => {
-    expect(arrange([a, b, tell], [channelKey(b), channelKey(a)], [channelKey(tell)])).toEqual([tell, b, a]);
+
+  it("puts pinned partners first", () => {
+    expect(partnersOf(items, "Alpha Beta", ["t|Alpha Beta|A B@W", "t|Other One|E F@W"])).toEqual(["A B@W", "C D@W"]);
   });
 });
 
-describe("pinFirst", () => {
-  const say: ChannelRef = { kind: "custom", character: "A", id: "say" };
-  const party: ChannelRef = { kind: "custom", character: "A", id: "party" };
-  const tell: ChannelRef = { kind: "tell", character: "A", partner: "Foo Bar@World" };
+describe("subRows", () => {
+  it("gives a single chat type one row", () => {
+    expect(subRows(fc, [])).toEqual([{ key: "x|Alpha Beta|fc", kind: "all", label: "fc", hash: true }]);
+  });
 
-  it("keeps the order without pins", () => {
-    expect(pinFirst([party, say, tell], [])).toEqual([party, say, tell]);
+  it("lists every chat type of a mixed channel after all", () => {
+    expect(subRows(social, []).map((r) => [r.key, r.kind, r.label])).toEqual([
+      ["x|Alpha Beta|s", "all", "all"],
+      ["c|Alpha Beta|linkshell1", "type", "ls1"],
+      ["c|Alpha Beta|say", "type", "say"],
+    ]);
   });
-  it("puts pinned channels and tells first in pin order", () => {
-    expect(pinFirst([party, say, tell], [channelKey(tell), channelKey(say)])).toEqual([tell, say, party]);
+
+  it("lists partners under All tells", () => {
+    expect(subRows(tells, ["A B@W"])).toEqual([
+      { key: "x|Alpha Beta|tells", kind: "all", label: "All tells", hash: false },
+      { key: "t|Alpha Beta|A B@W", kind: "partner", label: "A B", hash: false, partner: "A B@W" },
+    ]);
   });
-  it("ignores pins for channels not in the list", () => {
-    expect(pinFirst([party, say], ["x|B|say", channelKey(say)])).toEqual([say, party]);
+
+  it("shows the chat type and partners of a channel with one type and tells", () => {
+    expect(subRows(mixed, ["A B@W"]).map((r) => r.kind)).toEqual(["all", "type", "partner"]);
+  });
+});
+
+describe("customColor", () => {
+  it("uses the first non-tell chat type's color", () => {
+    expect(customColor(mixed)).toBe("var(--ch-freeCompany)");
+    expect(customColor(tells)).toBe("var(--ch-tell)");
+    expect(customColor(undefined)).toBe("var(--muted)");
+  });
+});
+
+describe("charactersOf", () => {
+  const account = (character: string | undefined, channelPrefs: ChannelPrefs) => ({ deviceId: "a", label: "a", character, state: { channelPrefs } }) as unknown as AccountView;
+
+  it("puts the logged-in character first and the rest by name", () => {
+    const seeded = withDefaultChannels(withDefaultChannels(EMPTY_CHANNEL_PREFS, "Zed Alt"), "Alpha Beta");
+    expect(charactersOf(account("Mid Char", seeded), [msg({ character: "Beta Alt" })])).toEqual(["Mid Char", "Alpha Beta", "Beta Alt", "Zed Alt"]);
+  });
+
+  it("lists known characters when nobody is logged in", () => {
+    expect(charactersOf(account(undefined, prefs))).toEqual(["Alpha Beta", "Other One"]);
+  });
+
+  it("gives nothing for a fresh pairing", () => {
+    expect(charactersOf(account(undefined, EMPTY_CHANNEL_PREFS))).toEqual([]);
   });
 });

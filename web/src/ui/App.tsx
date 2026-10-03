@@ -1,25 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
+import { channelIncludes, customKey, EMPTY_CHANNEL_PREFS, isItemMuted, saveCustom, withTells, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import { AccountSettings } from "./AccountSettings";
 import { AppSettings } from "./AppSettings";
-import { channelIncludes, isItemMuted } from "../core/channelPrefs";
-import { buildChannelTree, channelKey, type ChannelRef } from "./channels";
-import { ChannelList, HomeList } from "./ChannelList";
+import { ChannelList } from "./ChannelList";
+import { ChannelMenu, type MenuTarget } from "./ChannelMenu";
+import { ChannelRail } from "./ChannelRail";
+import { CharacterBar } from "./CharacterBar";
+import { characterGroups, describeCharacter } from "./characters";
+import { CharacterSheet } from "./CharacterSheet";
+import { charactersOf, partnersOf, railChannels, subRows, type SubRow } from "./channels";
 import { ChatPane } from "./ChatPane";
+import { CustomChannelSheet } from "./CustomChannelSheet";
 import { Drawer } from "./Drawer";
-import { GearIcon, MenuIcon } from "./icons";
-import { initialNav, legacyNav, navTo, parseLastChannels, rememberChannel, resolveChannel, serializeNav, validNav, type Nav, type Server } from "./nav";
+import { MenuIcon } from "./icons";
 import { PairScreen } from "./PairScreen";
 import { createPendingSends, type PendingSend, type PendingSends } from "./pending";
 import { PendingScreen } from "./PendingScreen";
+import { chatTarget, initialPlace, parseLink, parseViews, pickTarget, PLACE_KEY, remember, resolveChannel, resolveRow, SERVER_KEY, SUB_KEY, validPlace, viewKey, type Picks, type Place } from "./place";
 import { RevokedNotice } from "./RevokedNotice";
-import { ServerRail } from "./ServerRail";
-import { createUnreadTracker, type UnreadTracker } from "./unread";
+import { characterUnread, createUnreadTracker, viewUnread, type UnreadTracker } from "./unread";
 import { useFeed } from "./useFeed";
 
-export const NAV_KEY = "chatterror.nav";
-export const LAST_KEY = "chatterror.lastChannels";
-const LEGACY_KEY = "chatterror.account";
+const OLD_KEYS = ["chatterror.nav", "chatterror.lastChannels", "chatterror.account"];
 
 function stored(key: string): string | null {
   try {
@@ -34,6 +37,15 @@ function store(key: string, value: string) {
     localStorage.setItem(key, value);
   } catch {
     // Private mode or blocked storage; the place is just not remembered.
+  }
+}
+
+function forgetOldKeys() {
+  try {
+    for (const key of OLD_KEYS) localStorage.removeItem(key);
+    for (const key of Object.keys(localStorage)) if (key.startsWith("chatterror.toggled.")) localStorage.removeItem(key);
+  } catch {
+    // Blocked storage; the old keys are never read again anyway.
   }
 }
 
@@ -70,126 +82,185 @@ function useUnreadTracker(manager: AccountManager): UnreadTracker {
   return tracker;
 }
 
-type Settings = { app: true } | { deviceId: string; fromApp?: boolean };
+// A notification link also picks the channel and row the message shows in, awaited until that row shows up.
+function initialPicks(accounts: AccountView[]): { picks: Picks; awaited: string | null } {
+  const picks = { server: parseViews(stored(SERVER_KEY)), sub: parseViews(stored(SUB_KEY)) };
+  const link = parseLink(location.hash);
+  const account = link && accounts.find((a) => a.deviceId === link.deviceId);
+  const target = account && link.chat ? chatTarget(account.state.channelPrefs, link.chat) : null;
+  return account && target ? { picks: pickTarget(picks, account.deviceId, target), awaited: target.rowKey } : { picks, awaited: null };
+}
 
 export function App({ manager }: { manager: AccountManager }) {
   const accounts = useAccounts(manager);
   const [sends] = useState(() => createPendingSends(manager));
   const pending = usePendingSends(sends);
   const unread = useUnreadTracker(manager);
-  const [last] = useState(() => ({ current: parseLastChannels(stored(LAST_KEY)) }));
-  const [saved, setNav] = useState<Nav>(() => initialNav(manager.list(), location.hash, stored(NAV_KEY) ?? legacyNav(stored(LEGACY_KEY)), last.current));
-  const nav = validNav(saved, accounts);
-  const go = (server: Server) => setNav(navTo(server, last.current));
+  const [saved, setPlace] = useState(() => initialPlace(manager.list(), location.hash, stored(PLACE_KEY), charactersOf));
+  const [initial] = useState(() => initialPicks(manager.list()));
+  const [picks, setPicks] = useState(initial.picks);
+  const awaited = useRef<string | null>(initial.awaited);
+  const [adding, setAdding] = useState(() => location.hash.startsWith("#pair="));
   const [pairingAgain, setPairingAgain] = useState(false);
   const [notified, setNotified] = useState(0);
-  const beforeAdd = useRef<Server | null>(null);
+  const place = validPlace(saved, accounts, charactersOf);
 
   useEffect(() => {
     if (location.hash.startsWith("#account=")) history.replaceState(null, "", location.pathname + location.search);
-    try {
-      localStorage.removeItem(LEGACY_KEY);
-    } catch {
-      // Blocked storage; the old key is simply ignored once the new one exists.
-    }
+    forgetOldKeys();
   }, []);
 
   useEffect(() => {
-    manager.setViewing(nav.server === "add" ? null : nav.server === "home" ? "all" : nav.server);
-    if (nav.server === "add") return;
-    setPairingAgain(false);
-    beforeAdd.current = nav.server;
-  }, [manager, nav.server]);
+    manager.setViewing(adding || !place ? null : place.deviceId);
+  }, [manager, adding, place?.deviceId]);
 
   useEffect(() => {
-    if (nav.server !== "add") store(NAV_KEY, serializeNav(nav));
-    const next = rememberChannel(last.current, nav);
-    if (next !== last.current) {
-      last.current = next;
-      store(LAST_KEY, JSON.stringify(next));
-    }
-  }, [nav.server, nav.channel]);
+    if (place) store(PLACE_KEY, JSON.stringify(place));
+  }, [place?.deviceId, place?.character]);
+
+  useEffect(() => store(SERVER_KEY, JSON.stringify(picks.server)), [picks.server]);
+  useEffect(() => store(SUB_KEY, JSON.stringify(picks.sub)), [picks.sub]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type !== "openAccount" || typeof event.data.deviceId !== "string") return;
-      go(event.data.deviceId);
-      setNotified((n) => n + 1);
+      openChat(event.data.deviceId, typeof event.data.chat === "string" ? event.data.chat : null);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, []);
 
-  async function pair(code: string, name: string) {
-    const { deviceId } = await manager.pair(code, name);
-    setNav({ server: deviceId, channel: null });
+  function openChat(deviceId: string, chat: string | null) {
+    const account = manager.list().find((a) => a.deviceId === deviceId);
+    if (!account) return;
+    const target = chat ? chatTarget(account.state.channelPrefs, chat) : null;
+    if (target) {
+      awaited.current = target.rowKey;
+      setPicks((p) => pickTarget(p, deviceId, target));
+    }
+    setPlace((current) => ({ deviceId, character: target?.character ?? (current?.deviceId === deviceId ? current.character : null) }));
+    setAdding(false);
+    setPairingAgain(false);
+    setNotified((n) => n + 1);
   }
 
-  if (accounts.length === 0) return <PairScreen onPair={pair} />;
-  if (nav.server === "add") {
-    return <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={() => go(beforeAdd.current ?? accounts[0].deviceId)} />;
+  async function pair(code: string, name: string) {
+    const { deviceId } = await manager.pair(code, name);
+    setPlace({ deviceId, character: null });
+    setAdding(false);
+    setPairingAgain(false);
+  }
+
+  if (!place) return <PairScreen onPair={pair} />;
+  if (adding) {
+    return (
+      <PairScreen
+        pairAgain={pairingAgain}
+        onPair={pair}
+        onBack={() => {
+          setAdding(false);
+          setPairingAgain(false);
+        }}
+      />
+    );
   }
 
   return (
     <Workspace
       manager={manager}
       accounts={accounts}
-      nav={nav}
-      setNav={setNav}
-      go={go}
+      place={place}
+      setPlace={setPlace}
+      picks={picks}
+      setPicks={setPicks}
+      awaited={awaited}
       sends={sends}
       pending={pending}
       unread={unread}
       notified={notified}
+      onAdd={() => setAdding(true)}
       onPairAgain={() => {
         setPairingAgain(true);
-        setNav({ server: "add", channel: null });
+        setAdding(true);
       }}
     />
   );
 }
 
-function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread, notified, onPairAgain }: {
+type Settings = { app: true } | { deviceId: string };
+
+function Workspace({ manager, accounts, place, setPlace, picks, setPicks, awaited, sends, pending, unread, notified, onAdd, onPairAgain }: {
   manager: AccountManager;
   accounts: AccountView[];
-  nav: Nav;
-  setNav: (nav: Nav) => void;
-  go: (server: Server) => void;
+  place: Place;
+  setPlace: (place: Place) => void;
+  picks: Picks;
+  setPicks: (update: (picks: Picks) => Picks) => void;
+  awaited: { current: string | null };
   sends: PendingSends;
   pending: PendingSend[];
   unread: UnreadTracker;
   notified: number;
+  onAdd: () => void;
   onPairAgain: () => void;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const [editing, setEditing] = useState<{ custom?: CustomChannel } | null>(null);
   const [epoch, setEpoch] = useState(0);
-  const home = nav.server === "home";
-  const account = home ? undefined : accounts.find((a) => a.deviceId === nav.server);
-  const { items, loaded } = useFeed(manager, home ? null : nav.server, epoch);
 
-  const tree = useMemo(
-    () => (account ? buildChannelTree(items, { character: account.character, prefs: account.state.channelPrefs }) : []),
-    [items, account?.character, account?.state.channelPrefs],
-  );
-  const channel = home ? null : resolveChannel(nav.channel, tree);
-  const openKey = channel && channelKey(channel);
+  const account = accounts.find((a) => a.deviceId === place.deviceId)!;
+  const deviceId = account.deviceId;
+  const usable = account.status === "active" && account.state.status !== "pending";
+  const character = usable ? place.character : null;
+  const { items, loaded } = useFeed(manager, deviceId, epoch);
+  const storedPrefs = account.state.channelPrefs;
+  const prefs = useMemo(() => (character ? withTells(storedPrefs, character) : storedPrefs), [storedPrefs, character]);
+  const save = (next: ChannelPrefs) => void manager.session(deviceId)?.setChannelPrefs(next).catch(() => undefined);
 
-  // Before history loads the channel can resolve to a fallback, which must not be cleared or pinned.
-  const shownKey = loaded ? openKey : null;
-  const prefs = account?.state.channelPrefs;
-  const includes = useMemo(() => (shownKey && prefs ? (key: string) => channelIncludes(prefs, shownKey, key) : null), [shownKey, prefs]);
-  const unreadCount = useMemo(() => (home || !includes ? 0 : unread.count(nav.server, includes)), [home, nav.server, includes]);
+  // Saved once so muting or notifying Tells sticks; the view already uses it either way.
+  useEffect(() => {
+    if (prefs !== storedPrefs) save(prefs);
+  }, [prefs, storedPrefs]);
+
+  // A client can start with only messages from its history to tell which characters it has.
+  const known = useMemo(() => (usable ? charactersOf(account, items) : []), [account, items, usable]);
+  useEffect(() => {
+    if (usable && !place.character && known[0]) setPlace({ deviceId, character: known[0] });
+  }, [usable, place.character, known[0]]);
+
+  const rail = useMemo(() => (character ? railChannels(prefs, character) : []), [prefs, character]);
+  const custom = character ? resolveChannel(rail, picks.server[viewKey(deviceId, character)]) : null;
+  const partners = useMemo(() => (character ? partnersOf(items, character, prefs.pinned) : []), [items, character, prefs.pinned]);
+  const rows = useMemo(() => (custom ? subRows(custom, partners) : []), [custom, partners]);
+  const row = custom ? resolveRow(rows, picks.sub[viewKey(deviceId, customKey(custom))]) : null;
+
+  // Pin the shown row so a partner arriving later doesn't move the view.
+  useEffect(() => {
+    if (!loaded || !custom || !row) return;
+    const key = viewKey(deviceId, customKey(custom));
+    const stored = picks.sub[key];
+    if (stored === awaited.current) {
+      if (row.key === stored) awaited.current = null;
+    } else if (stored !== undefined && stored !== row.key) {
+      setPicks((p) => ({ ...p, sub: remember(p.sub, key, row.key) }));
+    }
+  }, [loaded, deviceId, custom, row, picks.sub]);
+
+  // Before history loads the row can resolve to a fallback, which must not be cleared.
+  const shownKey = loaded && row ? row.key : null;
+  const includes = useMemo(() => (shownKey ? (key: string) => channelIncludes(prefs, shownKey, key) : null), [shownKey, prefs]);
+  const unreadCount = useMemo(() => (includes ? unread.count(deviceId, includes) : 0), [deviceId, includes]);
+
+  const covered = !!settings || switching || !!menu || !!editing;
+  const watching = !drawerOpen && !covered;
 
   useEffect(() => {
-    unread.setOpen(home ? "home" : includes ? { deviceId: nav.server, includes } : null);
-  }, [unread, home, nav.server, includes]);
-
-  // Pin the resolved channel so new messages don't move the view.
-  useEffect(() => {
-    if (!home && shownKey && shownKey !== nav.channel) setNav({ server: nav.server, channel: shownKey });
-  }, [home, nav.server, shownKey, nav.channel]);
+    unread.setOpen(includes && watching ? { deviceId, includes } : null);
+  }, [unread, deviceId, includes, watching]);
 
   useEffect(() => () => unread.setOpen(null), [unread]);
 
@@ -197,42 +268,83 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
   useEffect(() => {
     setDrawerOpen(false);
     setSettings(null);
+    setSwitching(false);
+    setMenu(null);
+    setEditing(null);
   }, [notified]);
 
-  function selectServer(server: Server) {
-    if (server !== nav.server) go(server);
+  function selectChannel(next: CustomChannel) {
+    if (!character) return;
+    awaited.current = null;
+    setPicks((p) => ({ ...p, server: remember(p.server, viewKey(deviceId, character), next.id) }));
+    if (subRows(next, partners).length === 1) setDrawerOpen(false);
   }
 
-  function openChannel(ref: ChannelRef) {
-    setNav({ server: nav.server, channel: channelKey(ref) });
+  function openRow(next: SubRow) {
+    if (!custom) return;
+    awaited.current = null;
+    setPicks((p) => ({ ...p, sub: remember(p.sub, viewKey(deviceId, customKey(custom)), next.key) }));
     setDrawerOpen(false);
-    setSettings(null);
   }
 
-  function openSettings(next: Settings) {
-    setDrawerOpen(false);
-    setSettings(next);
+  // A removed client has no settings left; its place shows Remove and Pair again instead.
+  function openClientSettings(id: string) {
+    if (accounts.find((a) => a.deviceId === id)?.status === "revoked") {
+      setSettings(null);
+      setPlace({ deviceId: id, character: null });
+      return;
+    }
+    setSettings({ deviceId: id });
   }
 
-  // A removed account has no settings left, its channel list offers Remove and Pair again instead.
-  function openAccountFromApp(deviceId: string) {
-    selectServer(deviceId);
-    const target = accounts.find((a) => a.deviceId === deviceId);
-    setSettings(target?.status === "revoked" ? null : { deviceId, fromApp: true });
+  const channelMenu = (c: CustomChannel): MenuTarget => ({ kind: "channel", custom: c, keys: rail.map(customKey) });
+  const me = describeCharacter(account, character);
+  const otherTells = unread.total(accounts.map((a) => a.deviceId)).tells - (character ? unread.summary(deviceId, character).tells : 0);
+
+  function sidebar() {
+    if (account.status === "revoked") return <RevokedNotice inline label={account.label} onRemove={() => manager.remove(deviceId)} onPairAgain={onPairAgain} />;
+    if (account.state.status === "pending") return <PendingScreen inline state={account.state} onCancel={() => manager.remove(deviceId)} />;
+    if (!custom || !character) return <p class="hint channels-empty">No characters yet. Log in to a character with the plugin running.</p>;
+    return (
+      <ChannelList
+        custom={custom}
+        character={character}
+        rows={rows}
+        selected={row?.key ?? null}
+        prefs={prefs}
+        unreadOf={(r) => viewUnread(unread, deviceId, prefs, r.key).count}
+        onOpen={openRow}
+        onMenu={() => setMenu(channelMenu(custom))}
+        onRowMenu={(r) => r.partner && setMenu({ kind: "partner", key: r.key, partner: r.partner })}
+      />
+    );
+  }
+
+  const showChat = account.status !== "revoked" && account.state.status !== "pending";
+
+  function chat() {
+    if (account.status === "revoked") return <RevokedNotice label={account.label} onRemove={() => manager.remove(deviceId)} onPairAgain={onPairAgain} />;
+    if (account.state.status === "pending") return <PendingScreen state={account.state} onCancel={() => manager.remove(deviceId)} />;
+    return (
+      <ChatPane
+        key={`${deviceId}-${epoch}`}
+        account={account}
+        prefs={prefs}
+        custom={custom}
+        row={row}
+        items={items}
+        unreadCount={unreadCount}
+        sends={sends}
+        pending={pending}
+        onMenu={() => setDrawerOpen(true)}
+      />
+    );
   }
 
   function settingsSheet() {
     if (!settings) return null;
     if (!("deviceId" in settings)) {
-      return (
-        <AppSettings
-          manager={manager}
-          accounts={accounts}
-          onClose={() => setSettings(null)}
-          onOpenAccount={openAccountFromApp}
-          onAddAccount={() => go("add")}
-        />
-      );
+      return <AppSettings manager={manager} accounts={accounts} onClose={() => setSettings(null)} onOpenAccount={openClientSettings} onAddAccount={onAdd} />;
     }
     const target = accounts.find((a) => a.deviceId === settings.deviceId);
     const session = target && manager.session(target.deviceId);
@@ -243,69 +355,46 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
         manager={manager}
         account={target}
         session={session}
-        onClose={() => setSettings(settings.fromApp ? { app: true } : null)}
+        onClose={() => setSettings({ app: true })}
         onCacheCleared={() => setEpoch((e) => e + 1)}
-      />
-    );
-  }
-
-  const chatPane = account?.status !== "revoked" && account?.state.status !== "pending";
-
-  function chat() {
-    if (account?.status === "revoked") {
-      return <RevokedNotice label={account.label} onRemove={() => manager.remove(account.deviceId)} onPairAgain={onPairAgain} />;
-    }
-    if (account?.state.status === "pending") {
-      return <PendingScreen state={account.state} onCancel={() => manager.remove(account.deviceId)} />;
-    }
-    return (
-      <ChatPane
-        key={`${nav.server}-${epoch}`}
-        accounts={accounts}
-        server={nav.server}
-        channel={channel}
-        items={items}
-        unreadCount={unreadCount}
-        sends={sends}
-        pending={pending}
-        onMenu={() => setDrawerOpen(true)}
       />
     );
   }
 
   const drawer = (
     <div class="drawer-content">
-      <ServerRail accounts={accounts} server={nav.server} unread={unread} onSelect={selectServer} />
-      <div class="sidebar">
-        {account ? (
-          <ChannelList
-            key={account.deviceId}
-            manager={manager}
-            account={account}
-            tree={tree}
-            unread={unread}
-            channel={channel}
-            onOpenChannel={openChannel}
-            onOpenSettings={() => openSettings({ deviceId: account.deviceId })}
-            onPairAgain={onPairAgain}
-          />
-        ) : (
-          <HomeList accounts={accounts} unread={unread} onSelectServer={selectServer} />
-        )}
-        <div class="sidebar-foot">
-          <button class="icon-btn" aria-label="App settings" onClick={() => openSettings({ app: true })}>
-            <GearIcon />
-          </button>
-        </div>
+      <div class="drawer-main">
+        <ChannelRail
+          rail={rail}
+          selected={custom?.id ?? null}
+          prefs={prefs}
+          unreadOf={(c) => viewUnread(unread, deviceId, prefs, customKey(c))}
+          onSelect={selectChannel}
+          onMenu={(c) => setMenu(channelMenu(c))}
+          onAdd={() => setEditing({})}
+        />
+        <div class="sidebar">{sidebar()}</div>
       </div>
+      <CharacterBar
+        name={me.name}
+        world={me.world}
+        status={me.status}
+        online={me.online}
+        otherTells={otherTells}
+        onSwitch={() => setSwitching(true)}
+        onSettings={() => {
+          setDrawerOpen(false);
+          setSettings({ app: true });
+        }}
+      />
     </div>
   );
 
-  // The sheet sits outside the drawer so its inert never covers it.
+  // Sheets sit outside the drawer so its inert never covers them.
   return (
     <>
-      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} swipe={!settings} drawer={drawer}>
-        {!chatPane && (
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} swipe={!covered} drawer={drawer}>
+        {!showChat && (
           <button class="icon-btn menu-btn floating" aria-label="Open navigation" onClick={() => setDrawerOpen(true)}>
             <MenuIcon />
           </button>
@@ -313,6 +402,35 @@ function Workspace({ manager, accounts, nav, setNav, go, sends, pending, unread,
         {chat()}
       </Drawer>
       {settingsSheet()}
+      {switching && (
+        <CharacterSheet
+          groups={characterGroups(accounts, (a) => charactersOf(a, a.deviceId === deviceId ? items : []), (id, name) => characterUnread(unread, id, manager.session(id)?.getState().channelPrefs ?? EMPTY_CHANNEL_PREFS, name))}
+          current={place}
+          onPick={(next) => {
+            awaited.current = null;
+            setSwitching(false);
+            setPlace(next);
+          }}
+          onPair={() => {
+            setSwitching(false);
+            onAdd();
+          }}
+          onClose={() => setSwitching(false)}
+        />
+      )}
+      {menu && <ChannelMenu target={menu} prefs={prefs} onChange={save} onEdit={(c) => setEditing({ custom: c })} onClose={() => setMenu(null)} />}
+      {editing && character && (
+        <CustomChannelSheet
+          character={character}
+          custom={editing.custom}
+          relayChannels={account.state.relayChannels}
+          onSave={(c) => {
+            save(saveCustom(prefs, c));
+            if (!editing.custom) setPicks((p) => ({ ...p, server: remember(p.server, viewKey(deviceId, character), c.id) }));
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </>
   );
 }

@@ -140,7 +140,7 @@ export function AccountSettings({ manager, account, session, onClose, onCacheCle
 
       {state.relayChannels.length > 0 && (
         <SettingsGroup
-          label="Mute notifications for"
+          label="Never notify for"
           note={
             <>
               <p class="settings-note">Muted channels still show up here, they just don't buzz your phone.</p>

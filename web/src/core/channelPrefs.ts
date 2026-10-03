@@ -25,8 +25,10 @@ export interface ChannelPrefs {
 
 export const EMPTY_CHANNEL_PREFS: ChannelPrefs = { pinned: [], muted: [], notify: {}, custom: [], order: {}, seeded: [] };
 
+export const TELLS_ID = "tells";
+
 const DEFAULT_CHANNELS: Omit<CustomChannel, "character">[] = [
-  { id: "tells", name: "Tells", channels: ["tell"] },
+  { id: TELLS_ID, name: "Tells", channels: ["tell"] },
   { id: "fc", name: "FC", channels: ["freeCompany"] },
   { id: "party", name: "Party", channels: ["party"] },
 ];
@@ -36,6 +38,14 @@ export function withDefaultChannels(prefs: ChannelPrefs, character: string): Cha
   const taken = (id: string) => prefs.custom.some((c) => c.character === character && c.id === id);
   const defaults = DEFAULT_CHANNELS.filter((c) => !taken(c.id)).map((c) => ({ ...c, character }));
   return { ...prefs, custom: [...defaults, ...prefs.custom], seeded: [...prefs.seeded, character] };
+}
+
+// Tell partners live under the Tells channel, so every character keeps one that shows tells.
+export function withTells(prefs: ChannelPrefs, character: string): ChannelPrefs {
+  const tells = prefs.custom.find((c) => c.character === character && c.id === TELLS_ID);
+  if (tells?.channels.includes("tell")) return prefs;
+  if (tells) return saveCustom(prefs, { ...tells, channels: ["tell", ...tells.channels] });
+  return { ...prefs, custom: [{ id: TELLS_ID, character, name: "Tells", channels: ["tell"] }, ...prefs.custom] };
 }
 
 // Prefs from before custom channels lack the newer fields and may hold "c|" keys for rows that no longer exist.

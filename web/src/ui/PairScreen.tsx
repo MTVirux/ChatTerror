@@ -118,7 +118,7 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
 
         <form class="pair-card" onSubmit={submit} aria-labelledby="pair-title">
           <header class="pair-card-head">
-            <h2 id="pair-title">Add a server</h2>
+            <h2 id="pair-title">Pair a game client</h2>
             <p class="hint">In the game, open the ChatTerror window and choose to pair a new device. Scan its QR code or type the code below.</p>
           </header>
 
@@ -154,7 +154,7 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
           {error && <p class="error" role="alert">{error}</p>}
 
           <button type="submit" class="btn primary wide" disabled={busy}>
-            {busy ? "Pairing..." : revoked || pairAgain ? "Pair again" : onBack ? "Add account" : "Pair this device"}
+            {busy ? "Pairing..." : revoked || pairAgain ? "Pair again" : onBack ? "Pair game client" : "Pair this device"}
           </button>
         </form>
 

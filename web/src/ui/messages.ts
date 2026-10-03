@@ -11,18 +11,18 @@ export interface Row {
   newMarker?: boolean;
 }
 
-function sameGroup(prev: FeedItem, item: FeedItem, showAccount: boolean): boolean {
+function sameGroup(prev: FeedItem, item: FeedItem): boolean {
   return prev.sender === item.sender && prev.outgoing === item.outgoing && prev.channel === item.channel &&
-    prev.deviceId === item.deviceId && (!showAccount || prev.character === item.character) && item.ts - prev.ts <= GROUP_GAP_MS;
+    prev.deviceId === item.deviceId && prev.character === item.character && item.ts - prev.ts <= GROUP_GAP_MS;
 }
 
-export function buildRows(items: FeedItem[], unreadCount: number, showAccount: boolean): Row[] {
+export function buildRows(items: FeedItem[], unreadCount: number): Row[] {
   let prev: FeedItem | undefined;
   let prevDay: string | undefined;
   const rows = items.map((item): Row => {
     const day = dayLabel(item.ts);
     const newDay = day !== prevDay;
-    const head = !prev || newDay || !sameGroup(prev, item, showAccount);
+    const head = !prev || newDay || !sameGroup(prev, item);
     prev = item;
     prevDay = day;
     return newDay ? { item, head, day } : { item, head };
