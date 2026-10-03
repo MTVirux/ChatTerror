@@ -60,6 +60,9 @@ public class SendValidatorTests
     [InlineData(ChatChannel.Say, "/s x")]
     [InlineData(ChatChannel.Shout, "/sh x")]
     [InlineData(ChatChannel.Yell, "/y x")]
+    [InlineData(ChatChannel.Echo, "/e x")]
+    [InlineData(ChatChannel.Emote, "/em x")]
+    [InlineData(ChatChannel.PvpTeam, "/pvpteam x")]
     public void Prefixes(ChatChannel channel, string expected)
     {
         Assert.Equal(expected, SendValidator.BuildLine(Send(channel, "x")));
@@ -140,6 +143,16 @@ public class SendValidatorTests
         var s = new RelaySettings { MaxLengthBytes = 2000 };
 
         Assert.Equal(SendErrors.TooLong, SendValidator.Validate(Send(ChatChannel.Party, new string('a', 600)), s));
+    }
+
+    [Fact]
+    public void ReceiveOnlyChannel_ChannelNotAllowed()
+    {
+        var s = new RelaySettings();
+        Assert.False(s.Channels[ChatChannel.Sales].Send);
+
+        s.Channels[ChatChannel.Sales].Send = true;
+        Assert.Equal(SendErrors.ChannelNotAllowed, SendValidator.Validate(Send(ChatChannel.Sales, "hi"), s));
     }
 
     [Fact]

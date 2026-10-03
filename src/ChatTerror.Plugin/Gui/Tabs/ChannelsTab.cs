@@ -95,7 +95,7 @@ public sealed class ChannelsTab(Configuration config, TellDirectory tells, Actio
 
             ImGui.TableNextColumn();
             var send = setting.Send;
-            if (ImGui.Checkbox("##send", ref send))
+            if (SendValidator.CanSend(channel) && ImGui.Checkbox("##send", ref send))
             {
                 setting.Send = send;
                 changed();

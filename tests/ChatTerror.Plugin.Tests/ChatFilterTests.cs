@@ -244,7 +244,7 @@ public class RelaySettingsTests
         {
             Assert.True(d[channel].Relay);
             Assert.Equal(channel == ChatChannel.Tell, d[channel].Push);
-            Assert.Equal(!sendOff.Contains(channel), d[channel].Send);
+            Assert.Equal(SendValidator.CanSend(channel) && !sendOff.Contains(channel), d[channel].Send);
         }
     }
 

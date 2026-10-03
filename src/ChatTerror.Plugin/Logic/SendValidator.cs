@@ -14,7 +14,7 @@ public static class SendValidator
 
     public static string? Validate(SendChatPayload p, RelaySettings s)
     {
-        if (s.Channels.GetValueOrDefault(p.Channel) is not { Send: true })
+        if (!CanSend(p.Channel) || s.Channels.GetValueOrDefault(p.Channel) is not { Send: true })
             return SendErrors.ChannelNotAllowed;
 
         var text = p.Text.Trim();
@@ -35,6 +35,8 @@ public static class SendValidator
 
     public static string BuildLine(SendChatPayload p) => Prefix(p) + p.Text.Trim();
 
+    public static bool CanSend(ChatChannel channel) => channel <= ChatChannel.PvpTeam;
+
     private static string Prefix(SendChatPayload p) => p.Channel switch
     {
         ChatChannel.Tell => $"/tell {p.Target} ",
@@ -47,6 +49,9 @@ public static class SendValidator
         ChatChannel.Say => "/s ",
         ChatChannel.Shout => "/sh ",
         ChatChannel.Yell => "/y ",
+        ChatChannel.Echo => "/e ",
+        ChatChannel.Emote => "/em ",
+        ChatChannel.PvpTeam => "/pvpteam ",
         _ => throw new ArgumentOutOfRangeException(nameof(p), p.Channel, "Unknown channel."),
     };
 }

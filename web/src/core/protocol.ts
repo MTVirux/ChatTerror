@@ -10,7 +10,22 @@ export type ChatChannel =
   | "noviceNetwork"
   | "say"
   | "shout"
-  | "yell";
+  | "yell"
+  | "echo"
+  | "emote"
+  | "pvpTeam"
+  | "system"
+  | "error"
+  | "sales"
+  | "loot"
+  | "progress"
+  | "crafting"
+  | "gathering"
+  | "npcDialogue"
+  | "announcements"
+  | "randomNumber"
+  | "battle"
+  | "gm";
 
 const LINKSHELLS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
@@ -25,6 +40,21 @@ export const ALL_CHANNELS: ChatChannel[] = [
   "say",
   "shout",
   "yell",
+  "echo",
+  "emote",
+  "pvpTeam",
+  "system",
+  "error",
+  "sales",
+  "loot",
+  "progress",
+  "crafting",
+  "gathering",
+  "npcDialogue",
+  "announcements",
+  "randomNumber",
+  "battle",
+  "gm",
 ];
 
 export const CHANNEL_LABELS = {
@@ -38,6 +68,21 @@ export const CHANNEL_LABELS = {
   say: "Say",
   shout: "Shout",
   yell: "Yell",
+  echo: "Echo",
+  emote: "Emote",
+  pvpTeam: "PvP Team",
+  system: "System",
+  error: "Error",
+  sales: "Sales",
+  loot: "Loot",
+  progress: "Progress",
+  crafting: "Crafting",
+  gathering: "Gathering",
+  npcDialogue: "NPC",
+  announcements: "Announce",
+  randomNumber: "Random",
+  battle: "Battle",
+  gm: "GM",
 } as Record<ChatChannel, string>;
 
 export function isChatChannel(value: unknown): value is ChatChannel {

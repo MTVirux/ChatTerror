@@ -63,8 +63,10 @@ public sealed class ChatCapture : IDisposable
             || (type != XivChatType.TellIncoming && me != null && string.Equals(sender, me, StringComparison.OrdinalIgnoreCase) && IsHomeWorld(player));
 
         // Players on the local world often carry no world in the payload, and own lines carry no payload at all.
+        // System, NPC and battle lines only get a world from their payload.
         var world = WorldName(player?.World)
-            ?? (outgoing && !ChannelMap.IsOutgoing(type) ? WorldName(playerState.HomeWorld) : WorldName(playerState.CurrentWorld));
+            ?? (!SendValidator.CanSend(channel) || sender.Length == 0 ? null
+                : outgoing && !ChannelMap.IsOutgoing(type) ? WorldName(playerState.HomeWorld) : WorldName(playerState.CurrentWorld));
 
         var text = message.Message.TextValue;
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

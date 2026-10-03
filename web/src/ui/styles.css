@@ -33,6 +33,11 @@
   --ch-say: #39404f;
   --ch-shout: #b8400c;
   --ch-yell: #826600;
+  --ch-echo: #5c5e66;
+  --ch-emote: #8a4f9e;
+  --ch-pvpTeam: #a83232;
+  --ch-error: #c42b2b;
+  --ch-system: #6b6f7a;
 
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Roboto", "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", "Roboto Mono", Menlo, monospace;
@@ -76,6 +81,11 @@
     --ch-say: #e6e2d6;
     --ch-shout: #ff8f5a;
     --ch-yell: #ffe071;
+    --ch-echo: #b5bac1;
+    --ch-emote: #e0a8f0;
+    --ch-pvpTeam: #ff8a8a;
+    --ch-error: #ff6b6b;
+    --ch-system: #a0a6b0;
   }
 }
 
@@ -114,6 +124,11 @@
   --ch-say: #e6e2d6;
   --ch-shout: #ff8f5a;
   --ch-yell: #ffe071;
+  --ch-echo: #b5bac1;
+  --ch-emote: #e0a8f0;
+  --ch-pvpTeam: #ff8a8a;
+  --ch-error: #ff6b6b;
+  --ch-system: #a0a6b0;
 }
 
 *,

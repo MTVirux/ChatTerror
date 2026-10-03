@@ -31,7 +31,25 @@ public static class ChannelMap
         XivChatType.Say => ChatChannel.Say,
         XivChatType.Shout => ChatChannel.Shout,
         XivChatType.Yell => ChatChannel.Yell,
-        _ => null,
+        XivChatType.Echo => ChatChannel.Echo,
+        XivChatType.CustomEmote or XivChatType.StandardEmote => ChatChannel.Emote,
+        XivChatType.PvPTeam => ChatChannel.PvpTeam,
+        XivChatType.SystemError or XivChatType.ErrorMessage => ChatChannel.Error,
+        XivChatType.RetainerSale => ChatChannel.Sales,
+        XivChatType.LootNotice or XivChatType.LootRoll => ChatChannel.Loot,
+        XivChatType.Progress => ChatChannel.Progress,
+        XivChatType.Crafting => ChatChannel.Crafting,
+        XivChatType.Gathering or XivChatType.GatheringSystemMessage => ChatChannel.Gathering,
+        XivChatType.NPCDialogue or XivChatType.NPCDialogueAnnouncements => ChatChannel.NpcDialogue,
+        XivChatType.FreeCompanyAnnouncement or XivChatType.FreeCompanyLoginLogout or XivChatType.PvpTeamAnnouncement
+            or XivChatType.PvpTeamLoginLogout or XivChatType.NoviceNetworkSystem => ChatChannel.Announcements,
+        XivChatType.RandomNumber => ChatChannel.RandomNumber,
+        XivChatType.Damage or XivChatType.Miss or XivChatType.Action or XivChatType.Item or XivChatType.Healing
+            or XivChatType.GainBuff or XivChatType.GainDebuff or XivChatType.LoseBuff or XivChatType.LoseDebuff => ChatChannel.Battle,
+        >= XivChatType.GmTell and <= XivChatType.GmNoviceNetwork => ChatChannel.Gm,
+        XivChatType.None => null,
+        // Notices, alarms, recruitment and any type without its own channel.
+        _ => ChatChannel.System,
     };
 
     public static bool IsOutgoing(XivChatType t) => t == XivChatType.TellOutgoing;
@@ -40,6 +58,11 @@ public static class ChannelMap
     {
         ChatChannel.FreeCompany => "Free Company",
         ChatChannel.NoviceNetwork => "Novice Network",
+        ChatChannel.PvpTeam => "PvP Team",
+        ChatChannel.Sales => "Retainer Sales",
+        ChatChannel.NpcDialogue => "NPC Dialogue",
+        ChatChannel.RandomNumber => "Random Number",
+        ChatChannel.Gm => "GM",
         >= ChatChannel.Linkshell1 and <= ChatChannel.Linkshell8 => $"Linkshell {c - ChatChannel.Linkshell1 + 1}",
         >= ChatChannel.CrossLinkshell1 and <= ChatChannel.CrossLinkshell8 => $"Cross-world Linkshell {c - ChatChannel.CrossLinkshell1 + 1}",
         _ => c.ToString(),

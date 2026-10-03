@@ -105,7 +105,8 @@ function Avatar({ name }: { name: string }) {
 function MessageRow({ row, account, showAccount }: { row: Row; account?: AccountView; showAccount: boolean }) {
   const { item } = row;
   const time = <time class="time" dateTime={new Date(item.ts).toISOString()}>{timeOfDay(item.ts)}</time>;
-  const [name, ownWorld] = item.sender.split("@");
+  // System lines like echo, errors or sales have no sender.
+  const [name, ownWorld] = (item.sender || channelLabel(item.channel)).split("@");
   const world = ownWorld ?? item.senderWorld;
   return (
     <>
@@ -114,7 +115,7 @@ function MessageRow({ row, account, showAccount }: { row: Row; account?: Account
       {row.head ? (
         <div class="msg head">
           {/* Outgoing tells carry the target as sender, so own rows use the character. */}
-          <Avatar name={item.outgoing ? item.character : item.sender} />
+          <Avatar name={item.outgoing ? item.character : name} />
           <div class="msg-body">
             <div class="msg-head">
               <span class={`sender${item.outgoing ? " own" : ""}`}>

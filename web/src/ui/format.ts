@@ -3,9 +3,12 @@ import type { SessionStatus } from "../core/session";
 
 export const TELL_TARGET = /^[A-Za-z'\-]{1,15} [A-Za-z'\-]{1,15}@[A-Za-z]{3,16}$/;
 
+const OWN_COLOR = new Set<string>(["tell", "party", "alliance", "freeCompany", "noviceNetwork", "say", "shout", "yell", "echo", "emote", "pvpTeam", "error"]);
+
 export function channelColor(channel: ChatChannel): string {
   if (channel.startsWith("crossLinkshell")) return "var(--ch-cwls)";
   if (channel.startsWith("linkshell")) return "var(--ch-ls)";
+  if (!OWN_COLOR.has(channel)) return "var(--ch-system)";
   return `var(--ch-${channel})`;
 }
 
@@ -31,6 +34,9 @@ export function sendPrefix(channel: ChatChannel, target?: string): string {
     say: "/s ",
     shout: "/sh ",
     yell: "/y ",
+    echo: "/e ",
+    emote: "/em ",
+    pvpTeam: "/pvpteam ",
   };
   return prefixes[channel] ?? "";
 }

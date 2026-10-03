@@ -47,6 +47,6 @@ public sealed class RelaySettings
             {
                 Relay = true,
                 Push = channel == ChatChannel.Tell,
-                Send = !SendOffByDefault.Contains(channel),
+                Send = SendValidator.CanSend(channel) && !SendOffByDefault.Contains(channel),
             });
 }
