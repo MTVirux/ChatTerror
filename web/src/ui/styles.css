@@ -681,14 +681,24 @@ p {
 
 .rail-icon.channel-icon {
   background: color-mix(in srgb, var(--c) 22%, var(--chat));
-  color: var(--c);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 45%, transparent);
+  color: var(--header-text);
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 
+.rail-icon.channel-icon svg {
+  color: var(--c);
+}
+
 .rail-icon.channel-icon.selected {
   background: var(--c);
+  box-shadow: none;
+  color: var(--chat);
+}
+
+.rail-icon.channel-icon.selected svg {
   color: var(--chat);
 }
 
