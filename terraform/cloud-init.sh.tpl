@@ -9,7 +9,7 @@ echo "[$(date -Is)] bootstrap start"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl gnupg git
+apt-get install -y ca-certificates curl gnupg git jq
 
 install -m 0755 -d /etc/apt/keyrings
 if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
@@ -122,21 +122,72 @@ EOF
 
 cat > /opt/chatterror/deploy.sh <<'EOF'
 #!/bin/bash
-# Clones or pulls the configured ref and rebuilds. Run as root on the VM.
+# Fetches the given commit, or the configured ref, and rebuilds. Run as root
+# on the VM.
 set -euo pipefail
 export GIT_TERMINAL_PROMPT=0
 git_auth() { git -c credential.helper= -c credential.helper=chatterror "$@"; }
+ref='${repo_ref}'
+[ $# -eq 0 ] || ref=$1
+
+exec 9> /run/chatterror-deploy.lock
+flock 9
+
 cd /opt/chatterror
 if [ ! -d src/.git ]; then
-    git_auth clone --depth 1 --branch '${repo_ref}' '${repo_url}' src
-else
-    git_auth -C src fetch --depth 1 origin '${repo_ref}'
-    git -C src checkout -f FETCH_HEAD
+    git init -q src
+    git -C src remote add origin '${repo_url}'
 fi
+git_auth -C src fetch --depth 1 origin "$ref"
+git -C src checkout -f FETCH_HEAD
 docker compose up -d --build
 docker image prune -f
 EOF
 chmod +x /opt/chatterror/deploy.sh
+
+# Deploys the newest commit whose CI passed. The API call is unauthenticated,
+# so this only works while the repo is public, and its 60 requests an hour
+# limit is why the timer runs every 2 minutes.
+cat > /opt/chatterror/autodeploy.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+runs='https://api.github.com/repos/${repo_slug}/actions/workflows/ci.yml/runs?branch=${repo_ref}&event=push&status=success&per_page=1'
+sha=$(curl -fsS -H 'Accept: application/vnd.github+json' "$runs" | jq -r '.workflow_runs[0].head_sha // empty')
+[ -n "$sha" ] || exit 0
+
+# Kept apart from src's HEAD so a manual deploy isn't rolled back.
+if [ "$sha" = "$(cat /opt/chatterror/deployed_sha 2>/dev/null)" ]; then
+    exit 0
+fi
+echo "deploying $sha"
+/opt/chatterror/deploy.sh "$sha"
+echo "$sha" > /opt/chatterror/deployed_sha
+EOF
+chmod +x /opt/chatterror/autodeploy.sh
+
+cat > /etc/systemd/system/chatterror-autodeploy.service <<'EOF'
+[Unit]
+Description=Deploy the newest ChatTerror commit that passed CI
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/chatterror/autodeploy.sh
+EOF
+
+cat > /etc/systemd/system/chatterror-autodeploy.timer <<'EOF'
+[Unit]
+Description=Check for a new ChatTerror build every 2 minutes
+
+[Timer]
+OnCalendar=*:0/2
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now chatterror-autodeploy.timer
 
 # The first deploy runs from terraform once the token file is in place.
 echo "[$(date -Is)] bootstrap done"

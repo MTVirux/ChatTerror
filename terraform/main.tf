@@ -75,6 +75,7 @@ resource "hcloud_server" "relay" {
     data_device = "/dev/disk/by-id/scsi-0HC_Volume_${hcloud_volume.data.id}"
     repo_url    = var.repo_url
     repo_ref    = var.repo_ref
+    repo_slug   = trimsuffix(trimprefix(var.repo_url, "https://github.com/"), ".git")
   })
 
   lifecycle {
