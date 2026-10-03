@@ -39,6 +39,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
         ["Relay:MaxSocketsPerClient"] = "1000",
         ["Relay:SocketConnectsPerMinute"] = "1000",
         ["Relay:PushSubscriptionsPerMinute"] = "1000",
+        ["Relay:PortraitRequestsPerMinute"] = "1000",
         ["Relay:PushServiceHosts"] = "1.1.1.1",
     };
 

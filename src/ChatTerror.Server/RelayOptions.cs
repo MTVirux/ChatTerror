@@ -43,6 +43,8 @@ public sealed class RelayOptions
 
     public int PairingRequestsPerMinute { get; set; } = 10;
 
+    public int PortraitRequestsPerMinute { get; set; } = 120;
+
     public int InstallsPerHour { get; set; } = 5;
 
     // Across all clients, so a large pool of addresses cannot fill the database.

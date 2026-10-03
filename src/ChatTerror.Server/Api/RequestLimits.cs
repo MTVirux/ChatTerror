@@ -11,6 +11,7 @@ public static class RequestLimits
     public const string SocketPolicy = "sockets";
     public const string PushPolicy = "push";
     public const string TellPolicy = "tells";
+    public const string PortraitPolicy = "portraits";
 
     // IPv6 clients usually own at least a whole /64, so one client is one /64.
     public static string PartitionKey(IPAddress? address) => PartitionKey(address, 64);

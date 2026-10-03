@@ -28,6 +28,12 @@ builder.Services.AddSingleton<RelaySocketHandler>();
 builder.Services.AddSingleton<PairingLimiter>();
 builder.Services.AddSingleton<FriendProfileLimiter>();
 builder.Services.AddSingleton<ExpiryService>();
+builder.Services.AddSingleton<LodestonePortraits>();
+builder.Services.AddHttpClient(LodestonePortraits.ClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.MaxResponseContentBufferSize = 2 * 1024 * 1024;
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService(services => services.GetRequiredService<ExpiryService>());
 builder.Services.AddCors();
 builder.Services.AddRateLimiter(limiter =>
@@ -39,6 +45,7 @@ builder.Services.AddRateLimiter(limiter =>
     limiter.AddPolicy(RequestLimits.InstallPolicy, context => PerClient(context, relay => relay.InstallsPerHour, TimeSpan.FromHours(1), RequestLimits.InstallPartitionKey));
     limiter.AddPolicy(RequestLimits.SocketPolicy, context => PerClient(context, relay => relay.SocketConnectsPerMinute, TimeSpan.FromMinutes(1)));
     limiter.AddPolicy(RequestLimits.TellPolicy, context => PerClient(context, relay => relay.TellRequestsPerMinute, TimeSpan.FromMinutes(1)));
+    limiter.AddPolicy(RequestLimits.PortraitPolicy, context => PerClient(context, relay => relay.PortraitRequestsPerMinute, TimeSpan.FromMinutes(1)));
     limiter.AddPolicy(RequestLimits.PushPolicy, context => PerClient(context, relay => relay.PushSubscriptionsPerMinute, TimeSpan.FromMinutes(1)));
 });
 
@@ -98,6 +105,7 @@ app.MapPairingEndpoints();
 app.MapDeviceEndpoints();
 app.MapTellEndpoints();
 app.MapFriendEndpoints();
+app.MapPortraitEndpoints();
 app.Map("/ws", (HttpContext context, RelaySocketHandler handler) => handler.HandleAsync(context)).RequireRateLimiting(RequestLimits.SocketPolicy);
 
 app.Run();
