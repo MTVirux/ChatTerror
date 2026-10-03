@@ -1,20 +1,18 @@
-name: Release
+name: Create Test Release
 
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+.[0-9]+"
+      - testing_*
 
 permissions:
   contents: read
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     permissions:
       contents: write
-      id-token: write
-      attestations: write
     env:
       DALAMUD_HOME: ${{ github.workspace }}/dalamud
     steps:
@@ -24,7 +22,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          if ($env:REF_NAME -notmatch '^[0-9A-Za-z._-]+$') {
+          if ($env:REF_NAME -notmatch '^testing_[0-9A-Za-z._-]+$') {
             Write-Error "Tag '$($env:REF_NAME)' contains unexpected characters."
             exit 1
           }
@@ -33,6 +31,7 @@ jobs:
             exit 1
           }
           "TAG=$($env:REF_NAME)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VER=$($env:REF_NAME -replace '^testing_','')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "SHA=$($env:COMMIT_SHA)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -43,57 +42,46 @@ jobs:
       - name: Download Dalamud
         run: |
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
-          (Get-FileHash dalamud.zip -Algorithm SHA256).Hash
           Expand-Archive -Force dalamud.zip $env:DALAMUD_HOME
-      - name: Test
-        run: dotnet test ChatTerror.sln -c Release --no-restore
       - name: Build
         run: |
-          $ver = $env:TAG
-          dotnet build src/ChatTerror.Plugin --no-restore --configuration Release --nologo -p:Version=$ver -p:FileVersion=$ver -p:AssemblyVersion=$ver
+          $ver = $env:VER
+          dotnet build src/ChatTerror.Plugin --no-restore --configuration Debug --nologo -p:Version=$ver -p:FileVersion=$ver -p:AssemblyVersion=$ver
       - name: Verify repo.json matches tag
         run: |
-          $expected = $env:TAG
+          $expected = $env:VER
           $repo = (Get-Content -Raw './repo.json' | ConvertFrom-Json)[0]
-          if ($repo.AssemblyVersion -ne $expected) {
-            Write-Error "repo.json AssemblyVersion ($($repo.AssemblyVersion)) does not match tag ($expected). Did release.ps1 fail to commit?"
+          if ($repo.TestingAssemblyVersion -ne $expected) {
+            Write-Error "repo.json TestingAssemblyVersion ($($repo.TestingAssemblyVersion)) does not match tag ($expected). Did testing.ps1 fail to commit?"
             exit 1
           }
       - name: Generate bin manifest from repo.json
         run: |
+          $ver = $env:VER
           $repo = Get-Content -Raw './repo.json' | ConvertFrom-Json
-          $repo[0] | ConvertTo-Json -Depth 10 | Set-Content './src/ChatTerror.Plugin/bin/Release/ChatTerror.json'
+          $repo[0].AssemblyVersion = $ver
+          $repo[0] | ConvertTo-Json -Depth 10 | Set-Content './src/ChatTerror.Plugin/bin/Debug/ChatTerror.json'
       - name: Archive
-        run: Compress-Archive -Path src/ChatTerror.Plugin/bin/Release/* -DestinationPath ChatTerror.zip
-      - name: Checksum
-        shell: bash
-        run: |
-          echo "$(sha256sum ChatTerror.zip | cut -d' ' -f1)  ChatTerror.zip" > SHA256SUMS
-          cat SHA256SUMS
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: ChatTerror.zip
+        run: Compress-Archive -Path src/ChatTerror.Plugin/bin/Debug/* -DestinationPath ChatTerror.zip
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           path: |
-            ./src/ChatTerror.Plugin/bin/Release/*
+            ./src/ChatTerror.Plugin/bin/Debug/*
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$env:TAG" "./ChatTerror.zip" "./SHA256SUMS" --title "ChatTerror $env:TAG"
+        run: gh release create "$env:TAG" "./ChatTerror.zip" --title "ChatTerror $env:TAG"
 
       - name: Write out repo.json
         run: |
-          $ver = $env:TAG
+          $verT = $env:TAG
+          $ver = $env:VER
           $path = './repo.json'
           $json = Get-Content -Raw $path | ConvertFrom-Json
-          $json[0].AssemblyVersion = $ver
           $json[0].TestingAssemblyVersion = $ver
           $json[0].LastUpdate = [int][double]::Parse((Get-Date -UFormat %s))
-          $json[0].DownloadLinkInstall = $json.DownloadLinkInstall -replace '[^/]+/ChatTerror.zip',"$ver/ChatTerror.zip"
-          $json[0].DownloadLinkTesting = $json.DownloadLinkTesting -replace '[^/]+/ChatTerror.zip',"$ver/ChatTerror.zip"
-          $json[0].DownloadLinkUpdate = $json.DownloadLinkUpdate -replace '[^/]+/ChatTerror.zip',"$ver/ChatTerror.zip"
+          $json[0].DownloadLinkTesting = $json.DownloadLinkTesting -replace '[^/]+/ChatTerror.zip',"$verT/ChatTerror.zip"
           $content = $json | ConvertTo-Json -AsArray
           set-content -Path $path -Value $content
 
