@@ -48,7 +48,7 @@ public sealed class RelayApp : WebApplicationFactory<Program>
             settings[key] = value;
     }
 
-    private string DbPath => Path.Combine(directory, "relay.db");
+    public string DbPath =>Path.Combine(directory, "relay.db");
 
     public FakePushSender Push { get; } = new();
 

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using ChatTerror.Protocol;
 using ChatTerror.Server.Data;
 using ChatTerror.Server.Tests.Support;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ChatTerror.Server.Tests;
@@ -122,6 +123,49 @@ public class TellRelayTests
 
         await using var again = await app.ConnectAsync(b.Install.InstallToken);
         Assert.Equal("t2", (await again.ReceiveAsync<TellFrame>()).Id);
+    }
+
+    [Fact]
+    public async Task QueuedTell_FromAnExFriendIsDroppedOnConnect()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using (var pluginA = await app.ConnectAsync(a.Install.InstallToken))
+        {
+            await pluginA.SendAsync(Send("t1", b, new TellCopy(false, TellTargets.Plugin, "env")));
+            Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+        }
+
+        // Unpairs without clearing the queue, like an unfriend racing a tell that was already checked.
+        using (var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = app.DbPath, Pooling = false }.ToString()))
+        {
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "DELETE FROM friends";
+            command.ExecuteNonQuery();
+        }
+
+        await using var pluginB = await app.ConnectAsync(b.Install.InstallToken);
+        Assert.DoesNotContain(await pluginB.BarrierAsync(), f => f is TellFrame);
+        Assert.Empty(app.Services.GetRequiredService<RelayStore>().PendingTells(b.Install.InstallId, TellTargets.Plugin));
+    }
+
+    [Fact]
+    public async Task Tell_SelfCopyQueuesForOfflineOwnDevice()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+        var phoneA = await app.PairDeviceAsync(a.Install, pluginA);
+        await app.PutTellBundleAsync(a.Install.InstallToken, a.Key, new TellBundleEntry(phoneA.DeviceId, RelayApp.NewPublicKey(), false));
+
+        await pluginA.SendAsync(Send("t1", b,
+            new TellCopy(true, phoneA.DeviceId, "toPhoneA"),
+            new TellCopy(false, TellTargets.Plugin, "toB")));
+        Assert.True((await pluginA.ReceiveAsync<TellResultFrame>()).Ok);
+
+        await using var phoneASocket = await app.ConnectAsync(phoneA.DeviceToken);
+        Assert.Equal("toPhoneA", (await phoneASocket.ReceiveAsync<TellFrame>()).Envelope);
     }
 
     [Fact]
