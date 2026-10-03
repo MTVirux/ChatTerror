@@ -19,9 +19,24 @@ export interface ChannelPrefs {
   custom: CustomChannel[];
   // Row order per character, as channel keys.
   order: Record<string, string[]>;
+  // Characters that already got the default channels, so deleting one sticks.
+  seeded: string[];
 }
 
-export const EMPTY_CHANNEL_PREFS: ChannelPrefs = { pinned: [], muted: [], notify: {}, custom: [], order: {} };
+export const EMPTY_CHANNEL_PREFS: ChannelPrefs = { pinned: [], muted: [], notify: {}, custom: [], order: {}, seeded: [] };
+
+const DEFAULT_CHANNELS: Omit<CustomChannel, "character">[] = [
+  { id: "tells", name: "Tells", channels: ["tell"] },
+  { id: "fc", name: "FC", channels: ["freeCompany"] },
+  { id: "party", name: "Party", channels: ["party"] },
+];
+
+export function withDefaultChannels(prefs: ChannelPrefs, character: string): ChannelPrefs {
+  if (prefs.seeded.includes(character)) return prefs;
+  const taken = (id: string) => prefs.custom.some((c) => c.character === character && c.id === id);
+  const defaults = DEFAULT_CHANNELS.filter((c) => !taken(c.id)).map((c) => ({ ...c, character }));
+  return { ...prefs, custom: [...defaults, ...prefs.custom], seeded: [...prefs.seeded, character] };
+}
 
 // Prefs from before custom channels lack the newer fields and may hold "c|" keys for rows that no longer exist.
 export function withDefaults(prefs: Partial<ChannelPrefs> | undefined): ChannelPrefs {
@@ -60,9 +75,14 @@ export function setNotify(prefs: ChannelPrefs, key: string, choice: NotifyChoice
   return { ...prefs, notify: choice === "default" ? notify : { ...notify, [key]: choice } };
 }
 
+// Default channels share ids across characters.
+function sameCustom(a: CustomChannel, b: CustomChannel): boolean {
+  return a.id === b.id && a.character === b.character;
+}
+
 export function saveCustom(prefs: ChannelPrefs, custom: CustomChannel): ChannelPrefs {
-  const exists = prefs.custom.some((c) => c.id === custom.id);
-  return { ...prefs, custom: exists ? prefs.custom.map((c) => (c.id === custom.id ? custom : c)) : [...prefs.custom, custom] };
+  const exists = prefs.custom.some((c) => sameCustom(c, custom));
+  return { ...prefs, custom: exists ? prefs.custom.map((c) => (sameCustom(c, custom) ? custom : c)) : [...prefs.custom, custom] };
 }
 
 export function deleteCustom(prefs: ChannelPrefs, custom: CustomChannel): ChannelPrefs {
@@ -70,10 +90,11 @@ export function deleteCustom(prefs: ChannelPrefs, custom: CustomChannel): Channe
   const { [key]: _, ...notify } = prefs.notify;
   const order = savedOrder(prefs, custom.character);
   return {
+    ...prefs,
     pinned: prefs.pinned.filter((k) => k !== key),
     muted: prefs.muted.filter((k) => k !== key),
     notify,
-    custom: prefs.custom.filter((c) => c.id !== custom.id),
+    custom: prefs.custom.filter((c) => !sameCustom(c, custom)),
     order: order ? { ...prefs.order, [custom.character]: order.filter((k) => k !== key) } : prefs.order,
   };
 }

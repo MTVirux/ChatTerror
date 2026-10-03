@@ -11,6 +11,7 @@ import {
   setNotify,
   toggleMuted,
   togglePinned,
+  withDefaultChannels,
   withDefaults,
   type CustomChannel,
 } from "./channelPrefs";
@@ -34,7 +35,7 @@ describe("channel prefs", () => {
   });
 
   it("converts to payload channels with mute winning", () => {
-    const prefs = { pinned: [say], muted: [say], notify: { [say]: "all" as const, [tell]: "all" as const }, custom: [], order: {} };
+    const prefs = { pinned: [say], muted: [say], notify: { [say]: "all" as const, [tell]: "all" as const }, custom: [], order: {}, seeded: [] };
     expect(channelNotifyPrefs(prefs)).toEqual([
       { character: "Alpha Beta", channel: "say", notify: "none" },
       { character: "Alpha Beta", channel: "tell", partner: "Foo Bar@World", notify: "all" },
@@ -42,12 +43,12 @@ describe("channel prefs", () => {
   });
 
   it("does not send pins or unknown keys", () => {
-    expect(channelNotifyPrefs({ pinned: [say], muted: ["c|A|bogus", "x"], notify: {}, custom: [], order: {} })).toEqual([]);
+    expect(channelNotifyPrefs({ pinned: [say], muted: ["c|A|bogus", "x"], notify: {}, custom: [], order: {}, seeded: [] })).toEqual([]);
   });
 
   it("fills in missing fields and drops plain channel keys from older prefs", () => {
     const old = { pinned: [say, tell], muted: [say], notify: { [say]: "all" as const, [tell]: "none" as const } };
-    expect(withDefaults(old)).toEqual({ pinned: [tell], muted: [], notify: { [tell]: "none" }, custom: [], order: {} });
+    expect(withDefaults(old)).toEqual({ pinned: [tell], muted: [], notify: { [tell]: "none" }, custom: [], order: {}, seeded: [] });
   });
 });
 
@@ -66,7 +67,7 @@ describe("custom channels", () => {
   it("adds, edits and deletes along with their prefs", () => {
     expect(saveCustom(prefs, { ...social, name: "Chat" }).custom).toEqual([{ ...social, name: "Chat" }]);
     const decorated = { ...togglePinned(toggleMuted(setNotify(prefs, key, "all"), key), key), order: { "Alpha Beta": [key, tell] } };
-    expect(deleteCustom(decorated, social)).toEqual({ pinned: [], muted: [], notify: {}, custom: [], order: { "Alpha Beta": [tell] } });
+    expect(deleteCustom(decorated, social)).toEqual({ pinned: [], muted: [], notify: {}, custom: [], order: { "Alpha Beta": [tell] }, seeded: [] });
   });
 
   it("includes member channels and every tell of its character", () => {
@@ -97,5 +98,27 @@ describe("custom channels", () => {
     const other = "t|Alpha Beta|X Y@W";
     expect(moveChannel(prefs, "Alpha Beta", [key, tell, other], tell, -1).order).toEqual({ "Alpha Beta": [tell, key, other] });
     expect(moveChannel(prefs, "Alpha Beta", [key, tell, other], key, -1)).toBe(prefs);
+  });
+});
+
+describe("default channels", () => {
+  it("adds Tells, FC and Party once per character", () => {
+    const seeded = withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta");
+    expect(seeded.custom.map((c) => [c.name, c.channels])).toEqual([["Tells", ["tell"]], ["FC", ["freeCompany"]], ["Party", ["party"]]]);
+    expect(withDefaultChannels(seeded, "Alpha Beta")).toBe(seeded);
+    expect(withDefaultChannels(seeded, "Other One").custom).toHaveLength(6);
+  });
+
+  it("does not bring back a deleted default", () => {
+    const seeded = withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta");
+    const deleted = deleteCustom(seeded, seeded.custom[0]);
+    expect(withDefaultChannels(deleted, "Alpha Beta").custom.map((c) => c.name)).toEqual(["FC", "Party"]);
+  });
+
+  it("edits and deletes only that character's default", () => {
+    const both = withDefaultChannels(withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta"), "Other One");
+    const fc = both.custom.find((c) => c.character === "Other One" && c.id === "fc")!;
+    expect(saveCustom(both, { ...fc, name: "Guild" }).custom.filter((c) => c.name === "Guild")).toHaveLength(1);
+    expect(deleteCustom(both, fc).custom.filter((c) => c.id === "fc").map((c) => c.character)).toEqual(["Alpha Beta"]);
   });
 });

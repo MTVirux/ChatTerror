@@ -1,6 +1,6 @@
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
-import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaults, type ChannelPrefs } from "./channelPrefs";
+import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaultChannels, withDefaults, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, generateTellKey, openPayload, sealPayload, verifyBundle } from "./crypto";
 import { isValidTs, parsePluginPayload, parseSettings, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
 import type { PushControl } from "./push";
@@ -364,8 +364,16 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
           maxLength: payload.maxLength,
           contacts: payload.contacts ?? [],
         });
+        if (payload.character) await seedChannels(payload.character);
         return;
     }
+  }
+
+  async function seedChannels(character: string) {
+    const prefs = withDefaultChannels(state.channelPrefs, character);
+    if (prefs === state.channelPrefs) return;
+    setState({ channelPrefs: prefs });
+    await deps.store.setMeta("channelPrefs", prefs);
   }
 
   async function sendRelayedTell(contact: TellContact, text: string): Promise<SendResult> {
