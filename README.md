@@ -22,7 +22,7 @@ Open the settings with `/chatterror` (or `/ct`).
 
 ## Verifying a release
 
-The only official plugin repository is `https://raw.githubusercontent.com/MTVirux/ChatTerror/master/repo.json`. Releases after 0.1.0.0 are built from a version tag by GitHub Actions ([release.yml](.github/workflows/release.yml)), which attaches `ChatTerror.zip`, a `SHA256SUMS` file and a signed build provenance attestation.
+The only official plugin repository is `https://raw.githubusercontent.com/MTVirux/ChatTerror/master/repo.json`. Releases are built from a version tag by GitHub Actions ([release.yml](.github/workflows/release.yml)), which attaches `ChatTerror.zip`, a `SHA256SUMS` file and a signed build provenance attestation.
 
 To check a downloaded zip came from that workflow and this repository:
 

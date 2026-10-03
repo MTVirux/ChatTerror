@@ -11,8 +11,8 @@
       "Relay"
     ],
     "InternalName": "ChatTerror",
-    "AssemblyVersion": "0.1.0.0",
-    "TestingAssemblyVersion": "0.1.0.0",
+    "AssemblyVersion": "0.0.1.0",
+    "TestingAssemblyVersion": "0.0.1.0",
     "RepoUrl": "https://github.com/MTVirux/ChatTerror",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -21,9 +21,9 @@
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
     "LastUpdate": 1790812800,
-    "DownloadLinkInstall": "https://github.com/MTVirux/ChatTerror/releases/download/0.1.0.0/ChatTerror.zip",
-    "DownloadLinkUpdate": "https://github.com/MTVirux/ChatTerror/releases/download/0.1.0.0/ChatTerror.zip",
-    "DownloadLinkTesting": "https://github.com/MTVirux/ChatTerror/releases/download/0.1.0.0/ChatTerror.zip",
+    "DownloadLinkInstall": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
+    "DownloadLinkUpdate": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
+    "DownloadLinkTesting": "https://github.com/MTVirux/ChatTerror/releases/download/0.0.1.0/ChatTerror.zip",
     "IconUrl": "https://raw.githubusercontent.com/MTVirux/ChatTerror/master/web/public/icon-512.png"
   }
 ]
