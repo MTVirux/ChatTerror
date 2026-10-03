@@ -36,14 +36,14 @@ describe("sealed tells", () => {
     expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c","fromKey":"k"}')).toEqual({ t: "tell", id: "a", from: "b", envelope: "c", fromKey: "k" });
     expect(parseServerFrame('{"t":"tell","id":"a","from":"b","envelope":"c"}')).toBeNull();
     expect(parseServerFrame('{"t":"tell","id":"a"}')).toBeNull();
-    expect(parseServerFrame('{"t":"tellResult","id":"a","ok":false,"error":"notFriend"}')).not.toBeNull();
+    expect(parseServerFrame('{"t":"tellResult","id":"a","ok":false,"error":"notPaired"}')).not.toBeNull();
     expect(parseTellBody(JSON.parse(vector.plaintext))?.text).toBe("hello <3");
     expect(parseTellBody({ id: "x" })).toBeNull();
   });
 
   it("validates contacts in settings", () => {
     const base = { relayChannels: [], sendChannels: [], maxLength: 500 };
-    const contact = { character: "A B", characterWorld: "Lich", characterHash: "h1", name: "C D", world: "Lich", hash: "h2" };
+    const contact = { character: "A B", characterWorld: "Lich", characterHash: "h1", name: "C D", world: "Lich", hash: "h2", installId: "i1", key: "k1" };
     expect(isValidSettings({ ...base, contacts: [contact] })).toBe(true);
     expect(isValidSettings({ ...base, contacts: [{ ...contact, hash: 3 }] })).toBe(false);
     expect(isValidSettings(base)).toBe(true);
@@ -56,6 +56,7 @@ describe("sealed tells", () => {
       { characterHash: "h".repeat(44) },
       { key: "k".repeat(88) },
       { key: 5 },
+      { installId: "i".repeat(65) },
     ]) {
       expect(isValidSettings({ ...base, contacts: [{ ...contact, ...bad }] })).toBe(false);
     }

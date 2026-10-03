@@ -438,11 +438,11 @@ describe("session", () => {
 });
 
 describe("relayed tells", () => {
-  const contact: TellContact = { character: "Main Char", characterWorld: "Twintania", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+  const contact: TellContact = { character: "Main Char", characterWorld: "Twintania", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob", installId: "bob-install", key: "bob-key" };
   const utf8 = new TextEncoder();
 
-  async function storeContacts() {
-    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: ["tell"], sendChannels: ["tell"], maxLength: 500, contacts: [contact] });
+  async function storeContacts(contacts = [contact]) {
+    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: ["tell"], sendChannels: ["tell"], maxLength: 500, contacts });
   }
 
   // A bundle signed by a fresh install key, listing one tell key for the plugin.
@@ -460,8 +460,14 @@ describe("relayed tells", () => {
     return { signed: all[0], installKey, all };
   }
 
-  async function offlineSession(api: Partial<Api>) {
-    await storeContacts();
+  // Bob's bundle, and his contact paired with the key that signed it.
+  async function bobBundle(issuedAts = [1]) {
+    const bundle = await signedBundle(issuedAts);
+    return { ...bundle, bob: { ...contact, key: bundle.installKey } };
+  }
+
+  async function offlineSession(api: Partial<Api>, contacts = [contact]) {
+    await storeContacts(contacts);
     const result = await setup({ api });
     result.relay.deliver({ t: "authOk", role: "device", id: "dev" });
     result.relay.deliver({ t: "pluginStatus", online: false });
@@ -481,15 +487,14 @@ describe("relayed tells", () => {
 
     const body = { id: "t1", fromHash: "bob", fromName: "Forged", fromWorld: "Lich", toHash: "me", toName: "Main Char", toWorld: "Twintania", text: "hi", ts: Date.now() };
     const envelope = encode(await sealTell(decode(tellKey.publicKey), utf8.encode(JSON.stringify(body))));
-    relay.deliver({ t: "tell", id: "t1", from: "bob", envelope, fromKey: "bob-install" });
+    relay.deliver({ t: "tell", id: "t1", from: "bob-install", envelope, fromKey: "bob-key" });
 
     await vi.waitFor(() => expect(seen).toEqual([expect.objectContaining({ id: "t1", sender: "Bob Smith", channel: "tell", outgoing: false })]));
     expect(relay.sent).toContainEqual({ t: "tellAck", ids: ["t1"] });
-    expect((await store.getMeta("tellPins")).bob).toBe("bob-install");
 
     const forged = { ...body, id: "t2" };
     const forgedEnvelope = encode(await sealTell(decode(tellKey.publicKey), utf8.encode(JSON.stringify(forged))));
-    relay.deliver({ t: "tell", id: "t2", from: "bob", envelope: forgedEnvelope, fromKey: "impostor-install" });
+    relay.deliver({ t: "tell", id: "t2", from: "bob-install", envelope: forgedEnvelope, fromKey: "impostor-key" });
     await vi.waitFor(() => expect(relay.sent).toContainEqual({ t: "tellAck", ids: ["t2"] }));
     expect(seen.map((i) => i.id)).toEqual(["t1"]);
   });
@@ -501,61 +506,66 @@ describe("relayed tells", () => {
     await vi.waitFor(() => expect(relay.sent).toContainEqual({ t: "tellAck", ids: ["x"] }));
   });
 
-  it("relays a tell through the relay while the game is offline", async () => {
-    const { signed } = await signedBundle();
-    const { session, relay } = await offlineSession({ getTellBundle: (_token, hash) => (hash === "bob" ? Promise.resolve(signed) : Promise.reject(new ApiError(404, "notChatTerror"))) });
+  it("relays a tell to the friend's install while the game is offline", async () => {
+    const { signed, bob } = await bobBundle();
+    const fetched: string[] = [];
+    const getTellBundle = (_token: string, id: string) => {
+      fetched.push(id);
+      return id === "bob-install" ? Promise.resolve(signed) : Promise.reject(new ApiError(404, "notChatTerror"));
+    };
+    const { session, relay } = await offlineSession({ getTellBundle }, [bob]);
     const seen: ChatItem[] = [];
     session.onMessages((items) => seen.push(...items));
 
     const done = session.send("tell", "hi", "Bob Smith@Lich", "Main Char");
     await vi.waitFor(() => expect(relay.sent.some((f) => f.t === "tellSend")).toBe(true));
     const frame = relay.sent.find((f) => f.t === "tellSend") as TellSendFrame;
-    expect(frame).toMatchObject({ from: "me", to: "bob" });
+    expect(frame.to).toBe("bob-install");
+    expect(frame).not.toHaveProperty("from");
+    expect(fetched).toContain("bob-install");
     expect(frame.copies.map((c) => [c.self, c.target])).toEqual([[false, "plugin"]]);
     relay.deliver({ t: "tellResult", id: frame.id, ok: true });
 
     expect(await done).toEqual({ ok: true });
     await vi.waitFor(() => expect(seen).toEqual([expect.objectContaining({ id: frame.id, sender: "Bob Smith", outgoing: true })]));
-    expect((await store.getMeta("tellPins")).bob).toBeDefined();
   });
 
-  it("fails with keyChanged when a pinned friend's key changed", async () => {
+  it("fails with keyChanged when the bundle is signed by another key than the paired one", async () => {
     const { signed } = await signedBundle();
-    await store.setMeta("tellPins", { bob: "some-other-key" });
-    const { session, relay } = await offlineSession({ getTellBundle: () => Promise.resolve(signed) });
+    const { bob } = await bobBundle();
+    const { session, relay } = await offlineSession({ getTellBundle: () => Promise.resolve(signed) }, [bob]);
 
     expect(await session.send("tell", "hi", "Bob Smith@Lich", "Main Char")).toEqual({ ok: false, error: "keyChanged" });
     expect(relay.sent.some((f) => f.t === "tellSend")).toBe(false);
   });
 
-  it("follows the key the plugin trusts over its own old pin", async () => {
-    const { signed, installKey } = await signedBundle();
-    await store.setMeta("tellPins", { bob: "some-other-key" });
-    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: ["tell"], sendChannels: ["tell"], maxLength: 500, contacts: [{ ...contact, key: installKey }] });
-    const { session, relay } = await setup({ api: { getTellBundle: () => Promise.resolve(signed) } });
-    relay.deliver({ t: "authOk", role: "device", id: "dev" });
-    relay.deliver({ t: "pluginStatus", online: false });
-    await vi.waitFor(() => expect(session.getState().status).toBe("gameOffline"));
+  it("fails with notChatTerror when the bundle does not verify at all", async () => {
+    const { signed, bob } = await bobBundle();
+    const broken = { ...signed, signature: encode(new Uint8Array(64)) };
+    const { session, relay } = await offlineSession({ getTellBundle: () => Promise.resolve(broken) }, [bob]);
 
-    const done = session.send("tell", "hi", "Bob Smith@Lich", "Main Char");
-    await vi.waitFor(() => expect(relay.sent.some((f) => f.t === "tellSend")).toBe(true));
-    const frame = relay.sent.find((f) => f.t === "tellSend") as TellSendFrame;
-    relay.deliver({ t: "tellResult", id: frame.id, ok: true });
-    expect(await done).toEqual({ ok: true });
+    expect(await session.send("tell", "hi", "Bob Smith@Lich", "Main Char")).toEqual({ ok: false, error: "notChatTerror" });
+    expect(relay.sent.some((f) => f.t === "tellSend")).toBe(false);
+  });
+
+  it("drops pinned keys left over from before pairing", async () => {
+    await store.setMeta("tellPins" as never, { bob: "old" } as never);
+    await setup();
+    await vi.waitFor(async () => expect(await store.getMeta("tellPins" as never)).toBeUndefined());
   });
 
   it("never relays a reply from another alt than the conversation's character", async () => {
-    const { signed } = await signedBundle();
-    const { session, relay } = await offlineSession({ getTellBundle: () => Promise.resolve(signed) });
+    const { signed, bob } = await bobBundle();
+    const { session, relay } = await offlineSession({ getTellBundle: () => Promise.resolve(signed) }, [bob]);
     expect(await session.send("tell", "hi", "Bob Smith@Lich", "Alt Char")).toEqual({ ok: false, error: "gameOffline" });
     expect(await session.send("tell", "hi", "Bob Smith@Lich")).toEqual({ ok: false, error: "gameOffline" });
     expect(relay.sent.some((f) => f.t === "tellSend")).toBe(false);
   });
 
   it("rejects a bundle older than one it already accepted", async () => {
-    const { all } = await signedBundle([200, 100]);
+    const { all, bob } = await bobBundle([200, 100]);
     let next = all[0];
-    const { session, relay } = await offlineSession({ getTellBundle: (_token, hash) => (hash === "bob" ? Promise.resolve(next) : Promise.reject(new ApiError(404, "notChatTerror"))) });
+    const { session, relay } = await offlineSession({ getTellBundle: (_token, id) => (id === "bob-install" ? Promise.resolve(next) : Promise.reject(new ApiError(404, "notChatTerror"))) }, [bob]);
 
     const done = session.send("tell", "hi", "Bob Smith@Lich", "Main Char");
     await vi.waitFor(() => expect(relay.sent.some((f) => f.t === "tellSend")).toBe(true));
@@ -565,20 +575,6 @@ describe("relayed tells", () => {
     next = all[1];
     expect(await session.send("tell", "hi", "Bob Smith@Lich", "Main Char")).toEqual({ ok: false, error: "staleBundle" });
     expect(relay.sent.filter((f) => f.t === "tellSend")).toHaveLength(1);
-  });
-
-  it("does not treat inherited properties as pins", async () => {
-    const { signed } = await signedBundle();
-    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: ["tell"], sendChannels: ["tell"], maxLength: 500, contacts: [{ ...contact, hash: "constructor" }] });
-    const { session, relay } = await setup({ api: { getTellBundle: (_token, hash) => (hash === "constructor" ? Promise.resolve(signed) : Promise.reject(new ApiError(404, "notChatTerror"))) } });
-    relay.deliver({ t: "authOk", role: "device", id: "dev" });
-    relay.deliver({ t: "pluginStatus", online: false });
-    await vi.waitFor(() => expect(session.getState().status).toBe("gameOffline"));
-
-    const done = session.send("tell", "hi", "Bob Smith@Lich", "Main Char");
-    await vi.waitFor(() => expect(relay.sent.some((f) => f.t === "tellSend")).toBe(true));
-    relay.deliver({ t: "tellResult", id: (relay.sent.find((f) => f.t === "tellSend") as TellSendFrame).id, ok: true });
-    expect(await done).toEqual({ ok: true });
   });
 
   it("still reports gameOffline for players that are not ChatTerror friends", async () => {

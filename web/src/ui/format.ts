@@ -51,10 +51,9 @@ const SEND_ERRORS: Record<string, string> = {
   timeout: "No response from the game",
   offline: "Not connected to the relay",
   gameOffline: "The game is offline",
-  notFriend: "You are not on their friend list",
+  notPaired: "You are not paired with them",
   notChatTerror: "They don't use ChatTerror",
-  notOwner: "This character is registered to another ChatTerror install",
-  keyChanged: "Their ChatTerror key changed. Forget them under Trusted ChatTerror friends in the plugin",
+  keyChanged: "Their ChatTerror key changed. Remove them under Friends in the plugin and pair again",
   staleBundle: "The relay sent an outdated copy of their ChatTerror keys",
 };
 

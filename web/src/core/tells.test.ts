@@ -7,40 +7,41 @@ import type { TellBody, TellContact } from "./protocol";
 import { openAccountStore, resetStorageForTests } from "./storage";
 import { buildCopies, findContact, openTellFrame, TELL_TTL_MS, tellToItem } from "./tells";
 
-const contact: TellContact = { character: "Main Char", characterWorld: "Twintania", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob" };
+const contact: TellContact = { character: "Main Char", characterWorld: "Twintania", characterHash: "me", name: "Bob Smith", world: "Lich", hash: "bob", installId: "bob-install", key: "bob-key" };
 const now = Date.now();
 const body: TellBody = { id: "t1", fromHash: "bob", fromName: "Forged Name", fromWorld: "Lich", toHash: "me", toName: "Main Char", toWorld: "Twintania", text: "hi", ts: now - 5 };
 
 describe("tells", () => {
   it("names incoming tells from the contact list, not the body", () => {
-    expect(tellToItem(body, "bob", [contact], now)).toEqual({
+    expect(tellToItem(body, [contact], false, now)).toEqual({
       id: "t1", ts: now - 5, channel: "tell", sender: "Bob Smith", senderWorld: "Lich", text: "hi", character: "Main Char", outgoing: false,
     });
   });
 
   it("never dates a tell past the receiver's clock", () => {
-    expect(tellToItem({ ...body, ts: now + 9_999_999 }, "bob", [contact], now)?.ts).toBe(now);
-    expect(tellToItem({ ...body, ts: now - 1000 }, "bob", [contact], now)?.ts).toBe(now - 1000);
+    expect(tellToItem({ ...body, ts: now + 9_999_999 }, [contact], false, now)?.ts).toBe(now);
+    expect(tellToItem({ ...body, ts: now - 1000 }, [contact], false, now)?.ts).toBe(now - 1000);
   });
 
   it("drops tells older than the relay keeps them, so a replay can't come back", () => {
-    expect(tellToItem({ ...body, ts: now - TELL_TTL_MS - 1 }, "bob", [contact], now)).toBeNull();
-    expect(tellToItem({ ...body, ts: now - TELL_TTL_MS + 1000 }, "bob", [contact], now)).not.toBeNull();
+    expect(tellToItem({ ...body, ts: now - TELL_TTL_MS - 1 }, [contact], false, now)).toBeNull();
+    expect(tellToItem({ ...body, ts: now - TELL_TTL_MS + 1000 }, [contact], false, now)).not.toBeNull();
   });
 
   it("drops tells that would not make a valid chat item", () => {
-    expect(tellToItem({ ...body, text: "x".repeat(5000) }, "bob", [contact], now)).toBeNull();
+    expect(tellToItem({ ...body, text: "x".repeat(5000) }, [contact], false, now)).toBeNull();
     const own = { ...body, fromHash: "me", fromName: "Main|Char" };
-    expect(tellToItem(own, "me", [contact], now)).toBeNull();
+    expect(tellToItem(own, [contact], true, now)).toBeNull();
   });
 
   it("drops tells from unknown senders", () => {
-    expect(tellToItem(body, "stranger", [contact])).toBeNull();
+    expect(tellToItem({ ...body, fromHash: "stranger" }, [contact], false, now)).toBeNull();
+    expect(tellToItem({ ...body, toHash: "alt" }, [contact], false, now)).toBeNull();
   });
 
   it("turns own copies into outgoing items", () => {
     const own = { ...body, fromHash: "me", fromName: "Main Char", toHash: "bob", toName: "Bob Smith", toWorld: "Lich" };
-    expect(tellToItem(own, "me", [contact], now)).toMatchObject({ sender: "Bob Smith", senderWorld: "Lich", character: "Main Char", outgoing: true });
+    expect(tellToItem(own, [contact], true, now)).toMatchObject({ sender: "Bob Smith", senderWorld: "Lich", character: "Main Char", outgoing: true });
   });
 
   it("finds contacts by Name@World for the given character only", () => {
@@ -90,26 +91,35 @@ describe("openTellFrame", () => {
     return { store, seal };
   }
 
+  const own = { ...body, fromHash: "me", fromName: "Main Char", toHash: "bob", toName: "Bob Smith", toWorld: "Lich" };
+
   it("only accepts copies of our own tells from our own install", async () => {
     const { store, seal } = await seed([contact]);
-    const own = { ...body, fromHash: "me", fromName: "Main Char", toHash: "bob", toName: "Bob Smith", toWorld: "Lich" };
     const envelope = await seal(own);
-    expect(await openTellFrame(store, "me", "t1", envelope, "someone-else")).toBeNull();
-    expect(await openTellFrame(store, "me", "t1", envelope, "my-install")).toMatchObject({ outgoing: true, character: "Main Char" });
+    expect(await openTellFrame(store, "my-install-id", "t1", envelope, "someone-else")).toBeNull();
+    expect(await openTellFrame(store, "my-install-id", "t1", envelope, "my-install")).toMatchObject({ outgoing: true, character: "Main Char" });
   });
 
-  it("ignores inherited properties when looking up pins", async () => {
-    const proto = { ...contact, hash: "constructor" };
-    const { store, seal } = await seed([proto]);
-    const tell = { ...body, fromHash: "constructor" };
-    expect(await openTellFrame(store, "constructor", "t1", await seal(tell), "their-install")).toMatchObject({ sender: "Bob Smith" });
-    expect(Object.hasOwn(await store.getMeta("tellPins"), "constructor")).toBe(true);
+  it("does not take a friend's tell claiming to be from one of our characters as our own", async () => {
+    const { store, seal } = await seed([contact]);
+    expect(await openTellFrame(store, "bob-install", "t1", await seal(own), "bob-key")).toBeNull();
+  });
+
+  it("accepts a tell only from the paired install, key, character and recipient of a contact", async () => {
+    const { store, seal } = await seed([contact]);
+    const envelope = await seal(body);
+    expect(await openTellFrame(store, "bob-install", "t1", envelope, "bob-key")).toMatchObject({ sender: "Bob Smith", outgoing: false });
+    expect(await openTellFrame(store, "other-install", "t1", envelope, "bob-key")).toBeNull();
+    expect(await openTellFrame(store, "bob-install", "t1", envelope, "other-key")).toBeNull();
+    expect(await openTellFrame(store, "bob-install", "t1", await seal({ ...body, fromHash: "carol" }), "bob-key")).toBeNull();
+    expect(await openTellFrame(store, "bob-install", "t1", await seal({ ...body, toHash: "alt" }), "bob-key")).toBeNull();
+    expect(await openTellFrame(store, "bob-install", "t2", envelope, "bob-key")).toBeNull();
   });
 
   it("drops a tell whose body has a bad timestamp", async () => {
     const { store, seal } = await seed([contact]);
     for (const ts of [-Infinity, -1e20, NaN]) {
-      expect(await openTellFrame(store, "bob", "t1", await seal({ ...body, ts }), "their-install")).toBeNull();
+      expect(await openTellFrame(store, "bob-install", "t1", await seal({ ...body, ts }), "bob-key")).toBeNull();
     }
   });
 });

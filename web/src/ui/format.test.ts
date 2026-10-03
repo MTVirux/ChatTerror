@@ -7,7 +7,7 @@ describe("sendErrorText", () => {
   });
 
   it("explains relayed tell failures", () => {
-    for (const code of ["notFriend", "notChatTerror", "notOwner", "keyChanged"]) {
+    for (const code of ["notPaired", "notChatTerror", "keyChanged"]) {
       expect(sendErrorText(code)).not.toBe("Message failed to send");
     }
   });

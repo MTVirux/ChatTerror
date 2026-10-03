@@ -48,6 +48,14 @@ describe("parsePluginPayload", () => {
     }
   });
 
+  it("requires the paired install id and key on every contact", () => {
+    const contact = { character: "A B", characterWorld: "Lich", characterHash: "h1", name: "C D", world: "Lich", hash: "h2", installId: "i1", key: "k1" };
+    expect(parsePluginPayload({ ...settings, contacts: [contact] })).not.toBeNull();
+    expect(parsePluginPayload({ ...settings, contacts: [{ ...contact, installId: undefined }] })).toBeNull();
+    expect(parsePluginPayload({ ...settings, contacts: [{ ...contact, key: undefined }] })).toBeNull();
+    expect(parsePluginPayload({ ...settings, contacts: [{ ...contact, installId: 5 }] })).toBeNull();
+  });
+
   it("validates a send result error", () => {
     const result = { type: "sendResult", seq: 1, requestId: "r", ok: false };
     expect(parsePluginPayload({ ...result, error: "busy" })).not.toBeNull();
