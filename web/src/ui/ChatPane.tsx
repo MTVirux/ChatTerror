@@ -1,73 +1,47 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useMemo } from "preact/hooks";
 import type { AccountView, FeedItem } from "../core/accounts";
-import { channelKey, findCustom, inChannel, type ChannelRef } from "./channels";
-import { customColor } from "./ChannelMenu";
-import { Composer, type Tab } from "./Composer";
-import { defaultSendAccount } from "./feed";
-import { STATUS_LABELS } from "./format";
-import { MenuIcon } from "./icons";
+import { channelIncludes, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
+import { customColor, itemKey, type SubRow } from "./channels";
+import { Composer, composerTab } from "./Composer";
+import { channelColor, STATUS_LABELS } from "./format";
+import { ChatBubbleIcon, MenuIcon } from "./icons";
 import { MessageList } from "./MessageList";
-import type { PendingSend, PendingSends } from "./pending";
+import { pendingIn, type PendingSend, type PendingSends } from "./pending";
+import { viewKey } from "./place";
 
-export function ChatPane({ accounts, server, channel, items, unreadCount, sends, pending, onMenu }: {
-  accounts: AccountView[];
-  server: string;
-  channel: ChannelRef | null;
+export function ChatPane({ account, prefs, custom, row, items, unreadCount, sends, pending, onMenu }: {
+  account: AccountView;
+  prefs: ChannelPrefs;
+  custom: CustomChannel | null;
+  row: SubRow | null;
   items: FeedItem[];
   unreadCount: number;
   sends: PendingSends;
   pending: PendingSend[];
   onMenu: () => void;
 }) {
-  const home = server === "home";
-  const account = home ? undefined : accounts.find((a) => a.deviceId === server);
-  const viewId = home ? "home" : channel ? channelKey(channel) : server;
-  const [sendAccount, setSendAccount] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (home) setSendAccount((c) => defaultSendAccount(items, accounts, c));
-  }, [home, accounts]);
-
-  // With no active account in Home, the first account's state shows why sending is blocked.
-  const targetId = account?.deviceId ?? sendAccount ?? accounts[0].deviceId;
-  const state = accounts.find((a) => a.deviceId === targetId)?.state ?? accounts[0].state;
-  const activeAccounts = accounts.filter((a) => a.status === "active");
-
-  const prefs = account?.state.channelPrefs;
-  const custom = channel && prefs ? findCustom(prefs, channel) : undefined;
-  const visible = useMemo(() => (home ? items : channel && prefs ? items.filter((i) => inChannel(i, channel, prefs)) : []), [items, viewId, custom]);
-
-  const visiblePending = pending.filter((p) => {
-    if (home) return accounts.some((a) => a.deviceId === p.deviceId);
-    if (!account || p.deviceId !== account.deviceId) return false;
-    // With no channels yet, failed sends still need somewhere to show Retry and Dismiss.
-    if (!channel) return true;
-    if (channel.character !== account.character) return false;
-    return channel.kind === "custom" ? !!custom?.channels.includes(p.channel) : p.channel === "tell" && p.target === channel.partner;
-  });
-
-  const tab = useMemo((): Tab => {
-    if (!channel || home) return { kind: "all" };
-    if (channel.kind === "tell") return { kind: "tell", character: channel.character, partner: channel.partner };
-    return { kind: "custom", channels: custom?.channels ?? [], latest: visible.at(-1)?.channel };
-  }, [viewId, custom, visible.at(-1)?.channel]);
-
-  const blocked = account && channel && channel.character !== account.character ? `${channel.character} isn't logged in` : undefined;
+  const viewId = row ? viewKey(account.deviceId, row.key) : account.deviceId;
+  const visible = useMemo(() => (row ? items.filter((i) => channelIncludes(prefs, row.key, itemKey(i))) : []), [items, row?.key, prefs]);
+  const visiblePending = pending.filter((p) => pendingIn(p, account.deviceId, custom, row));
+  const latest = visible.at(-1)?.channel;
+  const tab = useMemo(() => (custom && row ? composerTab(custom, row, latest) : null), [custom, row?.key, latest]);
+  const character = custom?.character;
+  const blocked = character && character !== account.character ? `${character} isn't logged in` : undefined;
+  const status = STATUS_LABELS[account.state.status];
 
   function title() {
-    if (home) return "Home";
-    if (!channel) return account?.label ?? "";
-    if (channel.kind === "tell") return channel.partner.split("@")[0];
+    if (!custom || !row) return account.label;
+    if (row.kind === "partner") return row.label;
+    const color = row.channel ? channelColor(row.channel) : customColor(custom);
     return (
       <>
-        <span class="hash" style={{ "--c": customColor(custom) }} aria-hidden="true">#</span>
-        {custom?.name}
+        <span class="hash" style={{ "--c": color }} aria-hidden="true">{row.hash ? "#" : <ChatBubbleIcon size={20} />}</span>
+        {row.kind === "type" ? row.label : custom.name}
       </>
     );
   }
 
-  const subtitle = home ? "All accounts" : channel ? channel.character : account?.character ?? "Not logged in";
-  const accountOf = (deviceId: string) => accounts.find((a) => a.deviceId === deviceId);
+  const subtitle = !custom || !row ? status : row.kind === "all" ? custom.character : `${custom.name} · ${custom.character}`;
 
   return (
     <div class="chat">
@@ -78,7 +52,7 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
         <div class="chat-title">
           <h1>{title()}</h1>
           <small>
-            {account && <span class={`status-dot ${account.state.status}`} role="img" title={STATUS_LABELS[account.state.status]} aria-label={STATUS_LABELS[account.state.status]} />}
+            <span class={`status-dot ${account.state.status}`} role="img" title={status} aria-label={status} />
             {subtitle}
           </small>
         </div>
@@ -88,25 +62,21 @@ export function ChatPane({ accounts, server, channel, items, unreadCount, sends,
         viewId={viewId}
         items={visible}
         unreadCount={unreadCount}
-        showAccount={home}
         pending={visiblePending}
-        accountOf={accountOf}
+        accountOf={(id) => (id === account.deviceId ? account : undefined)}
         onRetry={(p) => void sends.retry(p)}
         onDismiss={sends.dismiss}
       />
 
-      <Composer
-        key={viewId}
-        state={state}
-        tab={tab}
-        blocked={blocked}
-        account={home && activeAccounts.length > 1 && sendAccount ? {
-          options: activeAccounts.map((a) => ({ deviceId: a.deviceId, label: a.label, color: a.color, online: a.state.status === "online" })),
-          value: sendAccount,
-          onChange: setSendAccount,
-        } : undefined}
-        onSend={(channel, text, target, character) => void sends.send(targetId, channel, text, target, character)}
-      />
+      {tab && (
+        <Composer
+          key={viewId}
+          state={account.state}
+          tab={tab}
+          blocked={blocked}
+          onSend={(channel, text, target, from) => void sends.send(account.deviceId, channel, text, target, from)}
+        />
+      )}
     </div>
   );
 }

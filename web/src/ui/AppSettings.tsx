@@ -36,7 +36,7 @@ export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAc
 
   return (
     <SettingsSheet title="Settings" onClose={onClose}>
-      <SettingsGroup label="Accounts">
+      <SettingsGroup label="Game clients">
         {accounts.map((a) => (
           <button class="settings-row" key={a.deviceId} onClick={() => onOpenAccount(a.deviceId)}>
             <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": senderColor(a.deviceId) }} aria-hidden="true">
@@ -51,7 +51,7 @@ export function AppSettings({ manager, accounts, onClose, onOpenAccount, onAddAc
           </button>
         ))}
         <button class="settings-row accent" onClick={onAddAccount}>
-          <span class="settings-text">Add account</span>
+          <span class="settings-text">Pair another game client</span>
         </button>
       </SettingsGroup>
 
