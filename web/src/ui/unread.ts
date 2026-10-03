@@ -1,6 +1,6 @@
 import type { AccountManager } from "../core/accounts";
-import { channelIncludes, isItemMuted, type ChannelPrefs } from "../core/channelPrefs";
-import { itemKey, keyCharacter } from "./channels";
+import { channelIncludes, isItemMuted, withTells, type ChannelPrefs } from "../core/channelPrefs";
+import { channelFor, itemKey, keyCharacter } from "./channels";
 
 export interface UnreadSummary {
   unread: boolean;
@@ -102,4 +102,11 @@ export function createUnreadTracker(
 export function viewUnread(tracker: Pick<UnreadTracker, "count">, deviceId: string, prefs: ChannelPrefs, key: string): { count: number; tells: number } {
   const shows = (k: string) => channelIncludes(prefs, key, k) && !isItemMuted(prefs, k);
   return { count: tracker.count(deviceId, shows), tells: tracker.count(deviceId, (k) => k.startsWith("t|") && shows(k)) };
+}
+
+// Unread one character's channels show, leaving out muted messages and chat types no channel shows.
+export function characterUnread(tracker: Pick<UnreadTracker, "count">, deviceId: string, prefs: ChannelPrefs, character: string): UnreadSummary {
+  const shown = (k: string) => keyCharacter(k) === character && !isItemMuted(prefs, k) && !!channelFor(withTells(prefs, character), character, k);
+  const count = tracker.count(deviceId, shown);
+  return { unread: count > 0, tells: tracker.count(deviceId, (k) => k.startsWith("t|") && shown(k)) };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FeedItem } from "../core/accounts";
 import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "../core/channelPrefs";
-import { createUnreadTracker, viewUnread } from "./unread";
+import { characterUnread, createUnreadTracker, viewUnread } from "./unread";
 
 function fakeManager() {
   let cb: ((items: FeedItem[]) => void) | undefined;
@@ -132,5 +132,49 @@ describe("viewUnread", () => {
     m.push([item("a"), item("a", { channel: "tell", sender: "C D", senderWorld: "W" })]);
     const muted = { ...prefs, muted: ["x|Alpha Beta|s"] };
     expect(viewUnread(t, "a", muted, "x|Alpha Beta|s")).toEqual({ count: 0, tells: 0 });
+  });
+});
+
+describe("characterUnread", () => {
+  const tell = (sender: string, over: Partial<FeedItem> = {}) => item("a", { channel: "tell", sender, senderWorld: "W", ...over });
+  const withParty: ChannelPrefs = {
+    ...EMPTY_CHANNEL_PREFS,
+    custom: [{ id: "party", character: "Alpha Beta", name: "Party", channels: ["party"] }],
+  };
+
+  it("leaves out chat types no channel shows", () => {
+    const m = fakeManager();
+    const t = createUnreadTracker(m);
+    m.push([item("a", { channel: "say" })]);
+    expect(characterUnread(t, "a", EMPTY_CHANNEL_PREFS, "Alpha Beta")).toEqual({ unread: false, tells: 0 });
+  });
+
+  it("counts tells, which the Tells channel always shows", () => {
+    const m = fakeManager();
+    const t = createUnreadTracker(m);
+    m.push([tell("C D")]);
+    expect(characterUnread(t, "a", EMPTY_CHANNEL_PREFS, "Alpha Beta")).toEqual({ unread: true, tells: 1 });
+  });
+
+  it("counts a chat type one of the character's channels shows", () => {
+    const m = fakeManager();
+    const t = createUnreadTracker(m);
+    m.push([item("a")]);
+    expect(characterUnread(t, "a", withParty, "Alpha Beta")).toEqual({ unread: true, tells: 0 });
+  });
+
+  it("leaves out a muted partner's tells", () => {
+    const m = fakeManager();
+    const t = createUnreadTracker(m);
+    m.push([tell("E F")]);
+    const muted = { ...EMPTY_CHANNEL_PREFS, muted: ["t|Alpha Beta|E F@W"] };
+    expect(characterUnread(t, "a", muted, "Alpha Beta")).toEqual({ unread: false, tells: 0 });
+  });
+
+  it("leaves out another character's messages", () => {
+    const m = fakeManager();
+    const t = createUnreadTracker(m);
+    m.push([tell("C D", { character: "Other One" }), item("a", { character: "Other One" })]);
+    expect(characterUnread(t, "a", withParty, "Alpha Beta")).toEqual({ unread: false, tells: 0 });
   });
 });

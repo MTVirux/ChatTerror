@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
-import { channelIncludes, customKey, isItemMuted, saveCustom, withTells, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
+import { channelIncludes, customKey, EMPTY_CHANNEL_PREFS, isItemMuted, saveCustom, withTells, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import { AccountSettings } from "./AccountSettings";
 import { AppSettings } from "./AppSettings";
 import { ChannelList } from "./ChannelList";
@@ -19,7 +19,7 @@ import { createPendingSends, type PendingSend, type PendingSends } from "./pendi
 import { PendingScreen } from "./PendingScreen";
 import { chatTarget, initialPlace, parseLink, parseViews, pickTarget, PLACE_KEY, remember, resolveChannel, resolveRow, SERVER_KEY, SUB_KEY, validPlace, viewKey, type Picks, type Place } from "./place";
 import { RevokedNotice } from "./RevokedNotice";
-import { createUnreadTracker, viewUnread, type UnreadTracker } from "./unread";
+import { characterUnread, createUnreadTracker, viewUnread, type UnreadTracker } from "./unread";
 import { useFeed } from "./useFeed";
 
 const OLD_KEYS = ["chatterror.nav", "chatterror.lastChannels", "chatterror.account"];
@@ -381,7 +381,7 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, sends,
       {settingsSheet()}
       {switching && (
         <CharacterSheet
-          groups={characterGroups(accounts, (a) => charactersOf(a, a.deviceId === deviceId ? items : []), (id, name) => unread.summary(id, name))}
+          groups={characterGroups(accounts, (a) => charactersOf(a, a.deviceId === deviceId ? items : []), (id, name) => characterUnread(unread, id, manager.session(id)?.getState().channelPrefs ?? EMPTY_CHANNEL_PREFS, name))}
           current={place}
           onPick={(next) => {
             setSwitching(false);
