@@ -48,14 +48,8 @@ public static class TellItems
     public static bool IsExpired(TellBody body, long now) => now - body.Ts > (long)Limits.TellTtl.TotalMilliseconds;
 
     // The sender sets Ts, so it is never allowed past our own clock where it would move the phones' sync point.
-    public static ChatItem? Incoming(TellBody body, string from, IReadOnlyList<TellCharacter> characters, long now)
-    {
-        var own = characters.FirstOrDefault(c => c.Hash == body.ToHash);
-        var friend = TellContacts.Friend(characters, body.ToHash, from);
-        if (own == null || friend == null)
-            return null;
-        return new ChatItem(body.Id, Math.Min(body.Ts, now), ChatChannel.Tell, friend.Name, friend.World, body.Text, own.Name, false);
-    }
+    public static ChatItem Incoming(TellBody body, TellCharacter own, TellFriend sender, long now) =>
+        new(body.Id, Math.Min(body.Ts, now), ChatChannel.Tell, sender.Name, sender.World, body.Text, own.Name, false);
 
     public static ChatItem Outgoing(TellBody body, long now) =>
         new(body.Id, Math.Min(body.Ts, now), ChatChannel.Tell, body.ToName, body.ToWorld, body.Text, body.FromName, true);

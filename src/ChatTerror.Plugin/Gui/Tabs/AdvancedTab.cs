@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using ChatTerror.Plugin.Services;
 using ChatTerror.Protocol;
 using Dalamud.Bindings.ImGui;
@@ -48,25 +47,6 @@ public sealed class AdvancedTab(Configuration config, DeviceHub hub, Action chan
 
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("When off, messages sent while logged out wait up to 10 seconds for you to log in before failing.");
-
-        ImGui.Spacing();
-        ImGui.TextUnformatted("Trusted ChatTerror friends");
-        if (config.TellPins.Count == 0)
-            ImGui.TextDisabled("None yet.");
-        foreach (var hash in config.TellPins.Keys.ToList())
-        {
-            var friend = config.TellCharacters.SelectMany(c => c.Friends).FirstOrDefault(f => f.Hash == hash);
-            ImGui.TextUnformatted(friend == null ? hash[..8] : $"{friend.Name}@{friend.World}");
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"Forget##{hash}"))
-            {
-                config.TellPins.Remove(hash);
-                config.TellBundleIssuedAt.Remove(hash);
-                changed();
-            }
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Trust whatever key this friend uses next, e.g. after they reinstalled ChatTerror.");
-        }
     }
 
     // Typed values are kept here while the field is active and applied once it is released.
