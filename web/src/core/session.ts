@@ -2,7 +2,7 @@ import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaults, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, generateTellKey, openPayload, sealPayload, verifyBundle } from "./crypto";
-import { isValidSettings, isValidTs, parsePluginPayload, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
+import { isValidTs, parsePluginPayload, parseSettings, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
 import type { PushControl } from "./push";
 import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
@@ -173,7 +173,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     guard = new SeqGuard(lastSeenWs);
     counter = new SeqCounter(lastSeqSent);
     // Stored values may predate payload validation.
-    const settings = isValidSettings(storedSettings) ? storedSettings : null;
+    const settings = parseSettings(storedSettings);
     syncTs = isValidTs(storedSyncTs) ? storedSyncTs : 0;
     cacheLimit = deps.cacheLimit;
     approved = storedApproved;

@@ -176,7 +176,7 @@ function isChannelList(value: unknown): value is ChatChannel[] {
   return Array.isArray(value) && value.every(isChatChannel);
 }
 
-export function isValidSettings(value: unknown): value is Omit<SettingsPayload, "type" | "seq"> {
+function isSettings(value: unknown): value is Record<string, unknown> {
   return (
     isObject(value) &&
     (value.character === undefined || value.character === null || isName(value.character)) &&
@@ -185,8 +185,15 @@ export function isValidSettings(value: unknown): value is Omit<SettingsPayload, 
     Number.isInteger(value.maxLength) &&
     (value.maxLength as number) >= 1 &&
     (value.maxLength as number) <= MAX_SEND_LENGTH &&
-    (value.contacts === undefined || (Array.isArray(value.contacts) && value.contacts.every(isTellContact)))
+    (value.contacts === undefined || Array.isArray(value.contacts))
   );
+}
+
+// A bad contact, e.g. from a plugin older than this page, drops only that contact and keeps the other settings.
+export function parseSettings(value: unknown): Omit<SettingsPayload, "type" | "seq"> | null {
+  if (!isSettings(value)) return null;
+  const settings = Array.isArray(value.contacts) ? { ...value, contacts: value.contacts.filter(isTellContact) } : value;
+  return settings as unknown as Omit<SettingsPayload, "type" | "seq">;
 }
 
 function hasStrings(value: unknown, keys: string[]): value is Record<string, unknown> {
@@ -251,7 +258,7 @@ export function parsePluginPayload(value: unknown): PluginPayload | null {
         ? (value as unknown as SendResultPayload)
         : null;
     case "settings":
-      return isValidSettings(value) ? (value as unknown as SettingsPayload) : null;
+      return parseSettings(value) as SettingsPayload | null;
     default:
       return null;
   }
