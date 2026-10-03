@@ -15,6 +15,7 @@ export interface SessionState {
   status: SessionStatus;
   fingerprint?: string;
   character?: string;
+  characterWorld?: string;
   relayChannels: ChatChannel[];
   sendChannels: ChatChannel[];
   maxLength: number;
@@ -189,6 +190,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       ...emptyState(approved ? "connecting" : "pending", cacheLimit),
       fingerprint: pairing.fingerprint,
       character: settings?.character,
+      characterWorld: settings?.characterWorld,
       relayChannels: settings?.relayChannels ?? [],
       sendChannels: settings?.sendChannels ?? [],
       maxLength: settings?.maxLength ?? DEFAULT_MAX_LENGTH,
@@ -359,6 +361,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
         await deps.store.setMeta("lastSettings", payload);
         setState({
           character: payload.character,
+          characterWorld: payload.characterWorld,
           relayChannels: payload.relayChannels,
           sendChannels: payload.sendChannels,
           maxLength: payload.maxLength,

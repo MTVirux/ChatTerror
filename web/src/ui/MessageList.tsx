@@ -6,6 +6,7 @@ import { channelColor, channelLabel, timeOfDay } from "./format";
 import { initials, senderColor } from "./identity";
 import { buildRows, incomingAfter, type Row } from "./messages";
 import type { PendingSend } from "./pending";
+import { Portrait } from "./Portrait";
 
 export function MessageList({ viewId, items, unreadCount, showAccount, pending, accountOf, onRetry, onDismiss }: {
   viewId: string;
@@ -68,7 +69,7 @@ export function MessageList({ viewId, items, unreadCount, showAccount, pending, 
             <p class="hint">New chat from the game shows up here while the plugin is running.</p>
           </div>
         )}
-        {rows.map((row) => <MessageRow key={feedKey(row.item)} row={row} account={showAccount ? accountOf(row.item.deviceId) : undefined} showAccount={showAccount} />)}
+        {rows.map((row) => <MessageRow key={feedKey(row.item)} row={row} account={accountOf(row.item.deviceId)} showAccount={showAccount} />)}
         {pending.map((p) => {
           const account = accountOf(p.deviceId);
           return (
@@ -76,6 +77,7 @@ export function MessageList({ viewId, items, unreadCount, showAccount, pending, 
               key={`p-${p.localId}`}
               send={p}
               character={account?.character ?? account?.label ?? ""}
+              characterWorld={account?.characterWorld}
               account={showAccount ? account : undefined}
               onRetry={onRetry}
               onDismiss={onDismiss}
@@ -98,16 +100,26 @@ function Tags({ account, channel }: { account?: AccountView; channel: ChatChanne
   );
 }
 
-function Avatar({ name }: { name: string }) {
-  return <span class="avatar" style={{ "--c": senderColor(name) }} aria-hidden="true">{initials(name)}</span>;
+function Avatar({ name, world }: { name: string; world?: string }) {
+  return (
+    <span class="avatar" style={{ "--c": senderColor(name) }} aria-hidden="true">
+      {initials(name)}
+      <Portrait name={name} world={world} />
+    </span>
+  );
+}
+
+// The account only knows the world of the character it's logged in as.
+function ownWorld(account: AccountView | undefined, character: string): string | undefined {
+  return account?.character === character ? account.characterWorld : undefined;
 }
 
 function MessageRow({ row, account, showAccount }: { row: Row; account?: AccountView; showAccount: boolean }) {
   const { item } = row;
   const time = <time class="time" dateTime={new Date(item.ts).toISOString()}>{timeOfDay(item.ts)}</time>;
   // System lines like echo, errors or sales have no sender.
-  const [name, ownWorld] = (item.sender || channelLabel(item.channel)).split("@");
-  const world = ownWorld ?? item.senderWorld;
+  const [name, nameWorld] = (item.sender || channelLabel(item.channel)).split("@");
+  const world = item.sender ? nameWorld ?? item.senderWorld : undefined;
   return (
     <>
       {row.day && <div class="day"><span>{row.day}</span></div>}
@@ -115,7 +127,7 @@ function MessageRow({ row, account, showAccount }: { row: Row; account?: Account
       {row.head ? (
         <div class="msg head">
           {/* Outgoing tells carry the target as sender, so own rows use the character. */}
-          <Avatar name={item.outgoing ? item.character : name} />
+          {item.outgoing ? <Avatar name={item.character} world={ownWorld(account, item.character)} /> : <Avatar name={name} world={world} />}
           <div class="msg-body">
             <div class="msg-head">
               <span class={`sender${item.outgoing ? " own" : ""}`}>
@@ -137,16 +149,17 @@ function MessageRow({ row, account, showAccount }: { row: Row; account?: Account
   );
 }
 
-function PendingRow({ send, character, account, onRetry, onDismiss }: {
+function PendingRow({ send, character, characterWorld, account, onRetry, onDismiss }: {
   send: PendingSend;
   character: string;
+  characterWorld?: string;
   account?: AccountView;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
   return (
     <div class={`msg head pending-msg${send.error ? " failed" : ""}`}>
-      <Avatar name={character} />
+      <Avatar name={character} world={characterWorld} />
       <div class="msg-body">
         <div class="msg-head">
           <span class="sender own">{send.target ? `to ${send.target.split("@")[0]}` : character}</span>

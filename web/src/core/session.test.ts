@@ -287,8 +287,8 @@ describe("session", () => {
   it("applies settings", async () => {
     const { session, relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
-    await relay.fromPlugin({ type: "settings", seq: Date.now(), character: "Alpha Beta", relayChannels: ["say", "tell"], sendChannels: ["say"], maxLength: 300 });
-    await vi.waitFor(() => expect(session.getState()).toMatchObject({ character: "Alpha Beta", relayChannels: ["say", "tell"], sendChannels: ["say"], maxLength: 300 }));
+    await relay.fromPlugin({ type: "settings", seq: Date.now(), character: "Alpha Beta", characterWorld: "Twintania", relayChannels: ["say", "tell"], sendChannels: ["say"], maxLength: 300 });
+    await vi.waitFor(() => expect(session.getState()).toMatchObject({ character: "Alpha Beta", characterWorld: "Twintania", relayChannels: ["say", "tell"], sendChannels: ["say"], maxLength: 300 }));
     expect((await store.getMeta("lastSettings"))?.maxLength).toBe(300);
   });
 

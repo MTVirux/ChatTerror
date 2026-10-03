@@ -13,6 +13,7 @@ export interface AccountView {
   label: string;
   color: string;
   character?: string;
+  characterWorld?: string;
   status: AccountStatus;
   state: SessionState;
   unread: number;
@@ -80,6 +81,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
         label: labels[i],
         color: colors[i],
         character: state.character,
+        characterWorld: state.characterWorld,
         status: e.record.status,
         state,
         unread: e.unread,

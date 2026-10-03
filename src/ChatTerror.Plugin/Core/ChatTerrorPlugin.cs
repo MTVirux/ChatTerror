@@ -71,6 +71,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         friendDirectory = new FriendDirectory(config, SaveConfig, keys, api, hub, framework, log);
         tellRelay = new TellRelay(config, SaveConfig, keys, api, relay, hub, tellDirectory, capture, chatGui, framework, playerState, log);
         tellHook = new TellCommandHook(interop, tellRelay, log);
+        hub.CharacterWorld = HomeWorldName;
         hub.Contacts = () => config.TellsEnabled ? FriendTrust.ForDevices(config.TellCharacters, config.PairedFriends) : [];
 
         devicesTab = new DevicesTab(config, api, hub, framework);
@@ -137,6 +138,9 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
     }
 
     private string? CharacterName() => playerState.IsLoaded ? playerState.CharacterName : null;
+
+    private string? HomeWorldName() =>
+        playerState.IsLoaded && playerState.HomeWorld.IsValid ? playerState.HomeWorld.Value.Name.ExtractText() : null;
 
     private void SaveConfig() => pluginInterface.SavePluginConfig(config);
 

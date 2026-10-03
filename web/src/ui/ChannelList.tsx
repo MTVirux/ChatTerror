@@ -7,6 +7,7 @@ import { CustomChannelSheet } from "./CustomChannelSheet";
 import { STATUS_LABELS } from "./format";
 import { PlusIcon } from "./icons";
 import { initials, senderColor } from "./identity";
+import { Portrait } from "./Portrait";
 import { useLongPress } from "./longPress";
 import { PendingScreen } from "./PendingScreen";
 import { RevokedNotice } from "./RevokedNotice";
@@ -202,7 +203,10 @@ function ChannelRow({ channel, custom, selected, muted, count, onClick, onMenu }
   const [name, world] = channel.partner.split("@");
   return (
     <button class={cls} aria-current={selected ? "page" : undefined} {...press}>
-      <span class="dm-avatar" style={{ "--c": senderColor(name) }} aria-hidden="true">{initials(name)}</span>
+      <span class="dm-avatar" style={{ "--c": senderColor(name) }} aria-hidden="true">
+        {initials(name)}
+        <Portrait name={name} world={world} />
+      </span>
       <span class="channel-name">
         {name}
         {world && <span class="world">{world}</span>}
@@ -227,7 +231,10 @@ export function HomeList({ accounts, unread, onSelectServer }: {
           const summary = unread.summary(a.deviceId);
           return (
             <button key={a.deviceId} class={`channel home-row${summary.unread ? " unread" : ""}`} onClick={() => onSelectServer(a.deviceId)}>
-              <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": a.color }} aria-hidden="true">{initials(a.label)}</span>
+              <span class={`dm-avatar${a.status === "revoked" ? " revoked" : ""}`} style={{ "--c": a.color }} aria-hidden="true">
+                {initials(a.label)}
+                <Portrait name={a.character} world={a.characterWorld} />
+              </span>
               <span class="channel-name">
                 {a.label}
                 <small class="home-status">{STATUS_LABELS[a.state.status]}</small>
