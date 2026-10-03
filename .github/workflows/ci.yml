@@ -104,7 +104,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - run: docker build -t chatterror .
-      - run: docker run -d --name relay -p 8080:8080 chatterror
+      - run: docker run -d --name relay -p 8080:8080 -e Relay__InstallsPerHour=10 chatterror
 
       - name: Wait for the relay
         run: curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:8080/
