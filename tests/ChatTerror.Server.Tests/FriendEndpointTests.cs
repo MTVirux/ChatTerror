@@ -253,6 +253,46 @@ public class FriendEndpointTests
     }
 
     [Fact]
+    public async Task Profile_UnchangedEnvelopeDoesNotNotify()
+    {
+        using var app = new RelayApp();
+        var a = await app.RegisterInstallAsync();
+        var b = await app.RegisterInstallAsync();
+        await app.PairFriendsAsync(a, b);
+        await app.Client(a.InstallToken).PutAsJsonAsync($"/api/friends/{b.InstallId}/profile", new { envelope = "forB" });
+        await using var pluginB = await app.ConnectAsync(b.InstallToken);
+        await pluginB.BarrierAsync();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await app.Client(a.InstallToken).PutAsJsonAsync($"/api/friends/{b.InstallId}/profile", new { envelope = "forB" })).StatusCode);
+
+        Assert.DoesNotContain(await pluginB.BarrierAsync(), frame => frame is FriendsChangedFrame);
+    }
+
+    [Fact]
+    public async Task Profile_UploadsAreRateLimitedPerFriend()
+    {
+        using var app = new RelayApp(new() { ["Relay:FriendProfilesPerHour"] = "2" });
+        var a = await app.RegisterInstallAsync();
+        var b = await app.RegisterInstallAsync();
+        var c = await app.RegisterInstallAsync();
+        await app.PairFriendsAsync(a, b);
+        await app.PairFriendsAsync(a, c);
+        Task<HttpResponseMessage> Put(string friend, string envelope) =>
+            app.Client(a.InstallToken).PutAsJsonAsync($"/api/friends/{friend}/profile", new { envelope });
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Put(b.InstallId, "1")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Put(b.InstallId, "2")).StatusCode);
+        var limited = await Put(b.InstallId, "3");
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.Equal("rateLimited", await ErrorAsync(limited));
+        Assert.Equal(HttpStatusCode.NoContent, (await Put(c.InstallId, "1")).StatusCode);
+        Assert.Equal("2", Assert.Single((await app.GetFriendsAsync(b.InstallToken)).Friends).Profile);
+
+        app.Time.Advance(TimeSpan.FromHours(1));
+        Assert.Equal(HttpStatusCode.NoContent, (await Put(b.InstallId, "3")).StatusCode);
+    }
+
+    [Fact]
     public async Task RemoveFriend_RefusesOwnInstall()
     {
         using var app = new RelayApp();

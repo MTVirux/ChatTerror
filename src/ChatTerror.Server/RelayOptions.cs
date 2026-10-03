@@ -50,6 +50,9 @@ public sealed class RelayOptions
 
     public int PairingsPerInstallPerHour { get; set; } = 10;
 
+    // Per install and friend. Profiles only change when characters do, plus once per reconnect.
+    public int FriendProfilesPerHour { get; set; } = 30;
+
     // Installs with no devices are deleted once they have not connected for this long.
     public TimeSpan InstallTtl { get; set; } = TimeSpan.FromDays(30);
 
