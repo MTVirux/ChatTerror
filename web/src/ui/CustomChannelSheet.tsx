@@ -7,9 +7,10 @@ function newId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-// Relayed channels first in plugin order, then the rest.
-export function pickerChannels(relayChannels: ChatChannel[]): ChatChannel[] {
-  return [...relayChannels, ...ALL_CHANNELS.filter((c) => !relayChannels.includes(c))];
+// Relayed channels first in plugin order, then the rest. Tells belong to the Tells channel, so only a channel that already has them keeps them.
+export function pickerChannels(relayChannels: ChatChannel[], keepTell = false): ChatChannel[] {
+  const all = [...relayChannels, ...ALL_CHANNELS.filter((c) => !relayChannels.includes(c))];
+  return keepTell ? all : all.filter((c) => c !== "tell");
 }
 
 export function defaultName(channels: ChatChannel[]): string {
@@ -26,7 +27,7 @@ export function CustomChannelSheet({ character, custom, relayChannels, onSave, o
   const [name, setName] = useState(custom?.name ?? "");
   const [channels, setChannels] = useState<ChatChannel[]>(custom?.channels ?? []);
   const sheetRef = useRef<HTMLDivElement>(null);
-  const options = pickerChannels(relayChannels);
+  const options = pickerChannels(relayChannels, !!custom?.channels.includes("tell"));
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
