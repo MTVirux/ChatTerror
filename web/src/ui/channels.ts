@@ -78,6 +78,11 @@ export function subRows(custom: CustomChannel, partners: string[]): SubRow[] {
   return rows;
 }
 
+// One chat leaves nothing to pick, so the drawer shows only the rail.
+export function hasOneChat(custom: CustomChannel | null): boolean {
+  return !!custom && custom.channels.length === 1 && custom.channels[0] !== "tell";
+}
+
 // Only a channel's "all" view mixes chats, so only there does each message need its chat named.
 export function showsChatTags(custom: CustomChannel | null, row: SubRow | null): boolean {
   return !!custom && row?.kind === "all" && custom.channels.length > 1;

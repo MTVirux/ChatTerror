@@ -642,6 +642,11 @@ p {
   padding-left: 16px;
 }
 
+.drawer.narrow,
+.shell.docked .drawer.narrow {
+  width: 72px;
+}
+
 /* Channel rail */
 
 .rail {
@@ -966,6 +971,20 @@ p {
 
 .me:hover {
   background: var(--hover);
+}
+
+.drawer.narrow .me-bar {
+  flex-direction: column;
+}
+
+.drawer.narrow .me {
+  flex: none;
+  padding: 6px;
+}
+
+.drawer.narrow .me-text,
+.drawer.narrow .me > svg {
+  display: none;
 }
 
 .me-avatar-wrap {

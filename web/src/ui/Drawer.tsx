@@ -16,10 +16,11 @@ function useMedia(query: string): boolean {
   return matches;
 }
 
-export function Drawer({ open: requested, onOpenChange, swipe = true, drawer, children }: {
+export function Drawer({ open: requested, onOpenChange, swipe = true, narrow = false, drawer, children }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   swipe?: boolean;
+  narrow?: boolean;
   drawer: ComponentChildren;
   children: ComponentChildren;
 }) {
@@ -97,7 +98,7 @@ export function Drawer({ open: requested, onOpenChange, swipe = true, drawer, ch
       <div class={`drawer-backdrop${open ? " open" : ""}`} aria-hidden="true" onClick={() => onOpenChange(false)} />
       <div
         ref={panelRef}
-        class={`drawer${open ? " open" : ""}`}
+        class={`drawer${open ? " open" : ""}${narrow ? " narrow" : ""}`}
         role={open ? "dialog" : undefined}
         aria-modal={open ? "true" : undefined}
         aria-label="Navigation"

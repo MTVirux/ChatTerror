@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AccountView } from "../core/accounts";
 import { EMPTY_CHANNEL_PREFS, withDefaultChannels, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import type { ChatItem } from "../core/protocol";
-import { channelFor, channelSlug, charactersOf, customColor, itemKey, keyCharacter, partnersOf, railChannels, showsChatTags, subRows } from "./channels";
+import { channelFor, channelSlug, charactersOf, customColor, hasOneChat, itemKey, keyCharacter, partnersOf, railChannels, showsChatTags, subRows } from "./channels";
 
 function msg(over: Partial<ChatItem>): ChatItem {
   return { id: Math.random().toString(), ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
@@ -122,6 +122,16 @@ describe("showsChatTags", () => {
     expect(showsChatTags(tells, subRows(tells, [])[0])).toBe(false);
     expect(showsChatTags(social, subRows(social, [])[1])).toBe(false);
     expect(showsChatTags(mixed, subRows(mixed, ["A B@W"])[2])).toBe(false);
+  });
+});
+
+describe("hasOneChat", () => {
+  it("is true only for a channel with a single in-game chat", () => {
+    expect(hasOneChat(fc)).toBe(true);
+    expect(hasOneChat(tells)).toBe(false);
+    expect(hasOneChat(social)).toBe(false);
+    expect(hasOneChat(mixed)).toBe(false);
+    expect(hasOneChat(null)).toBe(false);
   });
 });
 

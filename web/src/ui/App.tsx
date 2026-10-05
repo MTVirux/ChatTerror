@@ -9,7 +9,7 @@ import { ChannelRail } from "./ChannelRail";
 import { CharacterBar } from "./CharacterBar";
 import { characterGroups, describeCharacter } from "./characters";
 import { CharacterSheet } from "./CharacterSheet";
-import { charactersOf, partnersOf, railChannels, subRows, type SubRow } from "./channels";
+import { charactersOf, hasOneChat, partnersOf, railChannels, subRows, type SubRow } from "./channels";
 import { ChatPane } from "./ChatPane";
 import { CustomChannelSheet } from "./CustomChannelSheet";
 import { Drawer } from "./Drawer";
@@ -237,6 +237,7 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, awaite
   const partners = useMemo(() => (character ? partnersOf(items, character, prefs.pinned) : []), [items, character, prefs.pinned]);
   const rows = useMemo(() => (custom ? subRows(custom, partners) : []), [custom, partners]);
   const row = custom ? resolveRow(rows, picks.sub[viewKey(deviceId, customKey(custom))]) : null;
+  const oneChat = hasOneChat(custom);
 
   // Pin the shown row so a partner arriving later doesn't move the view.
   useEffect(() => {
@@ -373,7 +374,7 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, awaite
           onMenu={(c) => setMenu(channelMenu(c))}
           onAdd={() => setEditing({})}
         />
-        <div class="sidebar">{sidebar()}</div>
+        {!oneChat && <div class="sidebar">{sidebar()}</div>}
       </div>
       <CharacterBar
         name={me.name}
@@ -393,7 +394,7 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, awaite
   // Sheets sit outside the drawer so its inert never covers them.
   return (
     <>
-      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} swipe={!covered} drawer={drawer}>
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} swipe={!covered} narrow={oneChat} drawer={drawer}>
         {!showChat && (
           <button class="icon-btn menu-btn floating" aria-label="Open navigation" onClick={() => setDrawerOpen(true)}>
             <MenuIcon />
