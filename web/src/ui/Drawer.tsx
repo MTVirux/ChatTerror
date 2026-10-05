@@ -1,19 +1,40 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { ignoresSwipe, swipeResult } from "./swipe";
 
-export function Drawer({ open, onOpenChange, swipe = true, drawer, children }: {
+const DOCKED_QUERY = "(min-width: 900px)";
+
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const list = matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    onChange();
+    list.addEventListener("change", onChange);
+    return () => list.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
+export function Drawer({ open: requested, onOpenChange, swipe = true, drawer, children }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   swipe?: boolean;
   drawer: ComponentChildren;
   children: ComponentChildren;
 }) {
+  // Wide screens keep the drawer beside the chat, so it never opens over it.
+  const docked = useMedia(DOCKED_QUERY);
+  const open = requested && !docked;
   const panelRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const swiped = useRef(false);
   const fromButton = useRef(false);
+
+  useEffect(() => {
+    if (docked && requested) onOpenChange(false);
+  }, [docked, requested]);
 
   useEffect(() => {
     if (open) {
@@ -56,7 +77,7 @@ export function Drawer({ open, onOpenChange, swipe = true, drawer, children }: {
   function onTouchStart(e: TouchEvent) {
     const t = e.touches[0];
     const fromField = e.target instanceof Element && ignoresSwipe(e.target.tagName);
-    touch.current = swipe && e.touches.length === 1 && !fromField ? { x: t.clientX, y: t.clientY } : null;
+    touch.current = swipe && !docked && e.touches.length === 1 && !fromField ? { x: t.clientX, y: t.clientY } : null;
   }
 
   function onTouchEnd(e: TouchEvent) {
@@ -71,7 +92,7 @@ export function Drawer({ open, onOpenChange, swipe = true, drawer, children }: {
   }
 
   return (
-    <div class="shell" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div class={`shell${docked ? " docked" : ""}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <div ref={mainRef} class="shell-main" inert={open}>{children}</div>
       <div class={`drawer-backdrop${open ? " open" : ""}`} aria-hidden="true" onClick={() => onOpenChange(false)} />
       <div
@@ -81,7 +102,7 @@ export function Drawer({ open, onOpenChange, swipe = true, drawer, children }: {
         aria-modal={open ? "true" : undefined}
         aria-label="Navigation"
         tabIndex={-1}
-        inert={!open}
+        inert={!open && !docked}
       >
         {drawer}
       </div>

@@ -612,6 +612,36 @@ p {
   display: flex;
 }
 
+.shell.docked {
+  display: flex;
+}
+
+.shell.docked .shell-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell.docked .drawer {
+  position: static;
+  order: -1;
+  flex: none;
+  width: 340px;
+  transform: none;
+  visibility: visible;
+  transition: none;
+  box-shadow: none;
+}
+
+.shell.docked .drawer-backdrop,
+.shell.docked .menu-btn {
+  display: none;
+}
+
+.shell.docked .chat-head {
+  min-height: calc(53px + var(--safe-top));
+  padding-left: 16px;
+}
+
 /* Channel rail */
 
 .rail {
