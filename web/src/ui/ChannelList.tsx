@@ -17,6 +17,7 @@ export function ChannelList({ custom, character, rows, selected, prefs, unreadOf
   onMenu: () => void;
   onRowMenu: (row: SubRow) => void;
 }) {
+  const shown = rows.length > 1 || isTells(custom) ? rows : [];
   return (
     <div class="sidebar-body">
       <button class="sidebar-head" aria-label={`${custom.name} options`} onClick={onMenu}>
@@ -24,7 +25,7 @@ export function ChannelList({ custom, character, rows, selected, prefs, unreadOf
         <small class="sidebar-status">{character}</small>
       </button>
       <div class="channels">
-        {rows.map((row) => {
+        {shown.map((row) => {
           const shared = { row, selected: row.key === selected, muted: prefs.muted.includes(row.key), count: unreadOf(row), onOpen: () => onOpen(row) };
           return row.kind === "partner"
             ? <PartnerRow key={row.key} {...shared} onMenu={() => onRowMenu(row)} />
