@@ -54,6 +54,8 @@ public static class ChannelMap
 
     public static bool IsOutgoing(XivChatType t) => t == XivChatType.TellOutgoing;
 
+    public static bool IsPlayerChat(ChatChannel c) => c <= ChatChannel.PvpTeam;
+
     public static string DisplayName(ChatChannel c) => c switch
     {
         ChatChannel.FreeCompany => "Free Company",

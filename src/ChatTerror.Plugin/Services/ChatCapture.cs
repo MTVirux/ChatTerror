@@ -65,7 +65,7 @@ public sealed class ChatCapture : IDisposable
         // Players on the local world often carry no world in the payload, and own lines carry no payload at all.
         // System, NPC and battle lines only get a world from their payload.
         var world = WorldName(player?.World)
-            ?? (!SendValidator.CanSend(channel) || sender.Length == 0 ? null
+            ?? (!ChannelMap.IsPlayerChat(channel) || sender.Length == 0 ? null
                 : outgoing && !ChannelMap.IsOutgoing(type) ? WorldName(playerState.HomeWorld) : WorldName(playerState.CurrentWorld));
 
         var text = message.Message.TextValue;

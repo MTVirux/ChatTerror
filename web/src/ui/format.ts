@@ -36,7 +36,6 @@ export function sendPrefix(channel: ChatChannel, target?: string): string {
     yell: "/y ",
     echo: "/e ",
     emote: "/em ",
-    pvpTeam: "/pvpteam ",
   };
   return prefixes[channel] ?? "";
 }

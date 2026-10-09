@@ -35,7 +35,7 @@ public static class SendValidator
 
     public static string BuildLine(SendChatPayload p) => Prefix(p) + p.Text.Trim();
 
-    public static bool CanSend(ChatChannel channel) => channel <= ChatChannel.PvpTeam;
+    public static bool CanSend(ChatChannel channel) => channel <= ChatChannel.Emote;
 
     private static string Prefix(SendChatPayload p) => p.Channel switch
     {
@@ -51,7 +51,6 @@ public static class SendValidator
         ChatChannel.Yell => "/y ",
         ChatChannel.Echo => "/e ",
         ChatChannel.Emote => "/em ",
-        ChatChannel.PvpTeam => "/pvpteam ",
         _ => throw new ArgumentOutOfRangeException(nameof(p), p.Channel, "Unknown channel."),
     };
 }
