@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using ChatTerror.Plugin.Logic;
 using ChatTerror.Protocol;
 using Dalamud.Plugin.Services;
@@ -16,6 +17,7 @@ public sealed record PendingPair(string DeviceId, string DeviceName, string Devi
 }
 
 // Only used from the framework thread; relay events are marshalled there.
+// History saves and backlogs run in the background so a large history never stalls the game.
 public sealed class DeviceHub : IDisposable
 {
     private const int MaxPendingPairs = 10;
@@ -41,6 +43,7 @@ public sealed class DeviceHub : IDisposable
     private long lastSeqSaveAt;
     private long savedHistoryVersion;
     private long lastHistorySaveAt;
+    private Task historySave = Task.CompletedTask;
     private bool warnedHistoryUnsaved;
     private bool disposed;
 
@@ -168,7 +171,7 @@ public sealed class DeviceHub : IDisposable
     public void ClearHistory()
     {
         History.Clear();
-        SaveHistory();
+        historySave = historySave.ContinueWith(_ => SaveHistory(), TaskScheduler.Default);
     }
 
     public void Dispose()
@@ -179,6 +182,13 @@ public sealed class DeviceHub : IDisposable
         framework.Update -= OnUpdate;
         if (seqDirty)
             saveConfig();
+        try
+        {
+            historySave.Wait();
+        }
+        catch (AggregateException)
+        {
+        }
         SaveHistory();
     }
 
@@ -221,11 +231,10 @@ public sealed class DeviceHub : IDisposable
                 ServeHello(session, sinceTs);
         }
 
-
-        if (now - lastHistorySaveAt < HistorySaveIntervalMs)
+        if (now - lastHistorySaveAt < HistorySaveIntervalMs || !historySave.IsCompleted)
             return;
         lastHistorySaveAt = now;
-        SaveHistory();
+        historySave = Task.Run(SaveHistory);
     }
 
     private List<ChatItem> LoadHistory()
@@ -357,8 +366,11 @@ public sealed class DeviceHub : IDisposable
     private void ServeHello(DeviceSession session, long sinceTs)
     {
         SendTo(session, BuildSettings(), false);
-        foreach (var chunk in DeviceSession.Backlog(History.Since(sinceTs)))
-            SendTo(session, chunk, false);
+        Task.Run(() =>
+        {
+            foreach (var chunk in DeviceSession.Backlog(History.Since(sinceTs)))
+                SendTo(session, chunk, false);
+        });
     }
 
     private void HandlePairRequest(PairRequestFrame request)
@@ -453,6 +465,10 @@ public sealed class DeviceHub : IDisposable
             CharacterWorld: CharacterWorld());
     }
 
-    private void SendTo(DeviceSession session, Payload payload, bool notify) =>
-        relay.Send(new SendFrame(To: session.DeviceId, Payload: session.Seal(payload), Notify: notify));
+    // Devices drop anything that arrives out of seq order, so sealing and queueing can't interleave with a backlog.
+    private void SendTo(DeviceSession session, Payload payload, bool notify)
+    {
+        lock (session)
+            relay.Send(new SendFrame(To: session.DeviceId, Payload: session.Seal(payload), Notify: notify));
+    }
 }
