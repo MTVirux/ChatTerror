@@ -425,10 +425,12 @@ public sealed class DeviceHub : IDisposable
         session.Overrides.Clear();
         session.Overrides.AddRange(overrides);
 
+        // Phones resend their prefs on every connect, usually unchanged.
         var device = config.Devices.FirstOrDefault(d => d.DeviceId == session.DeviceId);
-        if (device == null)
+        var distinctMuted = muted.Distinct().ToList();
+        if (device == null || (device.MutedChannels.SequenceEqual(distinctMuted) && device.ChannelOverrides.SequenceEqual(overrides)))
             return;
-        device.MutedChannels = muted.Distinct().ToList();
+        device.MutedChannels = distinctMuted;
         device.ChannelOverrides = overrides.ToList();
         saveConfig();
     }

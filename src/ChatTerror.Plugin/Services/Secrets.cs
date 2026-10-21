@@ -10,6 +10,8 @@ public static class Secrets
 {
     private static readonly byte[] Entropy = "ChatTerror"u8.ToArray();
 
+    public static bool Available => Protect([0]) != null;
+
     public static byte[]? Protect(byte[] data)
     {
         if (!OperatingSystem.IsWindows())
