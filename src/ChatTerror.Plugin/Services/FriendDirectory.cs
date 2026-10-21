@@ -171,8 +171,8 @@ public sealed class FriendDirectory : IDisposable
             await api.DeleteFriendInvite(token, id);
             await OnFramework(() =>
             {
-                config.FriendInvites.RemoveAll(i => i.Id == id);
-                saveConfig();
+                if (config.FriendInvites.RemoveAll(i => i.Id == id) > 0)
+                    saveConfig();
             });
             return true;
         }, ex => Failed("Could not cancel the code", ex));
@@ -183,9 +183,9 @@ public sealed class FriendDirectory : IDisposable
             await api.RemoveFriend(token, installId);
             await OnFramework(() =>
             {
-                config.PairedFriends.RemoveAll(f => f.InstallId == installId);
+                if (config.PairedFriends.RemoveAll(f => f.InstallId == installId) > 0)
+                    saveConfig();
                 uploadedProfiles.Remove(installId);
-                saveConfig();
                 hub.BroadcastSettings();
             });
             return true;
@@ -213,10 +213,11 @@ public sealed class FriendDirectory : IDisposable
             config.PairedFriends = sync.Paired;
             config.PendingFriends = sync.Pending;
             var ids = list.Invites.Select(i => i.Id).ToHashSet();
-            config.FriendInvites.RemoveAll(i => !ids.Contains(i.Id));
+            var invitesGone = config.FriendInvites.RemoveAll(i => !ids.Contains(i.Id)) > 0;
             foreach (var id in uploadedProfiles.Keys.Where(id => config.PairedFriends.All(f => f.InstallId != id)).ToList())
                 uploadedProfiles.Remove(id);
-            saveConfig();
+            if (sync.Changed || invitesGone)
+                saveConfig();
             return config.PairedFriends.ToDictionary(f => f.InstallId, f => f.PublicKey);
         });
 
@@ -229,12 +230,14 @@ public sealed class FriendDirectory : IDisposable
         }
         await OnFramework(() =>
         {
+            var changed = false;
             foreach (var (installId, key, profile) in profiles)
             {
                 if (config.PairedFriends.FirstOrDefault(f => f.InstallId == installId && f.PublicKey == key) is { } friend)
-                    FriendTrust.AcceptProfile(friend, profile);
+                    changed |= FriendTrust.AcceptProfile(friend, profile);
             }
-            saveConfig();
+            if (changed)
+                saveConfig();
             hub.BroadcastSettings();
         });
 
@@ -306,8 +309,8 @@ public sealed class FriendDirectory : IDisposable
         await api.DeleteFriendInvite(token, id);
         await OnFramework(() =>
         {
-            config.FriendInvites.RemoveAll(i => i.Id == id);
-            saveConfig();
+            if (config.FriendInvites.RemoveAll(i => i.Id == id) > 0)
+                saveConfig();
         });
     }
 

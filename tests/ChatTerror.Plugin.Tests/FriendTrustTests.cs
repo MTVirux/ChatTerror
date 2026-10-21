@@ -187,6 +187,11 @@ public class FriendTrustTests
         Assert.True(FriendTrust.AcceptProfile(friend, new FriendProfile([], 100)));
         Assert.Empty(friend.Characters);
 
+        // Accepted again but nothing changed, Bob Alt is outside their scope.
+        Assert.False(FriendTrust.AcceptProfile(friend, new FriendProfile([], 100)));
+        Assert.False(FriendTrust.AcceptProfile(friend, new FriendProfile([BobAltHash], 100)));
+        Assert.Empty(friend.Characters);
+
         Assert.False(FriendTrust.AcceptProfile(friend, new FriendProfile([BobHash], 99)));
         Assert.Empty(friend.Characters);
         Assert.Equal(100, friend.ProfileIssuedAt);
@@ -374,6 +379,19 @@ public class FriendTrustTests
         var expired = FriendTrust.SyncFriends(paired, pending, [], now: 1001 + day);
         Assert.Empty(expired.Pending);
         Assert.True(expired.PendingExpired);
+    }
+
+    [Fact]
+    public void SyncFriends_ChangedOnlyWhenFriendsOrPendingChange()
+    {
+        var day = (long)Limits.FriendInviteTtl.TotalMilliseconds;
+        var paired = new List<PairedFriend> { BobInstall() };
+        var pending = new List<PendingFriend> { new() { InviteId = "i1", InstallId = "x", PublicKey = "k", CreatedAt = 1000 } };
+
+        Assert.False(FriendTrust.SyncFriends(paired, pending, [("bob-install", "bob-key")], now: 1000).Changed);
+        Assert.True(FriendTrust.SyncFriends(paired, pending, [], now: 1000).Changed);
+        Assert.True(FriendTrust.SyncFriends(paired, pending, [("bob-install", "bob-key")], now: 1001 + day).Changed);
+        Assert.True(FriendTrust.SyncFriends(paired, pending, [("bob-install", "bob-key"), ("x", "k")], now: 1000).Changed);
     }
 
     [Fact]
