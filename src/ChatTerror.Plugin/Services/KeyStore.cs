@@ -8,6 +8,8 @@ namespace ChatTerror.Plugin.Services;
 
 public sealed class KeyStore : IDisposable
 {
+    private const string UnencryptedWarning = "Windows data protection is unavailable, the identity key is stored unencrypted.";
+
     public KeyStore(string configDirectory, IPluginLog log)
     {
         // A plaintext key next to an encrypted one means a migration was interrupted or an older version ran since,
@@ -25,8 +27,11 @@ public sealed class KeyStore : IDisposable
         else
         {
             Replaced = false;
-            if (File.Exists(plain))
+            // Without DPAPI the plaintext file already holds the key, rewriting it would change nothing.
+            if (File.Exists(plain) && Secrets.Available)
                 Save(configDirectory, key, log);
+            else if (File.Exists(plain))
+                log.Warning(UnencryptedWarning);
         }
 
         Key = key;
@@ -81,6 +86,6 @@ public sealed class KeyStore : IDisposable
     private static void Save(string configDirectory, ECDiffieHellman key, IPluginLog log)
     {
         if (!IdentityKeyFile.Save(configDirectory, P256.ExportPrivate(key)))
-            log.Warning("Windows data protection is unavailable, the identity key is stored unencrypted.");
+            log.Warning(UnencryptedWarning);
     }
 }

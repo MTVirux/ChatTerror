@@ -52,12 +52,15 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         this.playerState = playerState;
 
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        var stored = (config.Version, config.InstallTokenProtected);
         var tokenReadable = config.LoadInstallToken();
         if (!tokenReadable)
             log.Error("The saved install token could not be decrypted, it may belong to another Windows user or machine. Registering a new install.");
+        var addedChannel = false;
         foreach (var (channel, setting) in RelaySettings.Defaults())
-            config.Settings.Channels.TryAdd(channel, setting);
-        SaveConfig();
+            addedChannel |= config.Settings.Channels.TryAdd(channel, setting);
+        if (addedChannel || stored != (config.Version, config.InstallTokenProtected))
+            SaveConfig();
 
         keys = new KeyStore(pluginInterface.ConfigDirectory.FullName, log);
         api = new RelayApi(() => config.RelayUrl);
