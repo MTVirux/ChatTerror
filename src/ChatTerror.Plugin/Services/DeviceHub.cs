@@ -22,7 +22,7 @@ public sealed class DeviceHub : IDisposable
 {
     private const int MaxPendingPairs = 10;
     private const long SeqSaveIntervalMs = 5_000;
-    private const long HistorySaveIntervalMs = 10_000;
+    private const long HistorySaveIntervalMs = 60_000;
 
     private readonly Configuration config;
     private readonly Action saveConfig;
@@ -39,8 +39,7 @@ public sealed class DeviceHub : IDisposable
     private readonly HelloThrottle helloThrottle = new();
     // RunOnFrameworkThread does not keep order, and a device's messages must be opened in seq order.
     private readonly ConcurrentQueue<Action> relayEvents = new();
-    private bool seqDirty;
-    private long lastSeqSaveAt;
+    private readonly SaveDebounce seqSave = new(SeqSaveIntervalMs);
     private long savedHistoryVersion;
     private long lastHistorySaveAt;
     private Task historySave = Task.CompletedTask;
@@ -180,7 +179,7 @@ public sealed class DeviceHub : IDisposable
         relay.FrameReceived -= OnFrameReceived;
         relay.StateChanged -= OnStateChanged;
         framework.Update -= OnUpdate;
-        if (seqDirty)
+        if (seqSave.Dirty)
             saveConfig();
         try
         {
@@ -273,12 +272,8 @@ public sealed class DeviceHub : IDisposable
 
     private void SaveSeqIfDue()
     {
-        var now = Environment.TickCount64;
-        if (!seqDirty || now - lastSeqSaveAt < SeqSaveIntervalMs)
-            return;
-        seqDirty = false;
-        lastSeqSaveAt = now;
-        saveConfig();
+        if (seqSave.TakeDue(Environment.TickCount64))
+            saveConfig();
     }
 
     // Persisted so a reloaded plugin still rejects replays of messages it already acted on.
@@ -288,7 +283,7 @@ public sealed class DeviceHub : IDisposable
         if (device == null)
             return;
         device.LastSeenSeq = session.LastSeenSeq;
-        seqDirty = true;
+        seqSave.MarkDirty();
         SaveSeqIfDue();
     }
 
