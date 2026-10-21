@@ -25,6 +25,7 @@ public sealed class TellRelay : IDisposable
 {
     private const int SeenCapacity = 500;
     private const int TellsPerFrame = 5;
+    private const long SeenSaveIntervalMs = 5_000;
 
     private readonly Configuration config;
     private readonly Action saveConfig;
@@ -41,6 +42,7 @@ public sealed class TellRelay : IDisposable
     private readonly TellFallback fallback = new();
     private readonly ReplyTracker reply = new();
     private readonly SeenIds seen;
+    private readonly SaveDebounce seenSave = new(SeenSaveIntervalMs);
     private readonly InFlightTells<SentTell> inFlight = new();
     private readonly TellInbox inbox = new(Limits.MaxQueuedTells);
 
@@ -74,6 +76,8 @@ public sealed class TellRelay : IDisposable
         capture.GameTell -= OnGameTell;
         relay.StateChanged -= OnStateChanged;
         hub.TellFrameReceived -= OnFrame;
+        if (seenSave.Dirty)
+            saveConfig();
     }
 
     // Called by the hook for every chat command. Returns a replacement line or null.
@@ -126,11 +130,8 @@ public sealed class TellRelay : IDisposable
             Receive(tell);
             relay.Send(new TellAckFrame([tell.Id]));
         }
-        if (tells.Count > 0)
-        {
-            config.SeenTellIds = seen.Ids;
+        if (seenSave.TakeDue(Environment.TickCount64))
             saveConfig();
-        }
 
         foreach (var pending in fallback.Expired(Environment.TickCount64))
         {
@@ -184,9 +185,11 @@ public sealed class TellRelay : IDisposable
             ?? throw new TellFailedException("their ChatTerror key does not match the one you paired with");
         var current = await framework.RunOnFrameworkThread(() =>
         {
+            var previous = friend.BundleIssuedAt;
             if (!FriendTrust.AcceptBundle(friend, bundle.IssuedAt))
                 return false;
-            saveConfig();
+            if (friend.BundleIssuedAt != previous)
+                saveConfig();
             return true;
         });
         return current ? bundle : throw new TellFailedException("the relay sent an outdated bundle");
@@ -222,7 +225,7 @@ public sealed class TellRelay : IDisposable
             log.Warning("Dropped an undecryptable relayed tell.");
             return;
         }
-        if (body.Id != tell.Id || TellItems.IsExpired(body, Now()) || !seen.Add(body.Id))
+        if (body.Id != tell.Id || TellItems.IsExpired(body, Now()) || !MarkSeen(body.Id))
             return;
 
         // A copy of a tell one of our phones sent, which only this install can have sent.
@@ -250,9 +253,18 @@ public sealed class TellRelay : IDisposable
         hub.PublishRelayed(item with { Text = text });
     }
 
+    private bool MarkSeen(string id)
+    {
+        if (!seen.Add(id))
+            return false;
+        config.SeenTellIds = seen.Ids;
+        seenSave.MarkDirty();
+        return true;
+    }
+
     private void ShowOutgoing(TellBody body)
     {
-        seen.Add(body.Id);
+        MarkSeen(body.Id);
         var name = TellText.Clean(body.ToName, TellText.MaxNameBytes);
         var world = TellText.Clean(body.ToWorld, TellText.MaxNameBytes);
         var text = TellText.Clean(body.Text, Limits.MaxTextBytes);
