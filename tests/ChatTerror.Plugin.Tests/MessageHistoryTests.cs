@@ -115,6 +115,27 @@ public class MessageHistoryTests
     }
 
     [Fact]
+    public void TellPartners_OverLimit_DropsLeastRecentlyActive()
+    {
+        var h = new MessageHistory(5);
+        h.Add(Item(0, channel: ChatChannel.Say));
+        for (var i = 0; i < MessageHistory.MaxTellPartners; i++)
+            h.Add(Item(i + 1, channel: ChatChannel.Tell, sender: $"Partner {i}"));
+        h.Add(Item(100, channel: ChatChannel.Tell, sender: "Partner 0"));
+        h.Add(Item(101, "Sam Roe", ChatChannel.Tell, "Partner 1"));
+
+        h.Add(Item(102, channel: ChatChannel.Tell, sender: "Newcomer"));
+
+        var senders = h.For("Alex Doe").Where(i => i.Channel == ChatChannel.Tell).Select(i => i.Sender).Distinct().ToList();
+        Assert.Equal(MessageHistory.MaxTellPartners, senders.Count);
+        Assert.DoesNotContain("Partner 1", senders);
+        Assert.Contains("Partner 0", senders);
+        Assert.Contains("Newcomer", senders);
+        Assert.Contains(h.Since(-1), i => i.Channel == ChatChannel.Say);
+        Assert.Contains(h.For("Sam Roe"), i => i.Sender == "Partner 1");
+    }
+
+    [Fact]
     public void Since_MergesCharactersInTimeOrder()
     {
         var h = new MessageHistory(10);
