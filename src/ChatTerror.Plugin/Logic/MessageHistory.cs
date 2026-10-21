@@ -7,9 +7,11 @@ using ChatTerror.Protocol;
 namespace ChatTerror.Plugin.Logic;
 
 // Each character keeps its own newest `capacity` items per channel, and per partner for tells,
-// so a busy channel never pushes out another channel's backlog.
+// so a busy channel never pushes out another channel's backlog. Only the MaxTellPartners most recent partners are kept.
 public sealed class MessageHistory
 {
+    public const int MaxTellPartners = 50;
+
     private readonly record struct Bucket(string Character, ChatChannel Channel, string? Partner);
 
     private readonly Lock gate = new();
@@ -51,7 +53,11 @@ public sealed class MessageHistory
         {
             var bucket = BucketOf(item);
             if (!buckets.TryGetValue(bucket, out var items))
+            {
                 buckets[bucket] = items = new Queue<ChatItem>();
+                if (bucket.Partner != null)
+                    LimitPartners(bucket);
+            }
             items.Enqueue(item);
             Trim(items);
             version++;
@@ -91,6 +97,15 @@ public sealed class MessageHistory
     // For tells the sender is always the other person, outgoing or not.
     private static Bucket BucketOf(ChatItem item) =>
         new(item.Character, item.Channel, item.Channel == ChatChannel.Tell ? $"{item.Sender}@{item.SenderWorld}".ToLowerInvariant() : null);
+
+    private void LimitPartners(Bucket added)
+    {
+        var others = buckets.Where(b => b.Key.Partner != null && b.Key.Character == added.Character && b.Key != added).ToList();
+        if (others.Count < MaxTellPartners)
+            return;
+        var quietest = others.MinBy(b => b.Value.LastOrDefault()?.Ts ?? long.MinValue);
+        buckets.Remove(quietest.Key);
+    }
 
     private void Trim(Queue<ChatItem> items)
     {
