@@ -35,7 +35,7 @@ public sealed record FriendRoute(TellCharacter From, TellFriend To, PairedFriend
 public enum RouteError { None, NotPaired, Conflict }
 
 // Unknown are friendships the relay lists that we have no record of, e.g. after an accept whose response was lost.
-public sealed record FriendSync(List<PairedFriend> Paired, List<PendingFriend> Pending, bool PendingExpired, bool Promoted, List<string> Unknown);
+public sealed record FriendSync(List<PairedFriend> Paired, List<PendingFriend> Pending, bool PendingExpired, bool Promoted, List<string> Unknown, bool Changed);
 
 public enum InviteAction { Wait, Accept, Delete }
 
@@ -120,14 +120,16 @@ public static class FriendTrust
         return friends.Any(f => f.InstallId != friend.InstallId && Reachable(f).Any(reachable.Contains));
     }
 
-    // Profile is newer or equal: accept and store Characters/ProfileIssuedAt.
+    // Stores a profile that is newer or equal. Returns true only when that changed the friend.
     public static bool AcceptProfile(PairedFriend friend, FriendProfile profile)
     {
         if (profile.IssuedAt < friend.ProfileIssuedAt)
             return false;
-        friend.Characters = profile.Characters.Where(h => FriendScopes.Includes(friend.TheirScope, h)).Distinct().ToList();
+        var characters = profile.Characters.Where(h => FriendScopes.Includes(friend.TheirScope, h)).Distinct().ToList();
+        var changed = profile.IssuedAt != friend.ProfileIssuedAt || !characters.SequenceEqual(friend.Characters);
+        friend.Characters = characters;
         friend.ProfileIssuedAt = profile.IssuedAt;
-        return true;
+        return changed;
     }
 
     // Refuses a bundle older than the newest one accepted, so the relay can't roll back to dropped keys.
@@ -227,6 +229,7 @@ public static class FriendTrust
         IReadOnlyList<(string InstallId, string PublicKey)> listed, long now)
     {
         var result = paired.Where(f => listed.Any(l => l.InstallId == f.InstallId)).ToList();
+        var dropped = result.Count != paired.Count;
         var remaining = new List<PendingFriend>();
         var expired = false;
         var promoted = false;
@@ -244,7 +247,7 @@ public static class FriendTrust
                 remaining.Add(entry);
         }
         var unknown = listed.Select(l => l.InstallId).Where(id => result.All(f => f.InstallId != id)).Distinct().ToList();
-        return new FriendSync(result, remaining, expired, promoted, unknown);
+        return new FriendSync(result, remaining, expired, promoted, unknown, dropped || expired || promoted);
     }
 
     public static string MyScopeLabel(IReadOnlyList<TellCharacter> characters, string scope) =>
