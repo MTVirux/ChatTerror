@@ -1710,6 +1710,123 @@ a.settings-row {
   flex: 1 1 100%;
 }
 
+/* New chat and group editor */
+
+.page-sub {
+  margin: 12px 4px 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.page-sub + .settings-section {
+  margin-top: 12px;
+}
+
+.new-chat-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.person-row .dm-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 0.8rem;
+}
+
+.pick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 6px 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--c) 22%, var(--group));
+  color: var(--header-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pick-chip svg {
+  width: 16px;
+  height: 16px;
+}
+
+.pick-row.dim .hash,
+.pick-row.dim .settings-text {
+  opacity: 0.55;
+}
+
+.pick-check {
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.pick-check:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.pick-check:checked::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  margin-top: -2px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.group-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--c);
+  color: var(--chat);
+  font-weight: 700;
+}
+
+.page-action {
+  position: sticky;
+  bottom: calc(16px + var(--safe-bottom));
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  pointer-events: none;
+}
+
+.page-action .btn {
+  pointer-events: auto;
+  box-shadow: var(--shadow);
+}
+
 /* Channel menu */
 
 .channel-menu-backdrop {
