@@ -1,17 +1,26 @@
 import { uniqueLabels } from "./accountIdentity";
 import { openPayload } from "./crypto";
-import { CHANNEL_LABELS, parsePluginPayload, type ChatItem } from "./protocol";
+import { CHANNEL_LABELS, parsePluginPayload, type AlertPayload, type ChatItem } from "./protocol";
 import { getCacheLimit, listAccounts, type AccountRecord } from "./registry";
 import { SeqGuard } from "./seq";
 import { openAccountStore } from "./storage";
 import { openTellFrame } from "./tells";
 
-export interface RoutedPush {
+export interface RoutedChat {
   deviceId: string;
   label: string;
   multiple: boolean;
   item: ChatItem;
 }
+
+export interface RoutedAlert {
+  deviceId: string;
+  label: string;
+  multiple: boolean;
+  alert: AlertPayload;
+}
+
+export type RoutedPush = RoutedChat | RoutedAlert;
 
 async function activeAccounts() {
   const all = await listAccounts();
@@ -20,7 +29,7 @@ async function activeAccounts() {
   return { accounts, labelOf: (account: AccountRecord) => labels[all.indexOf(account)] };
 }
 
-async function routeTell(tell: { i?: unknown; f?: unknown; e?: unknown; k?: unknown; d?: unknown }): Promise<RoutedPush | "duplicate" | null> {
+async function routeTell(tell: { i?: unknown; f?: unknown; e?: unknown; k?: unknown; d?: unknown }): Promise<RoutedChat | "duplicate" | null> {
   if (typeof tell.i !== "string" || typeof tell.f !== "string" || typeof tell.e !== "string" || typeof tell.k !== "string") return null;
   const { accounts, labelOf } = await activeAccounts();
   const account = accounts.find((a) => a.deviceId === tell.d);
@@ -52,17 +61,19 @@ export async function routePush(body: unknown): Promise<RoutedPush | "duplicate"
     } catch {
       continue;
     }
-    if (payload?.type !== "chat") return null;
+    if (payload?.type !== "chat" && payload?.type !== "alert") return null;
     const guard = new SeqGuard(await store.getMeta("lastSeenPush"));
     if (!guard.accept(payload.seq)) return null;
     await store.setMeta("lastSeenPush", payload.seq);
+    const routed = { deviceId: account.deviceId, label: labelOf(account), multiple: accounts.length > 1 };
+    if (payload.type === "alert") return { ...routed, alert: payload };
     await store.addMessages([payload.item], await getCacheLimit());
-    return { deviceId: account.deviceId, label: labelOf(account), multiple: accounts.length > 1, item: payload.item };
+    return { ...routed, item: payload.item };
   }
   return null;
 }
 
-export function notificationTitle({ label, multiple, item }: RoutedPush): string {
+export function notificationTitle({ label, multiple, item }: RoutedChat): string {
   const base = `${item.sender} (${CHANNEL_LABELS[item.channel]})`;
   return multiple ? `${label} - ${base}` : base;
 }

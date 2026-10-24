@@ -99,6 +99,31 @@ describe("routePush", () => {
   });
 });
 
+describe("routePush for alerts", () => {
+  const alert = { type: "alert", kind: "dutyPop", character: "Me", ts: 100, duty: "The Aurum Vale" } as const;
+
+  function sealAlert(key: CryptoKey, seq: number): Promise<string> {
+    return sealPayload(key, "p2d", { ...alert, seq });
+  }
+
+  it("routes an alert to its account without storing a message", async () => {
+    await seed("a");
+    const keyB = await seed("b");
+    expect(await routePush({ p: await sealAlert(keyB, 5), d: "b" })).toEqual({ deviceId: "b", label: "Account 2", multiple: true, alert: { ...alert, seq: 5 } });
+    expect(await openAccountStore("chatterror-b").loadMessages(10)).toEqual([]);
+    expect(await openAccountStore("chatterror-b").getMeta("lastSeenPush")).toBe(5);
+  });
+
+  it("drops replays and anything older than the alert", async () => {
+    const key = await seed("a");
+    const body = { p: await sealAlert(key, 5), d: "a" };
+    expect(await routePush(body)).not.toBeNull();
+    expect(await routePush(body)).toBeNull();
+    expect(await routePush({ p: await seal(key, item("m1"), 4), d: "a" })).toBeNull();
+    expect(await openAccountStore("chatterror-a").loadMessages(10)).toEqual([]);
+  });
+});
+
 describe("notificationTitle", () => {
   it("uses a single-account title without the label", () => {
     const chat = item("m1");

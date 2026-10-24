@@ -1,5 +1,6 @@
+import { DEFAULT_NOTIFY_PREFS } from "./alerts";
 import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "./channelPrefs";
-import { isChatItem, type ChatChannel, type ChatItem, type SettingsPayload } from "./protocol";
+import { isChatItem, type ChatChannel, type ChatItem, type NotifyPrefs, type SettingsPayload } from "./protocol";
 
 export interface Pairing {
   deviceId: string;
@@ -18,6 +19,7 @@ export interface Meta {
   syncTs: number;
   mutedChannels: ChatChannel[];
   channelPrefs: ChannelPrefs;
+  notifyPrefs: NotifyPrefs;
   // Only read when adopting a database from before multiple accounts.
   cacheLimit: number;
   lastSettings: SettingsPayload | null;
@@ -38,6 +40,7 @@ const META_DEFAULTS: Meta = {
   syncTs: 0,
   mutedChannels: [],
   channelPrefs: EMPTY_CHANNEL_PREFS,
+  notifyPrefs: DEFAULT_NOTIFY_PREFS,
   cacheLimit: DEFAULT_CACHE_LIMIT,
   lastSettings: null,
   approved: false,

@@ -59,6 +59,19 @@ describe("parsePluginPayload", () => {
     expect(parseSettings({ ...settings, contacts: [{ ...contact, key: undefined }] })?.maxLength).toBe(settings.maxLength);
   });
 
+  it("keeps the alert support flag on settings", () => {
+    expect(parsePluginPayload({ ...settings, supportsAlerts: true })).toMatchObject({ supportsAlerts: true });
+  });
+
+  it("validates alerts", () => {
+    const alert = { type: "alert", seq: 7, kind: "dutyPop", character: "Aria Moonfall", ts: 1700000000000, duty: "The Aurum Vale" };
+    expect(parsePluginPayload(JSON.parse('{"type":"alert","seq":7,"kind":"dutyPop","character":"Aria Moonfall","ts":1700000000000,"duty":"The Aurum Vale"}'))).toEqual(alert);
+    expect(parsePluginPayload({ type: "alert", seq: 8, kind: "partyFull", character: "", ts: 1700000000000 })).not.toBeNull();
+    expect(parsePluginPayload({ ...alert, kind: "partyWipe" })).toBeNull();
+    expect(parsePluginPayload({ ...alert, character: "Aria|Moonfall" })).toBeNull();
+    expect(parsePluginPayload({ ...alert, duty: "x".repeat(200) })).toBeNull();
+  });
+
   it("validates a send result error", () => {
     const result = { type: "sendResult", seq: 1, requestId: "r", ok: false };
     expect(parsePluginPayload({ ...result, error: "busy" })).not.toBeNull();
