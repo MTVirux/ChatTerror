@@ -307,6 +307,21 @@ public class HardeningTests
     }
 
     [Fact]
+    public void DeferredTellPushes_FullStoreStillRefreshesAnExistingKey()
+    {
+        var time = new MutableTimeProvider();
+        var deferred = new DeferredTellPushes(maxEntries: 1, time);
+
+        Assert.True(deferred.TryAdd("a", "d1", "t1"));
+        time.Advance(TimeSpan.FromMinutes(4));
+        Assert.True(deferred.TryAdd("a", "d1", "t1"));
+        Assert.False(deferred.TryAdd("a", "d1", "t2"));
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.True(deferred.TryTake("a", "d1", "t1"));
+    }
+
+    [Fact]
     public async Task SaturatedInstall_DoesNotBlockOtherInstallsPush()
     {
         using var app = new RelayApp();

@@ -12,17 +12,18 @@ public sealed class DeferredTellPushes(int maxEntries, TimeProvider time)
     private readonly Dictionary<(string, string, string), DateTimeOffset> entries = new();
     private DateTimeOffset nextPrune;
 
-    // False when full, so the caller pushes directly instead of losing the push.
+    // False when full, so the caller pushes directly instead of losing the push. A key already stored is refreshed.
     public bool TryAdd(string installId, string deviceId, string tellId)
     {
         lock (gate)
         {
             var now = time.GetUtcNow();
+            var key = (installId, deviceId, tellId);
             Prune(now);
-            if (entries.Count >= maxEntries)
+            if (entries.Count >= maxEntries && !entries.ContainsKey(key))
                 return false;
 
-            entries[(installId, deviceId, tellId)] = now;
+            entries[key] = now;
             return true;
         }
     }

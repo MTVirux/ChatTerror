@@ -51,7 +51,7 @@ public sealed partial class RelaySocketHandler
             else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
                 && device.InstallId == install
-                && !DeferTellPush(install, device.Id, frame.Id)
+                && !TryDeferTellPush(install, device.Id, frame.Id)
                 && tellLimiter.TryPush(conn.InstallId, device.Id))
             {
                 PushTell(device, subscription, tell);
@@ -62,7 +62,7 @@ public sealed partial class RelaySocketHandler
     }
 
     // A plugin listing tellPush runs its away check on its own copy of the tell, then asks for each push with a tellPush frame.
-    private bool DeferTellPush(string installId, string deviceId, string tellId) =>
+    private bool TryDeferTellPush(string installId, string deviceId, string tellId) =>
         registry.Plugin(installId)?.Features.Contains(RelayFeatures.TellPush) == true
         && deferredTellPushes.TryAdd(installId, deviceId, tellId);
 
