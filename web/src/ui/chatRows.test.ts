@@ -90,4 +90,10 @@ describe("findChat", () => {
     expect(findChat(rows, "Alpha Beta", "t|Other One|New Pal@Lich", prefs)).toBeNull();
     expect(findChat(rows, "Alpha Beta", null, prefs)).toBeNull();
   });
+
+  it("opens the DM the game spelled when a typed name differs only in case", () => {
+    const tells = chatRows(prefs, "Alpha Beta", [msg({ channel: "tell", sender: "Kai Rho", senderWorld: "Phoenix" })]);
+    expect(findChat(tells, "Alpha Beta", "t|Alpha Beta|kai rho@phoenix", prefs)).toMatchObject({ key: "t|Alpha Beta|Kai Rho@Phoenix", last: { sender: "Kai Rho" } });
+    expect(findChat(tells, "Alpha Beta", "t|Alpha Beta|Kai Rho@Lich", prefs)).toMatchObject({ key: "t|Alpha Beta|Kai Rho@Lich", last: undefined });
+  });
 });

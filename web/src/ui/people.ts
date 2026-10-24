@@ -23,5 +23,13 @@ export function newChatPeople(contacts: TellContact[], partners: string[], chara
 
 // Uses the listed spelling, so a typed name opens the DM key that already holds the messages.
 export function matchPerson(people: Person[], typed: string): string {
-  return people.find((p) => p.partner.toLowerCase() === typed.toLowerCase())?.partner ?? typed;
+  return people.find((p) => p.partner.toLowerCase() === typed.toLowerCase())?.partner ?? gameSpelling(typed);
+}
+
+// How the game capitalises a "Name Surname@World", so a new DM opens under the key its tells will come back with.
+export function gameSpelling(typed: string): string {
+  const [name, world] = typed.split("@");
+  const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const spelled = name.split(" ").map(capital).join(" ");
+  return world ? `${spelled}@${capital(world.toLowerCase())}` : spelled;
 }

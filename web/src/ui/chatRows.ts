@@ -88,5 +88,8 @@ export function findChat(rows: ChatRow[], character: string, key: string | null,
   const row = rows.find((r) => r.key === key);
   if (row) return row;
   const partner = dmPartner(key, character);
-  return partner ? dmRow(prefs, character, partner) : null;
+  if (!partner) return null;
+  // A typed name can differ in case from the spelling the game sends its tells with.
+  const lower = key.toLowerCase();
+  return rows.find((r) => r.kind === "dm" && r.key.toLowerCase() === lower) ?? dmRow(prefs, character, partner);
 }

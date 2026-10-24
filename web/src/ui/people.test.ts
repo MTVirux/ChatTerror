@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TellContact } from "../core/protocol";
-import { matchPerson, newChatPeople } from "./people";
+import { gameSpelling, matchPerson, newChatPeople } from "./people";
 
 const contact = (name: string, world: string, character = "Alpha Beta"): TellContact =>
   ({ character, characterWorld: "Lich", characterHash: "h", name, world, hash: name, installId: "i", key: "k" });
@@ -24,7 +24,16 @@ describe("matchPerson", () => {
     expect(matchPerson(people, "yuna tal@twintania")).toBe("Yuna Tal@Twintania");
   });
 
-  it("keeps a name nobody listed as typed", () => {
+  it("spells a name nobody listed the way the game does", () => {
     expect(matchPerson(people, "Mira Sol@Lich")).toBe("Mira Sol@Lich");
+    expect(matchPerson(people, "kai rho@phoenix")).toBe("Kai Rho@Phoenix");
+  });
+});
+
+describe("gameSpelling", () => {
+  it("capitalises each name part and the world, keeping apostrophes and hyphens", () => {
+    expect(gameSpelling("y'shtola rhul@twintania")).toBe("Y'shtola Rhul@Twintania");
+    expect(gameSpelling("kai-li rho@PHOENIX")).toBe("Kai-li Rho@Phoenix");
+    expect(gameSpelling("Kai Rho@Phoenix")).toBe("Kai Rho@Phoenix");
   });
 });
