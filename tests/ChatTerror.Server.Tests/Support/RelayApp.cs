@@ -191,10 +191,10 @@ public sealed class RelayApp : WebApplicationFactory<Program>
         return new TestSocket(socket);
     }
 
-    public async Task<TestSocket> ConnectAsync(string token)
+    public async Task<TestSocket> ConnectAsync(string token, IReadOnlyList<string>? features = null)
     {
         var socket = await OpenSocketAsync();
-        await socket.SendAsync(new AuthFrame(token));
+        await socket.SendAsync(new AuthFrame(token, features));
         var frame = await socket.NextAsync();
         Assert.IsType<AuthOkFrame>(frame);
         return socket;

@@ -36,6 +36,9 @@ public sealed class RelayOptions
 
     public TimeSpan TellPushCooldown { get; set; } = TimeSpan.FromSeconds(10);
 
+    // Across all installs. Once full, friend tells are pushed directly again.
+    public int MaxDeferredTellPushes { get; set; } = 10000;
+
     public int MaxQueuedTellsPerSender { get; set; } = 20;
 
     // "*.example.com" matches any subdomain of example.com, but not example.com itself.

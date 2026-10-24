@@ -263,6 +263,43 @@ public class HardeningTests
     }
 
     [Fact]
+    public void PushLimiter_UrgentSkipsThePerInstallCapButNotTheTotal()
+    {
+        var limiter = new PushLimiter(maxTotal: 3, maxPerInstall: 1);
+
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.False(limiter.TryAcquire("a"));
+        Assert.True(limiter.TryAcquire("a", urgent: true));
+        Assert.True(limiter.TryAcquire("b", urgent: true));
+        Assert.False(limiter.TryAcquire("c", urgent: true));
+
+        limiter.Release("a");
+        limiter.Release("a");
+        Assert.True(limiter.TryAcquire("a"));
+    }
+
+    [Fact]
+    public void DeferredTellPushes_AreTakenOnceCappedAndExpired()
+    {
+        var time = new MutableTimeProvider();
+        var deferred = new DeferredTellPushes(maxEntries: 2, time);
+
+        Assert.True(deferred.TryAdd("a", "d1", "t1"));
+        Assert.True(deferred.TryAdd("a", "d1", "t2"));
+        Assert.False(deferred.TryAdd("a", "d1", "t3"));
+
+        Assert.False(deferred.TryTake("b", "d1", "t1"));
+        Assert.True(deferred.TryTake("a", "d1", "t1"));
+        Assert.False(deferred.TryTake("a", "d1", "t1"));
+        Assert.True(deferred.TryAdd("a", "d1", "t3"));
+
+        time.Advance(DeferredTellPushes.Lifetime);
+        Assert.False(deferred.TryTake("a", "d1", "t2"));
+        Assert.True(deferred.TryAdd("a", "d1", "t4"));
+        Assert.True(deferred.TryAdd("a", "d1", "t5"));
+    }
+
+    [Fact]
     public async Task SaturatedInstall_DoesNotBlockOtherInstallsPush()
     {
         using var app = new RelayApp();

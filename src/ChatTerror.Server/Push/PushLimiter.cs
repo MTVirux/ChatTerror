@@ -1,18 +1,19 @@
 namespace ChatTerror.Server.Push;
 
 // Caps in-flight pushes globally and per install, so one busy install cannot starve the rest.
+// Urgent pushes skip the per install cap, so an alert isn't lost behind chat pushes.
 public sealed class PushLimiter(int maxTotal, int maxPerInstall)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, int> perInstall = new();
     private int total;
 
-    public bool TryAcquire(string installId)
+    public bool TryAcquire(string installId, bool urgent = false)
     {
         lock (gate)
         {
             var current = perInstall.GetValueOrDefault(installId);
-            if (total >= maxTotal || current >= maxPerInstall)
+            if (total >= maxTotal || (!urgent && current >= maxPerInstall))
                 return false;
 
             perInstall[installId] = current + 1;

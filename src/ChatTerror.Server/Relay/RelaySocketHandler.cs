@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Frozen;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -25,6 +26,7 @@ public sealed partial class RelaySocketHandler(
     private readonly PushLimiter pushLimiter = new(options.Value.MaxConcurrentPushes, options.Value.MaxPushesPerInstall);
     private readonly SocketLimiter socketLimiter = new(options.Value.MaxSocketsPerClient);
     private readonly TellLimiter tellLimiter = new(options.Value.TellsPerRecipientPerMinute, options.Value.TellPushCooldown, time);
+    private readonly DeferredTellPushes deferredTellPushes = new(options.Value.MaxDeferredTellPushes, time);
     private readonly string[] pushServiceHosts = options.Value.GetPushServiceHosts();
 
     private enum Kind
@@ -205,19 +207,20 @@ public sealed partial class RelaySocketHandler(
 
     private void Authenticate(Conn conn, Incoming message)
     {
-        var token = Parse(message) is AuthFrame auth ? auth.Token : "";
-        if (store.FindInstallByToken(token) is { } install)
+        var auth = Parse(message) as AuthFrame ?? new AuthFrame("");
+        if (store.FindInstallByToken(auth.Token) is { } install)
         {
             conn.Role = RelayRoles.Plugin;
             conn.Id = install.Id;
             conn.InstallId = install.Id;
+            conn.Features = (auth.Features ?? []).ToFrozenSet();
             conn.Send(new AuthOkFrame(conn.Role, conn.Id));
             registry.Add(conn);
             store.TouchInstall(install.Id);
             OnPluginConnected(conn);
             DeliverQueuedTells(conn);
         }
-        else if (store.FindDeviceByToken(token) is { } device)
+        else if (store.FindDeviceByToken(auth.Token) is { } device)
         {
             conn.Role = RelayRoles.Device;
             conn.Id = device.Id;
@@ -286,7 +289,7 @@ public sealed partial class RelaySocketHandler(
                 else if (registry.Device(to) is { } online)
                     online.SendEncoded(msg);
                 else if (send.Notify && target.Push is { } subscription)
-                    _ = PushAsync(target, subscription, JsonSerializer.Serialize(new { p = send.Payload, d = target.Id }));
+                    _ = PushAsync(target, subscription, JsonSerializer.Serialize(new { p = send.Payload, d = target.Id }), send.Ttl);
                 break;
 
             case TellSendFrame tell:
@@ -295,6 +298,10 @@ public sealed partial class RelaySocketHandler(
 
             case TellAckFrame ack:
                 AckTells(plugin, ack);
+                break;
+
+            case TellPushFrame tellPush:
+                PushQueuedTell(plugin, tellPush);
                 break;
 
             case PairDecisionFrame decision:
@@ -374,7 +381,8 @@ public sealed partial class RelaySocketHandler(
     private DeviceRecord? OwnDevice(Conn plugin, string deviceId) =>
         store.FindDevice(deviceId) is { } device && device.InstallId == plugin.InstallId ? device : null;
 
-    private async Task PushAsync(DeviceRecord device, PushSubscriptionRecord subscription, string body)
+    // A send with its own TTL is an urgent alert, everything else keeps the default TTL.
+    private async Task PushAsync(DeviceRecord device, PushSubscriptionRecord subscription, string body, int? ttl = null)
     {
         var bodyBytes = Encoding.UTF8.GetByteCount(body);
         if (bodyBytes > MaxPushBodyBytes)
@@ -387,7 +395,7 @@ public sealed partial class RelaySocketHandler(
             log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: endpoint is not a known push service", device.Id, device.InstallId);
             return;
         }
-        if (!pushLimiter.TryAcquire(device.InstallId))
+        if (!pushLimiter.TryAcquire(device.InstallId, urgent: ttl != null))
         {
             log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: too many pushes in flight", device.Id, device.InstallId);
             return;
@@ -396,7 +404,8 @@ public sealed partial class RelaySocketHandler(
         try
         {
             using var timeout = new CancellationTokenSource(options.Value.PushTimeout);
-            if (await push.SendAsync(subscription, body, timeout.Token) == PushResult.Gone)
+            var ttlSeconds = Math.Clamp(ttl ?? WebPushSender.DefaultTtlSeconds, 1, WebPushSender.DefaultTtlSeconds);
+            if (await push.SendAsync(subscription, body, ttlSeconds, timeout.Token) == PushResult.Gone)
                 store.ClearPush(device.Id, subscription.Endpoint);
         }
         catch (Exception ex)
