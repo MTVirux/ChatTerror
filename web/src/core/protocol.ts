@@ -117,7 +117,7 @@ export interface SettingsPayload {
   supportsAlerts?: boolean;
 }
 export type AlertKind = "partyFull" | "dutyPop";
-export interface AlertPayload { type: "alert"; seq: number; kind: AlertKind; character: string; ts: number; duty?: string }
+export interface AlertPayload { type: "alert"; seq: number; kind: AlertKind; character: string; ts: number; duty?: string | null }
 
 export interface HelloPayload { type: "hello"; seq: number; sinceTs: number }
 export interface SendChatPayload { type: "sendChat"; seq: number; requestId: string; channel: ChatChannel; target?: string; text: string }

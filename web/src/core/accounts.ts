@@ -1,5 +1,5 @@
 import { accountColors, uniqueLabels } from "./accountIdentity";
-import { alertNotification, alertTag } from "./alerts";
+import { alertNotificationOptions } from "./alerts";
 import { createApi, type Api } from "./api";
 import type { AlertPayload, ChatItem } from "./protocol";
 import { createPushControl, registerServiceWorker, type PushControl } from "./push";
@@ -134,9 +134,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
     const deviceId = entry.record.deviceId;
     const label = views.find((v) => v.deviceId === deviceId)?.label ?? "";
     const multiple = views.filter((v) => v.status === "active").length > 1;
-    const { title, body } = alertNotification(alert, label, multiple);
-    // renotify is missing from the DOM typings.
-    const options: NotificationOptions & { renotify: boolean } = { body, tag: alertTag(deviceId, alert.kind), renotify: true, icon: "/icon-192.png", data: { deviceId } };
+    const { title, options } = alertNotificationOptions(deviceId, alert, label, multiple);
     void deps.showNotification(title, options);
   }
 

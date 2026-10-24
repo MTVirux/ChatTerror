@@ -1,4 +1,4 @@
-import { alertNotification, alertTag } from "./core/alerts";
+import { alertNotificationOptions } from "./core/alerts";
 import { notificationTitle, routePush, type RoutedPush } from "./core/pushRoute";
 import { FETCHED_AT_HEADER, isCacheable, isFresh } from "./core/portraitCache";
 import { referencedAssets, staleAssets } from "./core/shell";
@@ -99,9 +99,7 @@ async function handlePush(data: PushMessageData | null) {
     return;
   }
   if ("alert" in routed) {
-    const { title, body } = alertNotification(routed.alert, routed.label, routed.multiple);
-    // renotify is missing from the DOM typings.
-    const options: NotificationOptions & { renotify: boolean } = { body, tag: alertTag(routed.deviceId, routed.alert.kind), renotify: true, icon: "/icon-192.png", data: { deviceId: routed.deviceId } };
+    const { title, options } = alertNotificationOptions(routed.deviceId, routed.alert, routed.label, routed.multiple);
     await self.registration.showNotification(title, options);
     return;
   }

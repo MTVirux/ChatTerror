@@ -1,4 +1,4 @@
-import { DEFAULT_NOTIFY_PREFS } from "./alerts";
+import { DEFAULT_NOTIFY_PREFS, notifyPrefsWithDefaults } from "./alerts";
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaultChannels, withDefaults, type ChannelPrefs } from "./channelPrefs";
@@ -206,7 +206,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       channelPrefs: withDefaults(channelPrefs),
       pushEnabled: push,
       supportsAlerts: settings?.supportsAlerts === true,
-      notifyPrefs,
+      notifyPrefs: notifyPrefsWithDefaults(notifyPrefs),
     };
     setState({});
 
@@ -522,8 +522,9 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     },
 
     async setNotifyPrefs(prefs) {
-      setState({ notifyPrefs: prefs });
-      await deps.store.setMeta("notifyPrefs", prefs);
+      const notifyPrefs = notifyPrefsWithDefaults(prefs);
+      setState({ notifyPrefs });
+      await deps.store.setMeta("notifyPrefs", notifyPrefs);
       await sendPrefs();
     },
 

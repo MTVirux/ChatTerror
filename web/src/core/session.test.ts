@@ -388,6 +388,28 @@ describe("session", () => {
     expect(session.getState().notifyPrefs).toEqual({ partyFull: true, dutyPop: false, waitSeconds: 0 });
   });
 
+  it("repairs malformed stored alert prefs before sending them", async () => {
+    await store.setMeta("notifyPrefs", { partyFull: "yes", waitSeconds: 90 } as never);
+    const { session, relay } = await setup();
+    expect(session.getState().notifyPrefs).toEqual({ partyFull: true, dutyPop: true, waitSeconds: 60 });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () =>
+      expect((await relay.payloads()).find((p) => p.type === "prefs")).toMatchObject({ alerts: { partyFull: true, dutyPop: true, waitSeconds: 60 } }),
+    );
+  });
+
+  it("clamps alert prefs it is given", async () => {
+    const { session, relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    await session.setNotifyPrefs({ partyFull: false, dutyPop: true, waitSeconds: 75 });
+    const clamped = { partyFull: false, dutyPop: true, waitSeconds: 60 };
+    expect(session.getState().notifyPrefs).toEqual(clamped);
+    expect(await store.getMeta("notifyPrefs")).toEqual(clamped);
+    const sent = (await relay.payloads()).filter((p) => p.type === "prefs");
+    expect(sent[sent.length - 1]).toMatchObject({ alerts: clamped });
+  });
+
   it("stores alert prefs and sends them when they change", async () => {
     const { session, relay } = await setup();
     relay.deliver({ t: "authOk", role: "device", id: "dev" });
