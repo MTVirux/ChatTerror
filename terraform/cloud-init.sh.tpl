@@ -80,8 +80,14 @@ echo "password=$token"
 EOF
 chmod 0755 /usr/local/bin/git-credential-chatterror
 
+# To block a client, add its IP or CIDR range after remote_ip and run
+# `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+# Edit the file in place: it's mounted on its own, so an editor that writes a
+# new file leaves the container with the old one.
 cat > /opt/chatterror/Caddyfile <<'EOF'
 ${fqdn} {
+    @blocked remote_ip
+    abort @blocked
     reverse_proxy relay:8080
 }
 EOF
