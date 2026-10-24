@@ -1,4 +1,4 @@
-import { useMemo } from "preact/hooks";
+import { useEffect, useMemo, useRef } from "preact/hooks";
 import type { AccountView, FeedItem } from "../core/accounts";
 import { channelIncludes, type ChannelPrefs } from "../core/channelPrefs";
 import { customColor, itemKey, showsChatTags } from "./channels";
@@ -31,12 +31,19 @@ export function ChatPane({ account, prefs, chat, items, unreadCount, sends, pend
   const tab = useMemo(() => composerTab(chat, latest), [chat.key, chat.custom?.channels.join(), latest]);
   const blocked = chat.character !== account.character ? `${chat.character} isn't logged in` : undefined;
   const status = STATUS_LABELS[account.state.status];
+  const back = useRef<HTMLButtonElement>(null);
+
+  // The phone hides the list under the chat, so focus left on a tapped row would drop to the page.
+  useEffect(() => {
+    const focused = document.activeElement;
+    if (!wide && (!focused || focused === document.body || focused.closest("[hidden]"))) back.current?.focus();
+  }, [wide]);
 
   return (
     <div class="chat">
       <header class="chat-head">
         {!wide && (
-          <button class="icon-btn" aria-label="Back" onClick={onBack}>
+          <button ref={back} class="icon-btn" aria-label="Back" onClick={onBack}>
             <BackIcon />
           </button>
         )}
