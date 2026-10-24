@@ -1060,6 +1060,272 @@ p {
   text-overflow: ellipsis;
 }
 
+/* Chat list */
+
+/* --bar is also the ring around .me-dot and .me-badge. */
+.chat-list {
+  --bar: var(--chat);
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bar);
+}
+
+.list-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: calc(53px + var(--safe-top));
+  padding: calc(4px + var(--safe-top)) 4px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.list-me {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.list-me:hover {
+  background: var(--hover);
+}
+
+.list-me-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.list-me-name {
+  overflow: hidden;
+  color: var(--header-text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.list-me-text small {
+  overflow: hidden;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.list-more {
+  position: relative;
+  flex: none;
+}
+
+.list-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.list-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 4px;
+  z-index: 31;
+  min-width: 220px;
+  padding: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--group);
+  box-shadow: var(--shadow);
+  animation: fade-in 0.12s ease-out;
+}
+
+.list-menu button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.list-menu button:hover {
+  background: var(--hover);
+}
+
+.list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: calc(88px + var(--safe-bottom));
+}
+
+.list-empty {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chat-row:hover {
+  background: var(--hover);
+}
+
+.chat-row.selected {
+  background: var(--selected);
+}
+
+.chat-avatar {
+  --c: var(--muted);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Channel colours are dark in the light theme and light in the dark one, the opposite of --chat. */
+.chat-avatar.group {
+  border-radius: 14px;
+  color: var(--chat);
+}
+
+.chat-row-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat-row:last-child .chat-row-body {
+  border-bottom: 0;
+}
+
+.chat-row-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 22px;
+}
+
+.chat-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--header-text);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-row-time {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-row.unread .chat-row-name,
+.chat-row.unread .chat-row-time {
+  font-weight: 700;
+}
+
+.chat-row.unread .chat-row-time {
+  color: var(--header-text);
+}
+
+.chat-row-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-row-line svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.chat-row-badge {
+  flex: none;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+.chat-row.muted .chat-row-badge {
+  background: var(--muted);
+  color: var(--chat);
+}
+
+.list-fab {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + var(--safe-bottom));
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+
 /* Character switcher */
 
 .char-group + .char-group,
