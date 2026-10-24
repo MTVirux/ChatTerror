@@ -10,6 +10,8 @@
   --header-text: #060607;
   --page: #f2f3f5;
   --group: #ffffff;
+  --log-bg: #f2f3f5;
+  --bubble-in: #ffffff;
   --bg: var(--chat);
   --surface: #f2f3f5;
   --raised: #ebedef;
@@ -58,6 +60,8 @@
     --header-text: #f2f3f5;
     --page: #1e1f22;
     --group: #2b2d31;
+    --log-bg: #313338;
+    --bubble-in: #2b2d31;
     --bg: var(--chat);
     --surface: #2b2d31;
     --raised: #383a40;
@@ -101,6 +105,8 @@
   --header-text: #f2f3f5;
   --page: #1e1f22;
   --group: #2b2d31;
+  --log-bg: #313338;
+  --bubble-in: #2b2d31;
   --bg: var(--chat);
   --surface: #2b2d31;
   --raised: #383a40;
@@ -1159,6 +1165,7 @@ p {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 8px 0 16px;
+  background: var(--log-bg);
 }
 
 .empty {
@@ -1212,62 +1219,71 @@ p {
   line-height: 1.5;
 }
 
-.msg {
-  padding: 2px 16px 2px 68px;
-}
-
-.msg.head {
-  position: relative;
+.bubble-row {
   display: flex;
-  gap: 12px;
-  margin-top: 14px;
-  padding-left: 16px;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 0 12px;
 }
 
-@media (hover: hover) {
-  .msg:hover {
-    background: color-mix(in srgb, var(--hover) 45%, transparent);
-  }
+.bubble-row.head {
+  margin-top: 8px;
+}
+
+.bubble-row.out {
+  justify-content: flex-end;
+}
+
+.avatar,
+.avatar-gap {
+  flex: none;
+  width: 32px;
 }
 
 .avatar {
-  flex: none;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  margin-top: 2px;
+  height: 32px;
   border-radius: 50%;
   background: var(--c);
   color: #ffffff;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
-.msg-body {
-  flex: 1;
+.bubble {
   min-width: 0;
+  max-width: 78%;
+  padding: 6px 10px 5px;
+  border-radius: 10px;
+  background: var(--bubble-in);
+  color: var(--text);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.msg-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
+.bubble-row.in.head .bubble {
+  border-top-left-radius: 2px;
 }
 
-.sender {
-  min-width: 0;
+.bubble-row.out .bubble {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.bubble-row.out.head .bubble {
+  border-top-right-radius: 2px;
+}
+
+.bubble-name {
+  display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--header-text);
+  font-size: 0.85rem;
   font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.sender.own {
-  color: var(--accent);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .world {
@@ -1278,7 +1294,7 @@ p {
 }
 
 .chat-tag {
-  flex: none;
+  margin-right: 6px;
   padding: 0 6px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--c) 16%, transparent);
@@ -1288,34 +1304,65 @@ p {
   line-height: 1.5;
 }
 
-.time {
-  flex: none;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
+/* Channel colours don't read on the accent. */
+.bubble-row.out .chat-tag {
+  background: color-mix(in srgb, var(--accent-ink) 22%, transparent);
+  color: inherit;
 }
 
-.msg-text {
-  color: var(--text);
+.time {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* After the text, so it shares the last line when there's room. */
+.bubble .time {
+  float: right;
+  margin: 8px 0 -3px 10px;
+  line-height: 1;
+}
+
+.bubble-row.out .time {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.system-line {
+  width: fit-content;
+  max-width: 85%;
+  margin: 8px auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--bubble-in);
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.pending-msg .msg-text {
-  opacity: 0.6;
+.system-line .time {
+  margin-left: 8px;
 }
 
-.pending-msg.failed .msg-text {
-  color: var(--danger);
+.bubble-row.pending .bubble {
+  opacity: 0.7;
+}
+
+.bubble-row.failed .bubble {
   opacity: 1;
+  box-shadow: 0 0 0 2px var(--danger);
 }
 
 .send-error {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 4px 12px;
-  padding: 2px 0 4px;
+  padding: 4px 12px;
   color: var(--danger);
   font-size: 0.85rem;
 }

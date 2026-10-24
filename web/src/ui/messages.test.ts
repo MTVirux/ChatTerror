@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { FeedItem } from "../core/accounts";
+import type { ChatItem } from "../core/protocol";
 import { feedKey } from "./feed";
-import { buildRows, incomingAfter } from "./messages";
+import { bubbleSide, buildRows, incomingAfter } from "./messages";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
 function m(id: string, ts: number, over: Partial<FeedItem> = {}): FeedItem {
   return { deviceId: "a", id, ts, channel: "party", sender: "A B", senderWorld: "W", text: id, character: "Alpha Beta", outgoing: false, ...over };
+}
+function item(over: Partial<ChatItem>): ChatItem {
+  return { id: "1", ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
 }
 
 describe("buildRows", () => {
@@ -54,5 +58,13 @@ describe("incomingAfter", () => {
   it("counts nothing when the message is unknown", () => {
     expect(incomingAfter(items, undefined)).toBe(0);
     expect(incomingAfter(items, "a:gone")).toBe(0);
+  });
+});
+
+describe("bubbleSide", () => {
+  it("puts own messages right, others left and senderless lines in the middle", () => {
+    expect(bubbleSide(item({ outgoing: true }))).toBe("out");
+    expect(bubbleSide(item({}))).toBe("in");
+    expect(bubbleSide(item({ sender: "" }))).toBe("system");
   });
 });

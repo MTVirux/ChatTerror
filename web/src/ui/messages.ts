@@ -1,4 +1,5 @@
 import type { FeedItem } from "../core/accounts";
+import type { ChatItem } from "../core/protocol";
 import { feedKey } from "./feed";
 import { dayLabel } from "./format";
 
@@ -43,4 +44,10 @@ export function incomingAfter(items: FeedItem[], key: string | undefined): numbe
   const index = key === undefined ? -1 : items.findIndex((i) => feedKey(i) === key);
   if (index < 0) return 0;
   return items.slice(index + 1).filter((i) => !i.outgoing).length;
+}
+
+// System lines like echo, errors or sales have no sender.
+export function bubbleSide(item: ChatItem): "in" | "out" | "system" {
+  if (item.outgoing) return "out";
+  return item.sender ? "in" : "system";
 }
