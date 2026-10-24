@@ -32,14 +32,18 @@ export function preferredChannel(tab: Tab, sendChannels: ChatChannel[], current:
   return options.find((c) => c !== "tell") ?? options[0];
 }
 
-export function Composer({ state, tab, blocked: blockedBy, onSend }: {
+// Unsent text per chat, so it survives leaving the chat until the app reloads.
+const drafts = new Map<string, string>();
+
+export function Composer({ draftId, state, tab, blocked: blockedBy, onSend }: {
+  draftId: string;
   state: SessionState;
   tab: Tab;
   blocked?: string;
   onSend: (channel: ChatChannel, text: string, target?: string, character?: string) => void;
 }) {
   const [channel, setChannel] = useState<ChatChannel | undefined>(() => preferredChannel(tab, state.sendChannels, undefined));
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => drafts.get(draftId) ?? "");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -52,6 +56,11 @@ export function Composer({ state, tab, blocked: blockedBy, onSend }: {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [text]);
+
+  useEffect(() => {
+    if (text) drafts.set(draftId, text);
+    else drafts.delete(draftId);
+  }, [draftId, text]);
 
   const target = tab.kind === "tell" ? tab.partner : undefined;
   const character = tab.kind === "tell" ? tab.character : state.character;

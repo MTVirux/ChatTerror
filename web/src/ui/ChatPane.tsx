@@ -66,6 +66,7 @@ export function ChatPane({ account, prefs, chat, items, unreadCount, sends, pend
 
       <Composer
         key={viewId}
+        draftId={viewId}
         state={account.state}
         tab={tab}
         blocked={blocked}
