@@ -278,15 +278,23 @@ public sealed class DeviceHub : IDisposable
     private void RunDueAwayChecks(long now)
     {
         var due = awayQueue.TakeDue(now);
-        if (due.Count == 0)
+        if (due.Count == 0 || !config.Enabled)
             return;
 
         var idle = idleClock.IdleSeconds();
         log.Verbose($"{due.Count} waiting notifications are due, the game has been idle for {IdleText(idle)} ({idleClock.TimersText()}).");
         foreach (var (startedAt, notify) in due)
         {
-            if (AwayCheck.StillAway(idle, now - startedAt))
+            if (!AwayCheck.StillAway(idle, now - startedAt))
+                continue;
+            try
+            {
                 notify();
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, "Failed to send a waiting notification.");
+            }
         }
     }
 
@@ -522,9 +530,10 @@ public sealed class DeviceHub : IDisposable
             notify();
     }
 
+    // Quiet hours may have started during the wait.
     private void PushChat(DeviceSession session, ChatItem item)
     {
-        if (StillOffline(session))
+        if (StillOffline(session) && !IsQuietHours())
             SendTo(session, new ChatPayload(item), true);
     }
 
@@ -537,7 +546,7 @@ public sealed class DeviceHub : IDisposable
     // Alerts go out even to a connected phone, which shows the notification itself.
     private void SendAlert(DeviceSession session, AlertPayload alert, long raisedAt)
     {
-        if (IsCurrent(session))
+        if (IsCurrent(session) && !IsQuietHours())
             SendTo(session, alert, true, AwayCheck.AlertTtlSeconds(alert.Kind, Environment.TickCount64 - raisedAt));
     }
 
