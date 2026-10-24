@@ -1482,6 +1482,16 @@ p {
   padding: 0 16px calc(32px + var(--safe-bottom));
 }
 
+/* The side padding lines the button up with the body's 560px column. */
+.settings-foot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px max(16px, calc(50% - 264px)) calc(12px + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--page);
+}
+
 .settings-section {
   margin-top: 24px;
 }
@@ -1766,18 +1776,6 @@ a.settings-row {
   background: var(--c);
   color: var(--chat);
   font-weight: 700;
-}
-
-/* Covers the page body's side and bottom padding, so the bar spans the page and sits on its bottom edge. */
-.page-action {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  justify-content: flex-end;
-  margin: 24px -16px calc(-32px - var(--safe-bottom));
-  padding: 12px 16px calc(12px + var(--safe-bottom));
-  border-top: 1px solid var(--line);
-  background: var(--page);
 }
 
 /* Channel menu */

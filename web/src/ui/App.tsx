@@ -83,11 +83,14 @@ function useUnreadTracker(manager: AccountManager): UnreadTracker {
   return tracker;
 }
 
-// The message key a notification link was about, opened once its client's history loads.
-function linkedChat(accounts: AccountView[]): string | null {
+// The message key a notification was about, and the "deviceId|character" place it opens in once history loads.
+type Notice = { place: string; chat: string };
+
+function linkedChat(accounts: AccountView[]): Notice | null {
   const link = parseLink(location.hash);
   if (!link?.chat || !accounts.some((a) => a.deviceId === link.deviceId)) return null;
-  return chatTarget(link.chat)?.chat ?? null;
+  const target = chatTarget(link.chat);
+  return target && { place: viewKey(link.deviceId, target.character), chat: target.chat };
 }
 
 export function App({ manager }: { manager: AccountManager }) {
@@ -96,7 +99,7 @@ export function App({ manager }: { manager: AccountManager }) {
   const pending = usePendingSends(sends);
   const unread = useUnreadTracker(manager);
   const [saved, setPlace] = useState(() => initialPlace(manager.list(), location.hash, stored(PLACE_KEY), charactersOf));
-  const [awaited] = useState(() => ({ current: linkedChat(manager.list()) }));
+  const [awaited] = useState<{ current: Notice | null }>(() => ({ current: linkedChat(manager.list()) }));
   const [adding, setAdding] = useState(() => location.hash.startsWith("#pair="));
   const [pairingAgain, setPairingAgain] = useState(false);
   const [notified, setNotified] = useState(0);
@@ -135,7 +138,7 @@ export function App({ manager }: { manager: AccountManager }) {
   function openChat(deviceId: string, chat: string | null) {
     if (!manager.list().some((a) => a.deviceId === deviceId)) return;
     const target = chat ? chatTarget(chat) : null;
-    awaited.current = target?.chat ?? null;
+    awaited.current = target && { place: viewKey(deviceId, target.character), chat: target.chat };
     setPlace((current) => ({ deviceId, character: target?.character ?? (current?.deviceId === deviceId ? current.character : null) }));
     setAdding(false);
     setPairingAgain(false);
@@ -179,7 +182,7 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
   accounts: AccountView[];
   place: Place;
   setPlace: (place: Place) => void;
-  awaited: { current: string | null };
+  awaited: { current: Notice | null };
   sends: PendingSends;
   pending: PendingSend[];
   unread: UnreadTracker;
@@ -216,14 +219,15 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
   const here = viewKey(deviceId, character ?? "");
   const rows = useMemo(() => (character ? chatRows(prefs, character, items) : []), [prefs, character, items]);
   // A notification's chat waits for history, since the first group showing its message goes by list order.
-  const notice = awaited.current;
-  const noticed = notice && loaded && character ? chatForKey(rows, prefs, notice) : null;
+  const notice = awaited.current?.place === here ? awaited.current.chat : null;
+  const noticed = notice && loaded ? chatForKey(rows, prefs, notice) : null;
   // The open chat belongs to one character; another one starts on its list, or on its last chat when wide.
   const open = notice ? noticed : opened?.place === here ? opened.key : wide ? lastChat[here] ?? null : null;
   const chat = character ? findChat(rows, character, open, prefs) : null;
   const phoneChat = !wide && !!chat;
   const listRef = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
+  const hadPhoneChat = useRef(false);
 
   function show(key: string | null) {
     setOpened({ place: here, key });
@@ -270,14 +274,15 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
   }, [phoneChat, covered, here]);
 
   // The phone hides the list under the chat, so focus goes back to the tapped row, or the list, when the chat closes.
+  // Turning wide keeps the chat open, so focus stays where it is.
   useEffect(() => {
-    if (!phoneChat) return;
-    return () => {
-      const row = opener.current;
-      opener.current = null;
-      (row instanceof HTMLElement && listRef.current?.contains(row) ? row : listRef.current)?.focus();
-    };
-  }, [phoneChat]);
+    const closed = hadPhoneChat.current && !phoneChat && !wide;
+    hadPhoneChat.current = phoneChat;
+    if (!closed) return;
+    const row = opener.current;
+    opener.current = null;
+    (row instanceof HTMLElement && listRef.current?.contains(row) ? row : listRef.current)?.focus();
+  }, [phoneChat, wide]);
 
   // A notification tap lands in the chat, not behind a sheet.
   useEffect(() => {
@@ -291,11 +296,12 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
   // Leaving a character forgets its open chat. Declared before the notice effect, so a notification landing on another character still opens.
   useEffect(() => setOpened(null), [here]);
 
+  // One for another place, like a removed client, is dropped so it never lands somewhere else later.
   useEffect(() => {
-    if (!notice || !loaded || !character) return;
+    if (!awaited.current || (notice && !loaded)) return;
     awaited.current = null;
-    show(noticed);
-  }, [notice, loaded, here]);
+    if (notice) show(noticed);
+  }, [notice, loaded, here, notified]);
 
   // A removed client has no settings left; its place shows Remove and Pair again instead.
   function openClientSettings(id: string) {

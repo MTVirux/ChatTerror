@@ -4,7 +4,8 @@ import { BackIcon } from "./icons";
 
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
 
-export function SettingsSheet({ title, onClose, children }: { title: string; onClose: () => void; children: ComponentChildren }) {
+// footer stays on the sheet's bottom edge, outside the scrolling body.
+export function SettingsSheet({ title, onClose, footer, children }: { title: string; onClose: () => void; footer?: ComponentChildren; children: ComponentChildren }) {
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
 
@@ -48,6 +49,7 @@ export function SettingsSheet({ title, onClose, children }: { title: string; onC
         <h2 id={titleId}>{title}</h2>
       </header>
       <div class="settings-body">{children}</div>
+      {footer && <div class="settings-foot">{footer}</div>}
     </section>
   );
 }

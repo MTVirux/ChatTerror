@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useId, useRef, useState } from "preact/hooks";
 import type { CustomChannel } from "../core/channelPrefs";
 import { ALL_CHANNELS, type ChatChannel } from "../core/protocol";
 import { useBackClose } from "./backStack";
@@ -35,6 +35,7 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
   const [id] = useState(() => custom?.id ?? newId());
   const nameRef = useRef<HTMLInputElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
+  const formId = useId();
   const opened = useRef(false);
 
   const options = pickerChannels(relayChannels);
@@ -85,7 +86,11 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
     const relayed = options.filter((c) => relayChannels.includes(c));
     const rest = options.filter((c) => !relayChannels.includes(c));
     return (
-      <SettingsSheet title={title} onClose={back}>
+      <SettingsSheet
+        title={title}
+        onClose={back}
+        footer={<button ref={nextRef} type="button" class="btn primary" disabled={picked.length === 0} onClick={() => setStep(2)}>Next</button>}
+      >
         <p class="page-sub">Pick channels</p>
         {picked.length > 0 && (
           <div class="pick-chips">
@@ -99,16 +104,13 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
         )}
         {relayed.length > 0 && <SettingsGroup label="Relayed by the plugin">{relayed.map(pickRow)}</SettingsGroup>}
         {rest.length > 0 && <SettingsGroup label="Not relayed">{rest.map(pickRow)}</SettingsGroup>}
-        <div class="page-action">
-          <button ref={nextRef} type="button" class="btn primary" disabled={picked.length === 0} onClick={() => setStep(2)}>Next</button>
-        </div>
       </SettingsSheet>
     );
   }
 
   return (
-    <SettingsSheet title={title} onClose={back}>
-      <form onSubmit={save}>
+    <SettingsSheet title={title} onClose={back} footer={<button type="submit" form={formId} class="btn primary">{custom ? "Save" : "Create"}</button>}>
+      <form id={formId} onSubmit={save}>
         <SettingsGroup>
           <div class="settings-row name-row">
             <span class="group-avatar" style={{ "--c": customColor(group) }} aria-hidden="true">{initials(group.name)}</span>
@@ -130,9 +132,6 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
             </div>
           ))}
         </SettingsGroup>
-        <div class="page-action">
-          <button type="submit" class="btn primary">{custom ? "Save" : "Create"}</button>
-        </div>
       </form>
     </SettingsSheet>
   );
