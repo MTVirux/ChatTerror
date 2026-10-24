@@ -1,8 +1,9 @@
+import { DEFAULT_NOTIFY_PREFS } from "./alerts";
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { channelNotifyPrefs, EMPTY_CHANNEL_PREFS, withDefaultChannels, withDefaults, type ChannelPrefs } from "./channelPrefs";
 import { deriveKey, exportPublicRaw, fingerprint, generateDeviceKey, generateTellKey, openPayload, sealPayload, verifyBundle } from "./crypto";
-import { isValidTs, parsePluginPayload, parseSettings, type ChatChannel, type ChatItem, type DevicePayload, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
+import { isValidTs, parsePluginPayload, parseSettings, type AlertPayload, type ChatChannel, type ChatItem, type DevicePayload, type NotifyPrefs, type PluginPayload, type ServerFrame, type TellBody, type TellBundle, type TellContact } from "./protocol";
 import type { PushControl } from "./push";
 import type { RelayConnection, RelayHandlers } from "./relay";
 import { SeqCounter, SeqGuard } from "./seq";
@@ -24,6 +25,8 @@ export interface SessionState {
   channelPrefs: ChannelPrefs;
   pushEnabled: boolean;
   cacheLimit: number;
+  supportsAlerts: boolean;
+  notifyPrefs: NotifyPrefs;
 }
 
 export interface SendResult {
@@ -35,11 +38,13 @@ export interface Session {
   getState(): SessionState;
   subscribe(cb: (s: SessionState) => void): () => void;
   onMessages(cb: (items: ChatItem[]) => void): () => void;
+  onAlert(cb: (alert: AlertPayload) => void): () => void;
   loadHistory(perKey: number, keyOf: (item: ChatItem) => string): Promise<ChatItem[]>;
   // character picks which of our characters a relayed tell goes out from.
   send(channel: ChatChannel, text: string, target?: string, character?: string): Promise<SendResult>;
   setMuted(channels: ChatChannel[]): Promise<void>;
   setChannelPrefs(prefs: ChannelPrefs): Promise<void>;
+  setNotifyPrefs(prefs: NotifyPrefs): Promise<void>;
   enablePush(): Promise<boolean>;
   disablePush(): Promise<void>;
   clearCache(): Promise<void>;
@@ -66,7 +71,7 @@ const CROCKFORD = /^[0-9A-HJKMNP-TV-Z]{16}$/;
 export const SEND_TIMEOUT_MS = 45_000;
 
 function emptyState(status: SessionStatus, cacheLimit = DEFAULT_CACHE_LIMIT): SessionState {
-  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, contacts: [], mutedChannels: [], channelPrefs: EMPTY_CHANNEL_PREFS, pushEnabled: false, cacheLimit };
+  return { status, relayChannels: [], sendChannels: [], maxLength: DEFAULT_MAX_LENGTH, contacts: [], mutedChannels: [], channelPrefs: EMPTY_CHANNEL_PREFS, pushEnabled: false, cacheLimit, supportsAlerts: false, notifyPrefs: DEFAULT_NOTIFY_PREFS };
 }
 
 export interface PairCode {
@@ -109,6 +114,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
   const sendTimeoutMs = deps.sendTimeoutMs ?? SEND_TIMEOUT_MS;
   const stateListeners = new Set<(s: SessionState) => void>();
   const messageListeners = new Set<(items: ChatItem[]) => void>();
+  const alertListeners = new Set<(alert: AlertPayload) => void>();
   const pendingSends = new Map<string, (result: SendResult) => void>();
   const pendingTells = new Map<string, (result: SendResult) => void>();
   // Ids already handed to the UI. The service worker may have stored a message the open page never showed.
@@ -160,10 +166,11 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
     stopConnection();
     pairing = await deps.store.getPairing();
     shownIds.clear();
-    const [storedSettings, muted, channelPrefs, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
+    const [storedSettings, muted, channelPrefs, notifyPrefs, push, lastSeenWs, lastSeqSent, storedSyncTs, storedApproved] = await Promise.all([
       deps.store.getMeta("lastSettings"),
       deps.store.getMeta("mutedChannels"),
       deps.store.getMeta("channelPrefs"),
+      deps.store.getMeta("notifyPrefs"),
       deps.store.getMeta("pushEnabled"),
       deps.store.getMeta("lastSeenWs"),
       deps.store.getMeta("lastSeqSent"),
@@ -198,6 +205,8 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       mutedChannels: muted,
       channelPrefs: withDefaults(channelPrefs),
       pushEnabled: push,
+      supportsAlerts: settings?.supportsAlerts === true,
+      notifyPrefs,
     };
     setState({});
 
@@ -255,7 +264,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
   }
 
   function sendPrefs() {
-    return sendPayload({ type: "prefs", mutedChannels: state.mutedChannels, channels: channelNotifyPrefs(state.channelPrefs) });
+    return sendPayload({ type: "prefs", mutedChannels: state.mutedChannels, channels: channelNotifyPrefs(state.channelPrefs), alerts: state.notifyPrefs });
   }
 
   async function markApproved() {
@@ -366,8 +375,12 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
           sendChannels: payload.sendChannels,
           maxLength: payload.maxLength,
           contacts: payload.contacts ?? [],
+          supportsAlerts: payload.supportsAlerts === true,
         });
         if (payload.character) await seedChannels(payload.character);
+        return;
+      case "alert":
+        if (state.pushEnabled) for (const listener of alertListeners) listener(payload);
         return;
     }
   }
@@ -462,6 +475,11 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       return () => messageListeners.delete(cb);
     },
 
+    onAlert(cb) {
+      alertListeners.add(cb);
+      return () => alertListeners.delete(cb);
+    },
+
     async loadHistory(perKey, keyOf) {
       const items = await deps.store.loadRecent(perKey, keyOf);
       for (const item of items) shownIds.add(item.id);
@@ -503,6 +521,12 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       await sendPrefs();
     },
 
+    async setNotifyPrefs(prefs) {
+      setState({ notifyPrefs: prefs });
+      await deps.store.setMeta("notifyPrefs", prefs);
+      await sendPrefs();
+    },
+
     enablePush: () => enablePush(true),
 
     async disablePush() {
@@ -534,6 +558,7 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       stopConnection();
       stateListeners.clear();
       messageListeners.clear();
+      alertListeners.clear();
     },
   };
 

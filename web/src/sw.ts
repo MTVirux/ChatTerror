@@ -1,3 +1,4 @@
+import { alertNotification, alertTag } from "./core/alerts";
 import { notificationTitle, routePush, type RoutedPush } from "./core/pushRoute";
 import { FETCHED_AT_HEADER, isCacheable, isFresh } from "./core/portraitCache";
 import { referencedAssets, staleAssets } from "./core/shell";
@@ -95,6 +96,13 @@ async function handlePush(data: PushMessageData | null) {
   // Browsers penalise push events that do not show a notification, so failures still show one.
   if (!routed) {
     await self.registration.showNotification("ChatTerror", { body: "New message", tag: "chatterror", icon: "/icon-192.png" });
+    return;
+  }
+  if ("alert" in routed) {
+    const { title, body } = alertNotification(routed.alert, routed.label, routed.multiple);
+    // renotify is missing from the DOM typings.
+    const options: NotificationOptions & { renotify: boolean } = { body, tag: alertTag(routed.deviceId, routed.alert.kind), renotify: true, icon: "/icon-192.png", data: { deviceId: routed.deviceId } };
+    await self.registration.showNotification(title, options);
     return;
   }
   await self.registration.showNotification(notificationTitle(routed), {
