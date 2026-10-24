@@ -23,12 +23,13 @@ namespace ChatTerror.Protocol;
 [JsonDerivedType(typeof(TellFrame), "tell")]
 [JsonDerivedType(typeof(TellAckFrame), "tellAck")]
 [JsonDerivedType(typeof(FriendsChangedFrame), "friendsChanged")]
+[JsonDerivedType(typeof(TellPushFrame), "tellPush")]
 public abstract record RelayFrame;
 
-public sealed record AuthFrame(string Token) : RelayFrame;
+public sealed record AuthFrame(string Token, IReadOnlyList<string>? Features = null) : RelayFrame;
 
-// Plugin sends set To and Notify; device sends leave them out.
-public sealed record SendFrame([Optional, DefaultParameterValue(null)] string? To, string Payload, bool Notify = false) : RelayFrame;
+// Plugin sends set To and Notify; device sends leave them out. Ttl is the push TTL in seconds.
+public sealed record SendFrame([Optional, DefaultParameterValue(null)] string? To, string Payload, bool Notify = false, int? Ttl = null) : RelayFrame;
 
 public sealed record PairDecisionFrame(string DeviceId, bool Approved) : RelayFrame;
 
@@ -69,10 +70,18 @@ public sealed record TellAckFrame(IReadOnlyList<string> Ids) : RelayFrame;
 
 public sealed record FriendsChangedFrame : RelayFrame;
 
+// The plugin asks the relay to push the friend tell Id it received to its own device DeviceId.
+public sealed record TellPushFrame(string Id, string DeviceId) : RelayFrame;
+
 public static class RelayRoles
 {
     public const string Plugin = "plugin";
     public const string Device = "device";
+}
+
+public static class RelayFeatures
+{
+    public const string TellPush = "tellPush";
 }
 
 public static class RelayErrors

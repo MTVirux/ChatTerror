@@ -45,6 +45,10 @@ public class JsonTests
             new SendChatPayload("r2", ChatChannel.Tell, "Y'shtola Rhul@Twintania", "hi") { Seq = 6 },
             new PrefsPayload(new[] { ChatChannel.Say, ChatChannel.Yell }) { Seq = 7 },
             new PrefsPayload([], [new ChannelPref("Alex Doe", ChatChannel.Tell, "Foo Bar@World", NotifyMode.None)]) { Seq = 8 },
+            new PrefsPayload([], [], new AlertPrefs(false, true, 30)) { Seq = 9 },
+            new SettingsPayload("Alpha Beta", [], [], 400, SupportsAlerts: true) { Seq = 10 },
+            new AlertPayload(AlertKind.PartyFull, "", 1700000000000) { Seq = 11 },
+            new AlertPayload(AlertKind.DutyPop, "Alpha Beta", 1700000000000, "The Aurum Vale") { Seq = 12 },
         };
 
         foreach (var payload in payloads)
@@ -91,6 +95,61 @@ public class JsonTests
     }
 
     [Fact]
+    public void PrefsPayload_WithoutAlerts_StillParses()
+    {
+        var old = ProtocolJson.Deserialize<Payload>("{\"type\":\"prefs\",\"seq\":1,\"mutedChannels\":[]}");
+        var current = ProtocolJson.Deserialize<Payload>(
+            "{\"type\":\"prefs\",\"seq\":3,\"mutedChannels\":[],\"channels\":[],\"alerts\":{\"partyFull\":true,\"dutyPop\":true,\"waitSeconds\":10}}");
+
+        Assert.Null(Assert.IsType<PrefsPayload>(old).Alerts);
+        Assert.Equal(new AlertPrefs(true, true, 10), Assert.IsType<PrefsPayload>(current).Alerts);
+    }
+
+    [Fact]
+    public void AlertPrefs_Default_AlertsBothAfterTenSeconds()
+    {
+        Assert.Equal(new AlertPrefs(true, true, 10), AlertPrefs.Default);
+    }
+
+    [Theory]
+    [InlineData(-5, 0)]
+    [InlineData(61, 60)]
+    [InlineData(10, 10)]
+    public void AlertPrefs_Clamped_KeepsWaitInRange(int wait, int expected)
+    {
+        Assert.Equal(new AlertPrefs(false, true, expected), new AlertPrefs(false, true, wait).Clamped());
+    }
+
+    [Fact]
+    public void AlertPayload_Json_MatchesTheWireContract()
+    {
+        Payload payload = new AlertPayload(AlertKind.DutyPop, "Aria Moonfall", 1700000000000, "The Aurum Vale") { Seq = 7 };
+
+        var json = ProtocolJson.Serialize(payload);
+        var contract = ProtocolJson.Deserialize<Payload>(
+            "{\"type\":\"alert\",\"seq\":7,\"kind\":\"dutyPop\",\"character\":\"Aria Moonfall\",\"ts\":1700000000000,\"duty\":\"The Aurum Vale\"}");
+        var withoutDuty = ProtocolJson.Serialize<Payload>(new AlertPayload(AlertKind.PartyFull, "Aria Moonfall", 1700000000000) { Seq = 8 });
+
+        Assert.Contains("\"type\":\"alert\"", json);
+        Assert.Contains("\"kind\":\"dutyPop\"", json);
+        Assert.Contains("\"duty\":\"The Aurum Vale\"", json);
+        Assert.Equal(payload, ProtocolJson.Deserialize<Payload>(json));
+        Assert.Equal(payload, contract);
+        Assert.Contains("\"kind\":\"partyFull\"", withoutDuty);
+        Assert.DoesNotContain("duty", withoutDuty);
+    }
+
+    [Fact]
+    public void SettingsPayload_SupportsAlerts_DefaultsToFalse()
+    {
+        var old = ProtocolJson.Deserialize<Payload>("{\"type\":\"settings\",\"seq\":1,\"relayChannels\":[],\"sendChannels\":[],\"maxLength\":500}");
+        var json = ProtocolJson.Serialize<Payload>(new SettingsPayload("Alpha Beta", [], [], 500, SupportsAlerts: true) { Seq = 2 });
+
+        Assert.False(Assert.IsType<SettingsPayload>(old).SupportsAlerts);
+        Assert.Contains("\"supportsAlerts\":true", json);
+    }
+
+    [Fact]
     public void Payload_Json_AcceptsDiscriminatorNotFirst()
     {
         var back = ProtocolJson.Deserialize<Payload>("{\"seq\":9,\"sinceTs\":5,\"type\":\"hello\"}");
@@ -107,6 +166,7 @@ public class JsonTests
         {
             (new AuthFrame("d.abc.def"), "auth"),
             (new SendFrame("dev1", "payload", true), "send"),
+            (new SendFrame("dev1", "payload", true, Limits.DutyPopTtlSeconds), "send"),
             (new PairDecisionFrame("dev1", true), "pairDecision"),
             (new AuthOkFrame("plugin", "inst1"), "authOk"),
             (new AuthFailFrame(), "authFail"),
@@ -119,6 +179,7 @@ public class JsonTests
             (new PairedFrame(), "paired"),
             (new RevokedFrame(), "revoked"),
             (new ErrorFrame(RelayErrors.TooLarge), "error"),
+            (new TellPushFrame("tell1", "dev1"), "tellPush"),
         };
 
         foreach (var (frame, tag) in frames)
@@ -137,6 +198,40 @@ public class JsonTests
         var back = ProtocolJson.Deserialize<RelayFrame>("{\"t\":\"send\",\"payload\":\"abc\"}");
 
         Assert.Equal(new SendFrame(null, "abc", false), back);
+    }
+
+    [Fact]
+    public void SendFrame_Ttl_IsOptional()
+    {
+        var back = ProtocolJson.Deserialize<RelayFrame>("{\"t\":\"send\",\"to\":\"d\",\"payload\":\"p\",\"notify\":true}");
+
+        Assert.Null(Assert.IsType<SendFrame>(back).Ttl);
+        Assert.Contains("\"ttl\":60", ProtocolJson.Serialize<RelayFrame>(new SendFrame("d", "p", true, 60)));
+        Assert.DoesNotContain("ttl", ProtocolJson.Serialize<RelayFrame>(new SendFrame("d", "p", true)));
+    }
+
+    [Fact]
+    public void AuthFrame_Features_AreOptional()
+    {
+        var old = ProtocolJson.Deserialize<RelayFrame>("{\"t\":\"auth\",\"token\":\"tok\"}");
+        var json = ProtocolJson.Serialize<RelayFrame>(new AuthFrame("tok", [RelayFeatures.TellPush]));
+        var current = ProtocolJson.Deserialize<RelayFrame>(json);
+
+        Assert.Null(Assert.IsType<AuthFrame>(old).Features);
+        Assert.Equal("{\"t\":\"auth\",\"token\":\"tok\",\"features\":[\"tellPush\"]}", json);
+        Assert.Equal([RelayFeatures.TellPush], Assert.IsType<AuthFrame>(current).Features!);
+        Assert.Equal("{\"t\":\"auth\",\"token\":\"tok\"}", ProtocolJson.Serialize<RelayFrame>(new AuthFrame("tok")));
+    }
+
+    [Fact]
+    public void TellPushFrame_RoundTrips()
+    {
+        var frame = new TellPushFrame("tell1", "dev1");
+
+        var json = ProtocolJson.Serialize<RelayFrame>(frame);
+
+        Assert.Equal("{\"t\":\"tellPush\",\"id\":\"tell1\",\"deviceId\":\"dev1\"}", json);
+        Assert.Equal(frame, ProtocolJson.Deserialize<RelayFrame>(json));
     }
 
     [Fact]
