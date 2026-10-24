@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { TELL_TARGET } from "./format";
 import { ChatBubbleIcon } from "./icons";
 import { initials, senderColor } from "./identity";
-import type { Person } from "./newChat";
+import { matchPerson, type Person } from "./people";
 import { Portrait } from "./Portrait";
 import { SettingsGroup, SettingsSheet } from "./SettingsSheet";
 
@@ -26,7 +26,7 @@ export function NewChat({ character, friends, recent, onOpenDm, onNewGroup, onCl
 
   function open(event: Event) {
     event.preventDefault();
-    if (valid) onOpenDm(trimmed);
+    if (valid) onOpenDm(matchPerson([...friends, ...recent], trimmed));
   }
 
   return (

@@ -20,3 +20,8 @@ export function newChatPeople(contacts: TellContact[], partners: string[], chara
     });
   return { friends, recent };
 }
+
+// Uses the listed spelling, so a typed name opens the DM key that already holds the messages.
+export function matchPerson(people: Person[], typed: string): string {
+  return people.find((p) => p.partner.toLowerCase() === typed.toLowerCase())?.partner ?? typed;
+}

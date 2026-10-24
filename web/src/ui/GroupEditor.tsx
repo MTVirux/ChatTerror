@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { CustomChannel } from "../core/channelPrefs";
 import { ALL_CHANNELS, type ChatChannel } from "../core/protocol";
+import { useBackClose } from "./backStack";
 import { customColor } from "./channels";
 import { channelColor, channelLabel } from "./format";
 import { CloseIcon } from "./icons";
@@ -33,6 +34,8 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
   const [name, setName] = useState(custom?.name ?? "");
   const [id] = useState(() => custom?.id ?? newId());
   const nameRef = useRef<HTMLInputElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const opened = useRef(false);
 
   const options = pickerChannels(relayChannels);
   const ordered = options.filter((c) => picked.includes(c));
@@ -50,8 +53,12 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
     return () => removeEventListener("keydown", onKey, true);
   }, [step, onClose]);
 
+  useBackClose(() => setStep(1), step === 2);
+
+  // Changing step removes the focused control, so focus moves into the new step. The sheet focuses itself on open.
   useEffect(() => {
-    if (step === 2) nameRef.current?.focus();
+    if (opened.current) (step === 2 ? nameRef : nextRef).current?.focus();
+    opened.current = true;
   }, [step]);
 
   function toggle(channel: ChatChannel) {
@@ -93,7 +100,7 @@ export function GroupEditor({ character, custom, relayChannels, onSave, onClose 
         {relayed.length > 0 && <SettingsGroup label="Relayed by the plugin">{relayed.map(pickRow)}</SettingsGroup>}
         {rest.length > 0 && <SettingsGroup label="Not relayed">{rest.map(pickRow)}</SettingsGroup>}
         <div class="page-action">
-          <button type="button" class="btn primary" disabled={picked.length === 0} onClick={() => setStep(2)}>Next</button>
+          <button ref={nextRef} type="button" class="btn primary" disabled={picked.length === 0} onClick={() => setStep(2)}>Next</button>
         </div>
       </SettingsSheet>
     );
