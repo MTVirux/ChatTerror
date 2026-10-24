@@ -1598,6 +1598,10 @@ a.settings-row {
   min-width: 0;
 }
 
+.settings-row select:disabled {
+  opacity: 0.5;
+}
+
 .settings-note {
   margin: 8px 4px 0;
   color: var(--muted);
