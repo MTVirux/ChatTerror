@@ -1,11 +1,13 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useId, useRef } from "preact/hooks";
 import { BackIcon } from "./icons";
 
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
 
-export function SettingsSheet({ title, onClose, children }: { title: string; onClose: () => void; children: ComponentChildren }) {
+// footer stays on the sheet's bottom edge, outside the scrolling body.
+export function SettingsSheet({ title, onClose, footer, children }: { title: string; onClose: () => void; footer?: ComponentChildren; children: ComponentChildren }) {
   const dialogRef = useRef<HTMLElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -39,14 +41,15 @@ export function SettingsSheet({ title, onClose, children }: { title: string; onC
   }
 
   return (
-    <section class="settings" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="settings-title" onKeyDown={trapTab}>
+    <section class="settings" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={trapTab}>
       <header class="settings-head">
         <button class="icon-btn" aria-label="Back" onClick={onClose}>
           <BackIcon />
         </button>
-        <h2 id="settings-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
       </header>
       <div class="settings-body">{children}</div>
+      {footer && <div class="settings-foot">{footer}</div>}
     </section>
   );
 }

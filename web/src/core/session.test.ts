@@ -242,13 +242,13 @@ describe("session", () => {
     await relay.fromPlugin({ type: "backlog", seq: seq + 2, items: [item("c", 300), item("a", 100), item("b", 200)], done: true });
 
     await vi.waitFor(() => expect(seen).toEqual([["a"], ["b", "c"]]));
-    expect((await session.loadHistory(10)).map((i) => i.id)).toEqual(["a", "b", "c"]);
+    expect((await session.loadHistory(10, () => "all")).map((i) => i.id)).toEqual(["a", "b", "c"]);
   });
 
   it("emits messages the service worker stored while the page was open, but not loaded history", async () => {
     const { session, relay } = await setup();
     await store.addMessages([item("old", 50)], 100);
-    expect((await session.loadHistory(10)).map((i) => i.id)).toEqual(["old"]);
+    expect((await session.loadHistory(10, () => "all")).map((i) => i.id)).toEqual(["old"]);
     const seen: string[][] = [];
     session.onMessages((items) => seen.push(items.map((i) => i.id)));
 
@@ -403,9 +403,9 @@ describe("session", () => {
     const { session } = await setup();
     await store.addMessages([item("a", 1), item("b", 2), item("c", 3)], 100);
     await session.setCacheLimit(2);
-    expect((await session.loadHistory(10)).map((i) => i.id)).toEqual(["b", "c"]);
+    expect((await session.loadHistory(10, () => "all")).map((i) => i.id)).toEqual(["b", "c"]);
     await session.clearCache();
-    expect(await session.loadHistory(10)).toEqual([]);
+    expect(await session.loadHistory(10, () => "all")).toEqual([]);
   });
 
   it("exposes the cache limit in state and keeps it across unpair", async () => {

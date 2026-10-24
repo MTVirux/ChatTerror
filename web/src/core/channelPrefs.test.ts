@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   channelIncludes,
   channelNotifyPrefs,
+  customKey,
   deleteCustom,
   EMPTY_CHANNEL_PREFS,
   isItemMuted,
-  moveChannel,
   notifyChoice,
   saveCustom,
   setNotify,
@@ -13,7 +13,6 @@ import {
   togglePinned,
   withDefaultChannels,
   withDefaults,
-  withTells,
   type CustomChannel,
 } from "./channelPrefs";
 
@@ -71,11 +70,11 @@ describe("custom channels", () => {
     expect(deleteCustom(decorated, social)).toEqual({ pinned: [], muted: [], notify: {}, custom: [], order: { "Alpha Beta": [tell] }, seeded: [] });
   });
 
-  it("includes member channels and every tell of its character", () => {
-    expect(channelIncludes(prefs, key, say)).toBe(true);
-    expect(channelIncludes(prefs, key, tell)).toBe(true);
-    expect(channelIncludes(prefs, key, "c|Alpha Beta|party")).toBe(false);
-    expect(channelIncludes(prefs, key, "c|Other One|say")).toBe(false);
+  it("includes member chat types but never tells", () => {
+    const prefs = { ...EMPTY_CHANNEL_PREFS, custom: [social] };
+    const key = customKey(social);
+    expect(channelIncludes(prefs, key, "c|Alpha Beta|say")).toBe(true);
+    expect(channelIncludes(prefs, key, tell)).toBe(false);
     expect(channelIncludes(prefs, tell, tell)).toBe(true);
   });
 
@@ -83,7 +82,7 @@ describe("custom channels", () => {
     expect(isItemMuted(prefs, say)).toBe(false);
     const muted = toggleMuted(prefs, key);
     expect(isItemMuted(muted, say)).toBe(true);
-    expect(isItemMuted(muted, tell)).toBe(true);
+    expect(isItemMuted(muted, tell)).toBe(false);
     expect(isItemMuted(muted, "c|Alpha Beta|party")).toBe(false);
   });
 
@@ -95,25 +94,26 @@ describe("custom channels", () => {
     expect(channelNotifyPrefs(toggleMuted(setNotify(prefs, key, "all"), key)).map((p) => p.notify)).toEqual(["none", "none"]);
   });
 
-  it("moves a row one step within the shown order", () => {
-    const other = "t|Alpha Beta|X Y@W";
-    expect(moveChannel(prefs, "Alpha Beta", [key, tell, other], tell, -1).order).toEqual({ "Alpha Beta": [tell, key, other] });
-    expect(moveChannel(prefs, "Alpha Beta", [key, tell, other], key, -1)).toBe(prefs);
+  it("does not mute tells through a muted old Tells channel", () => {
+    const old: CustomChannel = { id: "tells", character: "Alpha Beta", name: "Tells", channels: ["tell"] };
+    const prefs = { ...EMPTY_CHANNEL_PREFS, custom: [old], muted: [customKey(old)] };
+    expect(isItemMuted(prefs, tell)).toBe(false);
+    expect(channelNotifyPrefs(prefs)).toEqual([]);
   });
 });
 
 describe("default channels", () => {
-  it("adds Tells, FC and Party once per character", () => {
+  it("adds FC and Party once per character", () => {
     const seeded = withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta");
-    expect(seeded.custom.map((c) => [c.name, c.channels])).toEqual([["Tells", ["tell"]], ["FC", ["freeCompany"]], ["Party", ["party"]]]);
+    expect(seeded.custom.map((c) => [c.name, c.channels])).toEqual([["FC", ["freeCompany"]], ["Party", ["party"]]]);
     expect(withDefaultChannels(seeded, "Alpha Beta")).toBe(seeded);
-    expect(withDefaultChannels(seeded, "Other One").custom).toHaveLength(6);
+    expect(withDefaultChannels(seeded, "Other One").custom).toHaveLength(4);
   });
 
   it("does not bring back a deleted default", () => {
     const seeded = withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta");
     const deleted = deleteCustom(seeded, seeded.custom[0]);
-    expect(withDefaultChannels(deleted, "Alpha Beta").custom.map((c) => c.name)).toEqual(["FC", "Party"]);
+    expect(withDefaultChannels(deleted, "Alpha Beta").custom.map((c) => c.name)).toEqual(["Party"]);
   });
 
   it("edits and deletes only that character's default", () => {
@@ -121,26 +121,5 @@ describe("default channels", () => {
     const fc = both.custom.find((c) => c.character === "Other One" && c.id === "fc")!;
     expect(saveCustom(both, { ...fc, name: "Guild" }).custom.filter((c) => c.name === "Guild")).toHaveLength(1);
     expect(deleteCustom(both, fc).custom.filter((c) => c.id === "fc").map((c) => c.character)).toEqual(["Alpha Beta"]);
-  });
-});
-
-describe("withTells", () => {
-  it("adds a Tells channel when the character has none", () => {
-    expect(withTells(EMPTY_CHANNEL_PREFS, "Alpha Beta").custom).toEqual([{ id: "tells", character: "Alpha Beta", name: "Tells", channels: ["tell"] }]);
-  });
-
-  it("keeps prefs that already have one", () => {
-    const seeded = withDefaultChannels(EMPTY_CHANNEL_PREFS, "Alpha Beta");
-    expect(withTells(seeded, "Alpha Beta")).toBe(seeded);
-  });
-
-  it("puts tells back into an edited Tells channel", () => {
-    const edited = { ...EMPTY_CHANNEL_PREFS, custom: [{ id: "tells", character: "Alpha Beta", name: "DMs", channels: ["freeCompany"] } as CustomChannel] };
-    expect(withTells(edited, "Alpha Beta").custom).toEqual([{ id: "tells", character: "Alpha Beta", name: "DMs", channels: ["tell", "freeCompany"] }]);
-  });
-
-  it("adds one per character", () => {
-    const one = withTells(EMPTY_CHANNEL_PREFS, "Alpha Beta");
-    expect(withTells(one, "Other One").custom.map((c) => c.character)).toEqual(["Other One", "Alpha Beta"]);
   });
 });

@@ -1,6 +1,7 @@
 import type { AccountManager } from "../core/accounts";
-import { channelIncludes, isItemMuted, withTells, type ChannelPrefs } from "../core/channelPrefs";
-import { channelFor, itemKey, keyCharacter } from "./channels";
+import { channelIncludes, customKey, isItemMuted, type ChannelPrefs } from "../core/channelPrefs";
+import { itemKey, keyCharacter } from "./channels";
+import { visibleGroups } from "./chatRows";
 
 export interface UnreadSummary {
   unread: boolean;
@@ -98,15 +99,17 @@ export function createUnreadTracker(
   };
 }
 
-// Unread in the view under key, leaving out muted messages; tells is the tell part of count.
-export function viewUnread(tracker: Pick<UnreadTracker, "count">, deviceId: string, prefs: ChannelPrefs, key: string): { count: number; tells: number } {
-  const shows = (k: string) => channelIncludes(prefs, key, k) && !isItemMuted(prefs, k);
-  return { count: tracker.count(deviceId, shows), tells: tracker.count(deviceId, (k) => k.startsWith("t|") && shows(k)) };
+// A row's own unread counts while muted, for its grey badge. A group never shows tells, even a legacy one listing them.
+export function rowUnread(tracker: Pick<UnreadTracker, "count">, deviceId: string, prefs: ChannelPrefs, key: string): number {
+  const group = key.startsWith("x|");
+  return tracker.count(deviceId, (k) => !(group && k.startsWith("t|")) && channelIncludes(prefs, key, k));
 }
 
-// Unread one character's channels show, leaving out muted messages and chat types no channel shows.
+// Unread one character's chats show: every tell, and chat types a group shows, leaving out muted messages.
 export function characterUnread(tracker: Pick<UnreadTracker, "count">, deviceId: string, prefs: ChannelPrefs, character: string): UnreadSummary {
-  const shown = (k: string) => keyCharacter(k) === character && !isItemMuted(prefs, k) && !!channelFor(withTells(prefs, character), character, k);
+  const groups = visibleGroups(prefs, character).map(customKey);
+  const shown = (k: string) =>
+    keyCharacter(k) === character && !isItemMuted(prefs, k) && (k.startsWith("t|") || groups.some((g) => channelIncludes(prefs, g, k)));
   const count = tracker.count(deviceId, shown);
   return { unread: count > 0, tells: tracker.count(deviceId, (k) => k.startsWith("t|") && shown(k)) };
 }

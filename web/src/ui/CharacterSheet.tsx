@@ -20,7 +20,7 @@ export function CharacterSheet({ groups, current, onPick, onPair, onClose }: {
     return () => previous?.focus();
   }, []);
 
-  // Capture on window so Escape closes only the sheet, not the drawer behind it.
+  // Capture on window so Escape closes only the sheet, not the screen behind it.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;

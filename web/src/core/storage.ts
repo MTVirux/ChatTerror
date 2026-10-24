@@ -142,6 +142,7 @@ export interface AccountStore {
   addMessages(items: ChatItem[], limit: number): Promise<ChatItem[]>;
   trimMessages(limit: number): Promise<void>;
   loadMessages(limit: number): Promise<ChatItem[]>;
+  loadRecent(perKey: number, keyOf: (item: ChatItem) => string): Promise<ChatItem[]>;
   clearMessages(): Promise<void>;
   wipe(): Promise<void>;
   destroy(): Promise<void>;
@@ -200,6 +201,20 @@ export function openAccountStore(dbName: string): AccountStore {
         };
         request.onerror = () => reject(request.error);
       });
+    }),
+    loadRecent: (perKey, keyOf) => run("messages", "readonly", async (tx) => {
+      const all: unknown[] = await result(tx.objectStore("messages").index("ts").getAll());
+      const counts = new Map<string, number>();
+      const items: ChatItem[] = [];
+      for (let i = all.length - 1; i >= 0; i--) {
+        const item = all[i];
+        if (!isChatItem(item)) continue;
+        const key = keyOf(item);
+        const count = (counts.get(key) ?? 0) + 1;
+        counts.set(key, count);
+        if (count <= perKey) items.push(item);
+      }
+      return items.reverse();
     }),
     clearMessages: () => run("messages", "readwrite", async (tx) => {
       await result(tx.objectStore("messages").clear());

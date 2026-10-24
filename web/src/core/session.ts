@@ -35,7 +35,7 @@ export interface Session {
   getState(): SessionState;
   subscribe(cb: (s: SessionState) => void): () => void;
   onMessages(cb: (items: ChatItem[]) => void): () => void;
-  loadHistory(limit: number): Promise<ChatItem[]>;
+  loadHistory(perKey: number, keyOf: (item: ChatItem) => string): Promise<ChatItem[]>;
   // character picks which of our characters a relayed tell goes out from.
   send(channel: ChatChannel, text: string, target?: string, character?: string): Promise<SendResult>;
   setMuted(channels: ChatChannel[]): Promise<void>;
@@ -462,8 +462,8 @@ export async function createSession(deps: SessionDeps): Promise<Session> {
       return () => messageListeners.delete(cb);
     },
 
-    async loadHistory(limit) {
-      const items = await deps.store.loadMessages(limit);
+    async loadHistory(perKey, keyOf) {
+      const items = await deps.store.loadRecent(perKey, keyOf);
       for (const item of items) shownIds.add(item.id);
       return items;
     },
