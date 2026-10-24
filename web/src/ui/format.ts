@@ -97,6 +97,16 @@ export function dayLabel(ts: number): string {
   return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
 
+export function listTime(ts: number, now = Date.now()): string {
+  const d = new Date(ts);
+  const today = new Date(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return timeOfDay(ts);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 export function defaultDeviceName(): string {
   const ua = navigator.userAgent;
   if (/iPhone/.test(ua)) return "iPhone";

@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AccountView } from "../core/accounts";
-import { EMPTY_CHANNEL_PREFS, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
-import { subRows } from "./channels";
-import { accountLink, chatTarget, initialPlace, parseLink, parsePlace, parseViews, pickTarget, remember, resolveChannel, resolveRow, validPlace } from "./place";
+import { accountLink, chatTarget, initialPlace, parseLink, parsePlace, parseViews, remember, validPlace } from "./place";
 
 const acct = (deviceId: string, character?: string, status = "online", accountStatus = "active") =>
   ({ deviceId, label: deviceId, character, status: accountStatus, unread: 0, state: { status } }) as unknown as AccountView;
 const chars = (a: AccountView) => (a.character ? [a.character, "Zed Alt"] : []);
-
-const fc: CustomChannel = { id: "fc", character: "Alpha Beta", name: "FC", channels: ["freeCompany"] };
-const social: CustomChannel = { id: "s", character: "Alpha Beta", name: "Social", channels: ["freeCompany", "say"] };
-const prefs: ChannelPrefs = { ...EMPTY_CHANNEL_PREFS, custom: [fc, social] };
 
 describe("stored place", () => {
   it("reads a place and ignores junk", () => {
@@ -84,41 +78,10 @@ describe("links", () => {
 });
 
 describe("chatTarget", () => {
-  it("opens tells in Tells and chat types in the first channel showing them", () => {
-    expect(chatTarget(prefs, "t|Alpha Beta|A B@W")).toEqual({ character: "Alpha Beta", channelId: "tells", rowKey: "t|Alpha Beta|A B@W" });
-    expect(chatTarget(prefs, "c|Alpha Beta|say")).toEqual({ character: "Alpha Beta", channelId: "s", rowKey: "c|Alpha Beta|say" });
-  });
-
-  it("still finds the character for a chat type no channel shows", () => {
-    expect(chatTarget(prefs, "c|Alpha Beta|yell")).toEqual({ character: "Alpha Beta", channelId: undefined, rowKey: "c|Alpha Beta|yell" });
-  });
-
-  it("ignores keys that aren't messages", () => {
-    expect(chatTarget(prefs, "x|Alpha Beta|fc")).toBeNull();
-    expect(chatTarget(prefs, "nonsense")).toBeNull();
-  });
-
-  it("remembers the target's channel and row", () => {
-    const picks = pickTarget({ server: {}, sub: {} }, "a", { character: "Alpha Beta", channelId: "s", rowKey: "c|Alpha Beta|say" });
-    expect(picks).toEqual({ server: { "a|Alpha Beta": "s" }, sub: { "a|x|Alpha Beta|s": "c|Alpha Beta|say" } });
-    const none = { server: {}, sub: {} };
-    expect(pickTarget(none, "a", { character: "Alpha Beta", rowKey: "c|Alpha Beta|yell" })).toBe(none);
-  });
-});
-
-describe("resolving views", () => {
-  const tells: CustomChannel = { id: "tells", character: "Alpha Beta", name: "Tells", channels: ["tell"] };
-
-  it("falls back to Tells when the open channel was deleted", () => {
-    expect(resolveChannel([tells, fc], "s")).toBe(tells);
-    expect(resolveChannel([tells, fc], "fc")).toBe(fc);
-    expect(resolveChannel([], "fc")).toBeNull();
-  });
-
-  it("falls back to the first row", () => {
-    const rows = subRows(social, []);
-    expect(resolveRow(rows, "c|Alpha Beta|say")).toBe(rows[2]);
-    expect(resolveRow(rows, "c|Alpha Beta|yell")).toBe(rows[0]);
-    expect(resolveRow(rows, undefined)).toBe(rows[0]);
+  it("reads the character out of a notification chat key", () => {
+    expect(chatTarget("t|Alpha Beta|A B@W")).toEqual({ character: "Alpha Beta", chat: "t|Alpha Beta|A B@W" });
+    expect(chatTarget("c|Alpha Beta|say")).toEqual({ character: "Alpha Beta", chat: "c|Alpha Beta|say" });
+    expect(chatTarget("x|Alpha Beta|fc")).toBeNull();
+    expect(chatTarget("junk")).toBeNull();
   });
 });

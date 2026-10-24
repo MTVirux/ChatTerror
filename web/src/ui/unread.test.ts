@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FeedItem } from "../core/accounts";
 import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "../core/channelPrefs";
-import { characterUnread, createUnreadTracker, viewUnread } from "./unread";
+import { characterUnread, createUnreadTracker, rowUnread } from "./unread";
 
 function fakeManager() {
   let cb: ((items: FeedItem[]) => void) | undefined;
@@ -105,33 +105,14 @@ describe("unread tracker", () => {
   });
 });
 
-describe("viewUnread", () => {
-  const prefs: ChannelPrefs = {
-    ...EMPTY_CHANNEL_PREFS,
-    custom: [{ id: "s", character: "Alpha Beta", name: "Social", channels: ["party", "tell"] }],
-    muted: ["t|Alpha Beta|E F@W"],
-  };
-
-  it("counts a view's unread and its tells, leaving muted ones out", () => {
+describe("rowUnread", () => {
+  const prefs: ChannelPrefs = { ...EMPTY_CHANNEL_PREFS, custom: [{ id: "s", character: "Alpha Beta", name: "Social", channels: ["party", "tell"] }], muted: ["x|Alpha Beta|s"] };
+  it("counts a row's own unread even when muted, and never tells in a group", () => {
     const m = fakeManager();
     const t = createUnreadTracker(m);
-    m.push([
-      item("a"),
-      item("a", { channel: "tell", sender: "C D", senderWorld: "W" }),
-      item("a", { channel: "tell", sender: "E F", senderWorld: "W" }),
-      item("a", { channel: "say" }),
-    ]);
-    expect(viewUnread(t, "a", prefs, "x|Alpha Beta|s")).toEqual({ count: 2, tells: 1 });
-    expect(viewUnread(t, "a", prefs, "t|Alpha Beta|E F@W")).toEqual({ count: 0, tells: 0 });
-    expect(t.count("a", (k) => k === "t|Alpha Beta|E F@W")).toBe(1);
-  });
-
-  it("shows nothing for a muted channel", () => {
-    const m = fakeManager();
-    const t = createUnreadTracker(m);
-    m.push([item("a"), item("a", { channel: "tell", sender: "C D", senderWorld: "W" })]);
-    const muted = { ...prefs, muted: ["x|Alpha Beta|s"] };
-    expect(viewUnread(t, "a", muted, "x|Alpha Beta|s")).toEqual({ count: 0, tells: 0 });
+    m.push([item("a"), item("a"), item("a", { channel: "tell", sender: "C D", senderWorld: "W" })]);
+    expect(rowUnread(t, "a", prefs, "x|Alpha Beta|s")).toBe(2);
+    expect(rowUnread(t, "a", prefs, "t|Alpha Beta|C D@W")).toBe(1);
   });
 });
 
@@ -149,7 +130,7 @@ describe("characterUnread", () => {
     expect(characterUnread(t, "a", EMPTY_CHANNEL_PREFS, "Alpha Beta")).toEqual({ unread: false, tells: 0 });
   });
 
-  it("counts tells, which the Tells channel always shows", () => {
+  it("always counts tells", () => {
     const m = fakeManager();
     const t = createUnreadTracker(m);
     m.push([tell("C D")]);
