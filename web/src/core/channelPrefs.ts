@@ -3,7 +3,7 @@ import { isChatChannel, type ChannelNotifyPref, type ChatChannel } from "./proto
 export type NotifyLevel = "all" | "none";
 export type NotifyChoice = NotifyLevel | "default";
 
-// "tell" in channels stands for every tell of that character.
+// "tell" in channels is legacy and ignored.
 export interface CustomChannel {
   id: string;
   character: string;
@@ -28,7 +28,6 @@ export const EMPTY_CHANNEL_PREFS: ChannelPrefs = { pinned: [], muted: [], notify
 export const TELLS_ID = "tells";
 
 const DEFAULT_CHANNELS: Omit<CustomChannel, "character">[] = [
-  { id: TELLS_ID, name: "Tells", channels: ["tell"] },
   { id: "fc", name: "FC", channels: ["freeCompany"] },
   { id: "party", name: "Party", channels: ["party"] },
 ];
@@ -38,14 +37,6 @@ export function withDefaultChannels(prefs: ChannelPrefs, character: string): Cha
   const taken = (id: string) => prefs.custom.some((c) => c.character === character && c.id === id);
   const defaults = DEFAULT_CHANNELS.filter((c) => !taken(c.id)).map((c) => ({ ...c, character }));
   return { ...prefs, custom: [...defaults, ...prefs.custom], seeded: [...prefs.seeded, character] };
-}
-
-// Tell partners live under the Tells channel, so every character keeps one that shows tells.
-export function withTells(prefs: ChannelPrefs, character: string): ChannelPrefs {
-  const tells = prefs.custom.find((c) => c.character === character && c.id === TELLS_ID);
-  if (tells?.channels.includes("tell")) return prefs;
-  if (tells) return saveCustom(prefs, { ...tells, channels: ["tell", ...tells.channels] });
-  return { ...prefs, custom: [{ id: TELLS_ID, character, name: "Tells", channels: ["tell"] }, ...prefs.custom] };
 }
 
 // Prefs from before custom channels lack the newer fields and may hold "c|" keys for rows that no longer exist.
@@ -114,20 +105,9 @@ export function savedOrder(prefs: ChannelPrefs, character: string): string[] | u
   return Object.hasOwn(prefs.order, character) ? prefs.order[character] : undefined;
 }
 
-// keys is the order the rows are shown in; the result keeps that order with key swapped by one step.
-export function moveChannel(prefs: ChannelPrefs, character: string, keys: string[], key: string, step: -1 | 1): ChannelPrefs {
-  const from = keys.indexOf(key);
-  const to = from + step;
-  if (from < 0 || to < 0 || to >= keys.length) return prefs;
-  const next = [...keys];
-  [next[from], next[to]] = [next[to], next[from]];
-  return { ...prefs, order: { ...prefs.order, [character]: next } };
-}
-
 function isMember(custom: CustomChannel, key: string): boolean {
   const [kind, character, rest] = key.split("|");
   if (character !== custom.character || !rest) return false;
-  if (kind === "t") return custom.channels.includes("tell");
   return kind === "c" && custom.channels.includes(rest as ChatChannel);
 }
 
