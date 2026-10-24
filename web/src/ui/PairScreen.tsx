@@ -60,7 +60,8 @@ export function PairScreen({ revoked, pairAgain, onPair, onBack }: {
     const fromLink = parsePairCode(location.href);
     if (fromLink) setCode(formatPairCode(fromLink));
     else setError(codeError(location.href));
-    history.replaceState(null, "", location.pathname + location.search);
+    // Keeps the state, which may already be the back entry for this screen.
+    history.replaceState(history.state, "", location.pathname + location.search);
   }, []);
 
   async function submit(event: Event) {

@@ -3,6 +3,7 @@ import type { AccountManager, AccountView } from "../core/accounts";
 import { channelIncludes, customKey, EMPTY_CHANNEL_PREFS, isItemMuted, saveCustom, withTells, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
 import { AccountSettings } from "./AccountSettings";
 import { AppSettings } from "./AppSettings";
+import { useBackClose } from "./backStack";
 import { ChannelList } from "./ChannelList";
 import { ChannelMenu, type MenuTarget } from "./ChannelMenu";
 import { ChannelRail } from "./ChannelRail";
@@ -105,6 +106,13 @@ export function App({ manager }: { manager: AccountManager }) {
   const [notified, setNotified] = useState(0);
   const place = validPlace(saved, accounts, charactersOf);
 
+  function closePairing() {
+    setAdding(false);
+    setPairingAgain(false);
+  }
+
+  useBackClose(closePairing, adding && !!place);
+
   useEffect(() => {
     if (location.hash.startsWith("#account=")) history.replaceState(null, "", location.pathname + location.search);
     forgetOldKeys();
@@ -153,18 +161,7 @@ export function App({ manager }: { manager: AccountManager }) {
   }
 
   if (!place) return <PairScreen onPair={pair} />;
-  if (adding) {
-    return (
-      <PairScreen
-        pairAgain={pairingAgain}
-        onPair={pair}
-        onBack={() => {
-          setAdding(false);
-          setPairingAgain(false);
-        }}
-      />
-    );
-  }
+  if (adding) return <PairScreen pairAgain={pairingAgain} onPair={pair} onBack={closePairing} />;
 
   return (
     <Workspace
@@ -255,6 +252,13 @@ function Workspace({ manager, accounts, place, setPlace, picks, setPicks, awaite
   const shownKey = loaded && row ? row.key : null;
   const includes = useMemo(() => (shownKey ? (key: string) => channelIncludes(prefs, shownKey, key) : null), [shownKey, prefs]);
   const unreadCount = useMemo(() => (includes ? unread.count(deviceId, includes) : 0), [deviceId, includes]);
+
+  // Client settings open on top of app settings, so back steps out to them first.
+  useBackClose(() => setSettings(null), !!settings);
+  useBackClose(() => setSettings({ app: true }), !!settings && "deviceId" in settings);
+  useBackClose(() => setSwitching(false), switching);
+  useBackClose(() => setMenu(null), !!menu);
+  useBackClose(() => setEditing(null), !!editing);
 
   const covered = !!settings || switching || !!menu || !!editing;
   const watching = !drawerOpen && !covered;
