@@ -70,3 +70,27 @@ export function CheckIcon() {
     </svg>
   );
 }
+
+export function MoreIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 5h.01M12 12h.01M12 19h.01" />
+    </svg>
+  );
+}
+
+export function PinIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M8 3h8M9 3v6l-3 4v2h12v-2l-3-4V3M12 15v6" />
+    </svg>
+  );
+}
+
+export function MutedIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M11 5L6 9H3v6h3l5 4V5zM16 9a4 4 0 0 1 0 6M3 3l18 18" />
+    </svg>
+  );
+}
