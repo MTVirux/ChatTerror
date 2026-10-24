@@ -5,6 +5,7 @@ import { mergeFeed } from "./feed";
 
 const HISTORY_PER_CHAT = 300;
 const MAX_PER_CHAT = 600;
+const MAX_IN_MEMORY = 10000;
 
 interface Feed {
   key: string;
@@ -23,7 +24,7 @@ export function useFeed(manager: AccountManager, deviceId: string, epoch: number
       if (!alive) return;
       setFeed((prev) => {
         const same = prev.key === key;
-        return { key, items: mergeFeed(same ? prev.items : [], list, MAX_PER_CHAT, itemKey), loaded: loaded || (same && prev.loaded) };
+        return { key, items: mergeFeed(same ? prev.items : [], list, MAX_PER_CHAT, itemKey, MAX_IN_MEMORY), loaded: loaded || (same && prev.loaded) };
       });
     };
     const off = manager.onMessages((incoming) => {

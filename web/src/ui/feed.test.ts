@@ -18,4 +18,14 @@ describe("mergeFeed", () => {
     const busy = [it_("a", "b1", 1), it_("a", "b2", 2), it_("a", "b3", 3)];
     expect(mergeFeed([quiet], busy, 2, (i) => i.channel).map((i) => i.id)).toEqual(["q1", "b2", "b3"]);
   });
+  it("caps the whole feed to the newest overall", () => {
+    const party = (id: string, ts: number) => it_("a", id, ts, { channel: "party" });
+    const yell = (id: string, ts: number) => it_("a", id, ts, { channel: "yell" });
+    const items = [it_("a", "s1", 1), party("p1", 2), yell("y1", 3), it_("a", "s2", 4), party("p2", 5), yell("y2", 6)];
+    expect(mergeFeed([], items, 2, (i) => i.channel, 4).map((i) => i.id)).toEqual(["y1", "s2", "p2", "y2"]);
+  });
+  it("returns the same list when nothing is new", () => {
+    const existing = [it_("a", "1", 1)];
+    expect(mergeFeed(existing, [it_("a", "1", 1)], 10, () => "all")).toBe(existing);
+  });
 });

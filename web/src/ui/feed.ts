@@ -4,7 +4,7 @@ export function feedKey(item: FeedItem): string {
   return `${item.deviceId}:${item.id}`;
 }
 
-export function mergeFeed(existing: FeedItem[], incoming: FeedItem[], maxPerKey: number, keyOf: (item: FeedItem) => string): FeedItem[] {
+export function mergeFeed(existing: FeedItem[], incoming: FeedItem[], maxPerKey: number, keyOf: (item: FeedItem) => string, maxTotal = Infinity): FeedItem[] {
   const seen = new Set(existing.map(feedKey));
   const fresh = incoming.filter((i) => !seen.has(feedKey(i)) && seen.add(feedKey(i)));
   if (fresh.length === 0) return existing;
@@ -16,5 +16,5 @@ export function mergeFeed(existing: FeedItem[], incoming: FeedItem[], maxPerKey:
     counts.set(key, count);
     return count <= maxPerKey;
   });
-  return kept.reverse();
+  return kept.slice(0, maxTotal).reverse();
 }

@@ -51,6 +51,11 @@ describe("storage", () => {
     expect((await store.loadRecent(5, (m) => m.channel)).map((m) => m.id)).toEqual(["a"]);
   });
 
+  it("does not let a malformed message take a slot per key", async () => {
+    await store.addMessages([item("a", 1), { ...item("odd", 2), character: 5 as unknown as string }], 10);
+    expect((await store.loadRecent(1, (m) => m.channel)).map((m) => m.id)).toEqual(["a"]);
+  });
+
   it("clears messages", async () => {
     await store.addMessages([item("a", 1)], 10);
     await store.clearMessages();
