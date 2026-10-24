@@ -115,6 +115,7 @@ function Row({ row, selected, count, onOpen, onMenu }: {
 }) {
   const press = useLongPress(onMenu, onOpen);
   const unread = count > 0;
+  const notes = [row.pinned && "pinned", row.muted && "muted", unread && `${count} unread`].filter(Boolean);
   return (
     <button
       class={`chat-row${selected ? " selected" : ""}${unread ? " unread" : ""}${row.muted ? " muted" : ""}`}
@@ -140,7 +141,8 @@ function Row({ row, selected, count, onOpen, onMenu }: {
           <span class="chat-row-preview">{previewText(row)}</span>
           {row.pinned && <PinIcon />}
           {row.muted && <MutedIcon />}
-          {unread && <span class="chat-row-badge" aria-label={`${count} unread`}>{count > 99 ? "99+" : count}</span>}
+          {unread && <span class="chat-row-badge" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
+          {notes.length > 0 && <span class="sr-only">, {notes.join(", ")}</span>}
         </span>
       </span>
     </button>
