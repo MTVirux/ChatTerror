@@ -179,6 +179,22 @@ public class DeviceSessionTests
     }
 
     [Fact]
+    public void Alerts_DefaultWhenNotGiven()
+    {
+        var session = new DeviceSession("dev1", pluginKey, []);
+
+        Assert.Equal(AlertPrefs.Default, session.Alerts);
+    }
+
+    [Fact]
+    public void Alerts_FromConstructor_Kept()
+    {
+        var session = new DeviceSession("dev1", pluginKey, [], alerts: new AlertPrefs(false, true, 30));
+
+        Assert.Equal(new AlertPrefs(false, true, 30), session.Alerts);
+    }
+
+    [Fact]
     public void Muted_IsCopyOfInput()
     {
         var input = new List<ChatChannel> { ChatChannel.Say };

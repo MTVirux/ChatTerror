@@ -23,12 +23,14 @@ public sealed class DeviceSession
         byte[] sharedKey,
         IReadOnlyCollection<ChatChannel> muted,
         long lastSeenSeq = 0,
-        IReadOnlyCollection<ChannelPref>? overrides = null)
+        IReadOnlyCollection<ChannelPref>? overrides = null,
+        AlertPrefs? alerts = null)
     {
         DeviceId = deviceId;
         this.sharedKey = sharedKey;
         Muted = new HashSet<ChatChannel>(muted);
         Overrides = new List<ChannelPref>(overrides ?? []);
+        Alerts = alerts ?? AlertPrefs.Default;
         guard = new SeqGuard(lastSeenSeq);
     }
 
@@ -39,6 +41,8 @@ public sealed class DeviceSession
     public HashSet<ChatChannel> Muted { get; }
 
     public List<ChannelPref> Overrides { get; }
+
+    public AlertPrefs Alerts { get; set; }
 
     public string Seal(Payload p) =>
         Payloads.SealPayload(sharedKey, Direction.PluginToDevice, p with { Seq = counter.Next() });
