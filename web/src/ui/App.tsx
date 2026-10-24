@@ -96,8 +96,7 @@ export function App({ manager }: { manager: AccountManager }) {
   const pending = usePendingSends(sends);
   const unread = useUnreadTracker(manager);
   const [saved, setPlace] = useState(() => initialPlace(manager.list(), location.hash, stored(PLACE_KEY), charactersOf));
-  const [linked] = useState(() => linkedChat(manager.list()));
-  const awaited = useRef<string | null>(linked);
+  const [awaited] = useState(() => ({ current: linkedChat(manager.list()) }));
   const [adding, setAdding] = useState(() => location.hash.startsWith("#pair="));
   const [pairingAgain, setPairingAgain] = useState(false);
   const [notified, setNotified] = useState(0);
@@ -214,11 +213,17 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
 
   useEffect(() => store(LAST_CHAT_KEY, JSON.stringify(lastChat)), [lastChat]);
 
-  // The open chat belongs to one character, so another character starts on its list, or on its last chat when wide.
   const here = viewKey(deviceId, character ?? "");
-  const open = opened?.place === here ? opened.key : wide ? lastChat[here] ?? null : null;
   const rows = useMemo(() => (character ? chatRows(prefs, character, items) : []), [prefs, character, items]);
+  // A notification's chat waits for history, since the first group showing its message goes by list order.
+  const notice = awaited.current;
+  const noticed = notice && loaded && character ? chatForKey(rows, prefs, notice) : null;
+  // The open chat belongs to one character; another one starts on its list, or on its last chat when wide.
+  const open = notice ? noticed : opened?.place === here ? opened.key : wide ? lastChat[here] ?? null : null;
   const chat = character ? findChat(rows, character, open, prefs) : null;
+  const phoneChat = !wide && !!chat;
+  const listRef = useRef<HTMLDivElement>(null);
+  const opener = useRef<Element | null>(null);
 
   function show(key: string | null) {
     setOpened({ place: here, key });
@@ -244,7 +249,7 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
   useBackClose(() => setMenu(null), !!menu);
   useBackClose(() => setNewChat(false), newChat);
   useBackClose(() => setEditing(null), !!editing);
-  useBackClose(() => show(null), !wide && !!chat);
+  useBackClose(() => show(null), phoneChat);
 
   const covered = !!settings || switching || !!menu || !!editing || newChat;
 
@@ -256,13 +261,23 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
 
   // The phone's chat screen also closes on Escape, unless a sheet over it takes it.
   useEffect(() => {
-    if (wide || !chat || covered) return;
+    if (!phoneChat || covered) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") show(null);
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [wide, !!chat, covered, here]);
+  }, [phoneChat, covered, here]);
+
+  // The phone hides the list under the chat, so focus goes back to the tapped row, or the list, when the chat closes.
+  useEffect(() => {
+    if (!phoneChat) return;
+    return () => {
+      const row = opener.current;
+      opener.current = null;
+      (row instanceof HTMLElement && listRef.current?.contains(row) ? row : listRef.current)?.focus();
+    };
+  }, [phoneChat]);
 
   // A notification tap lands in the chat, not behind a sheet.
   useEffect(() => {
@@ -273,13 +288,14 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
     setSwitching(false);
   }, [notified]);
 
-  // Waits for history, since the first group showing the message goes by list order.
+  // Leaving a character forgets its open chat. Declared before the notice effect, so a notification landing on another character still opens.
+  useEffect(() => setOpened(null), [here]);
+
   useEffect(() => {
-    const key = awaited.current;
-    if (!key || !loaded || !character) return;
+    if (!notice || !loaded || !character) return;
     awaited.current = null;
-    show(chatForKey(rows, prefs, key));
-  }, [notified, loaded, here]);
+    show(noticed);
+  }, [notice, loaded, here]);
 
   // A removed client has no settings left; its place shows Remove and Pair again instead.
   function openClientSettings(id: string) {
@@ -342,29 +358,14 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
     );
   }
 
-  function newChatPage(character: string) {
-    const people = newChatPeople(account.state.contacts, partnersOf(items, character, []), character);
-    return (
-      <NewChat
-        character={character}
-        friends={people.friends}
-        recent={people.recent}
-        onOpenDm={(partner) => {
-          setNewChat(false);
-          show(`t|${character}|${partner}`);
-        }}
-        onNewGroup={() => setEditing({})}
-        onClose={() => setNewChat(false)}
-      />
-    );
-  }
-
   // The list stays mounted under a phone's chat screen, so going back keeps its scroll.
+  // A notification remounts it, which also closes its options menu.
   return (
     <>
       <div class={`app${wide ? " wide" : ""}`}>
-        <div class="app-list" hidden={!wide && !!chat}>
+        <div ref={listRef} class="app-list" tabIndex={-1} hidden={phoneChat}>
           <ChatList
+            key={notified}
             me={me}
             otherTells={otherTells}
             rows={rows}
@@ -372,7 +373,10 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
             canStart={!!character}
             body={listBody()}
             unreadOf={(r) => rowUnread(unread, deviceId, prefs, r.key)}
-            onOpen={(r) => show(r.key)}
+            onOpen={(r) => {
+              opener.current = document.activeElement;
+              show(r.key);
+            }}
             onRowMenu={(r) => setMenu(menuFor(r))}
             onSwitch={() => setSwitching(true)}
             onSettings={() => setSettings({ app: true })}
@@ -400,7 +404,18 @@ function Workspace({ manager, accounts, place, setPlace, awaited, sends, pending
         />
       )}
       {menu && <ChannelMenu target={menu} prefs={prefs} onChange={save} onEdit={(c) => setEditing({ custom: c })} onClose={() => setMenu(null)} />}
-      {newChat && character && newChatPage(character)}
+      {newChat && character && (
+        <NewChat
+          character={character}
+          {...newChatPeople(account.state.contacts, partnersOf(items, character, []), character)}
+          onOpenDm={(partner) => {
+            setNewChat(false);
+            show(`t|${character}|${partner}`);
+          }}
+          onNewGroup={() => setEditing({})}
+          onClose={() => setNewChat(false)}
+        />
+      )}
       {editing && character && (
         <GroupEditor
           character={character}

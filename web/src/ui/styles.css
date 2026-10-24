@@ -566,6 +566,15 @@ p {
   --bar: var(--sidebar);
 }
 
+/* There's no back button before the avatar here. */
+.app.wide .chat-head {
+  padding-left: 16px;
+}
+
+.app-list:focus {
+  outline: none;
+}
+
 /* Avatars, badges and channel marks */
 
 .dm-avatar,
@@ -1251,6 +1260,11 @@ p {
   font-size: 0.85rem;
 }
 
+/* The plain accent is too dark to read on the dark log. */
+.send-error .link {
+  color: color-mix(in srgb, var(--accent) 60%, var(--text));
+}
+
 /* Needs a positioned parent inside the log, like .bubble, or it escapes the scroll container. */
 .sr-only {
   position: absolute;
@@ -1754,18 +1768,16 @@ a.settings-row {
   font-weight: 700;
 }
 
+/* Covers the page body's side and bottom padding, so the bar spans the page and sits on its bottom edge. */
 .page-action {
   position: sticky;
-  bottom: calc(16px + var(--safe-bottom));
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
-  margin-top: 24px;
-  pointer-events: none;
-}
-
-.page-action .btn {
-  pointer-events: auto;
-  box-shadow: var(--shadow);
+  margin: 24px -16px calc(-32px - var(--safe-bottom));
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--page);
 }
 
 /* Channel menu */
