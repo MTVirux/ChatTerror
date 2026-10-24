@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatRow } from "./chatList";
+import type { ChatRow } from "./chatRows";
 import { blockedReason, composerTab, pickable, preferredChannel, type Tab } from "./Composer";
 
 describe("composer channel", () => {

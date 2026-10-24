@@ -25,8 +25,6 @@ export interface ChannelPrefs {
 
 export const EMPTY_CHANNEL_PREFS: ChannelPrefs = { pinned: [], muted: [], notify: {}, custom: [], order: {}, seeded: [] };
 
-export const TELLS_ID = "tells";
-
 const DEFAULT_CHANNELS: Omit<CustomChannel, "character">[] = [
   { id: "fc", name: "FC", channels: ["freeCompany"] },
   { id: "party", name: "Party", channels: ["party"] },

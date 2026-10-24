@@ -2,7 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useBackClose } from "./backStack";
 import { customColor } from "./channels";
-import { previewText, type ChatRow } from "./chatList";
+import { previewText, type ChatRow } from "./chatRows";
 import { listTime } from "./format";
 import { MoreIcon, MutedIcon, PinIcon, PlusIcon } from "./icons";
 import { initials, senderColor } from "./identity";

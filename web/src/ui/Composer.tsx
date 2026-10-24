@@ -3,7 +3,7 @@ import type { ChatChannel, TellContact } from "../core/protocol";
 import type { SessionState, SessionStatus } from "../core/session";
 import { findContact } from "../core/tells";
 import { channelSlug } from "./channels";
-import type { ChatRow } from "./chatList";
+import type { ChatRow } from "./chatRows";
 import { byteLength, channelColor, channelLabel, sendBlockedReason, sendPrefix, TELL_TARGET } from "./format";
 
 // latest is the channel of the newest message in the view, its default target.

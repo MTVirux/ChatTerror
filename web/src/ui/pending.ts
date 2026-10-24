@@ -1,6 +1,6 @@
 import type { AccountManager } from "../core/accounts";
 import type { ChatChannel } from "../core/protocol";
-import type { ChatRow } from "./chatList";
+import type { ChatRow } from "./chatRows";
 import { sendErrorText } from "./format";
 
 export interface PendingSend {

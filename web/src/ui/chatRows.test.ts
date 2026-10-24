@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FeedItem } from "../core/accounts";
 import { EMPTY_CHANNEL_PREFS, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
-import { chatForKey, chatRows, dmRow, findChat, previewText, visibleGroups } from "./chatList";
+import { chatForKey, chatRows, dmRow, findChat, previewText, visibleGroups } from "./chatRows";
 
 function msg(over: Partial<FeedItem>): FeedItem {
   return { deviceId: "a", id: Math.random().toString(), ts: 1, channel: "party", sender: "Y'shtola Rhul", senderWorld: "Twintania", text: "hi", character: "Alpha Beta", outgoing: false, ...over };
@@ -41,6 +41,10 @@ describe("chatRows", () => {
     const row = chatRows(pinned, "Alpha Beta", [])[0];
     expect(row).toMatchObject({ key: "t|Alpha Beta|Kai Rho@Phoenix", kind: "dm", name: "Kai Rho", world: "Phoenix", pinned: true });
     expect(row.last).toBeUndefined();
+  });
+
+  it("never takes a legacy group's last message from tells", () => {
+    expect(chatRows(prefs, "Alpha Beta", items).find((r) => r.name === "Raid")?.last?.channel).toBe("linkshell1");
   });
 
   it("marks muted rows", () => {

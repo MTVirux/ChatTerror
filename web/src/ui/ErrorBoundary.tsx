@@ -1,9 +1,9 @@
 import { Component, type ComponentChildren } from "preact";
-import { PLACE_KEY, SERVER_KEY, SUB_KEY } from "./place";
+import { LAST_CHAT_KEY, PLACE_KEY } from "./place";
 
 function resetView() {
   try {
-    for (const key of [PLACE_KEY, SERVER_KEY, SUB_KEY]) localStorage.removeItem(key);
+    for (const key of [PLACE_KEY, LAST_CHAT_KEY]) localStorage.removeItem(key);
   } catch {
     // Blocked storage; reloading is all that is left to try.
   }

@@ -1,7 +1,7 @@
 import type { AccountManager } from "../core/accounts";
 import { channelIncludes, customKey, isItemMuted, type ChannelPrefs } from "../core/channelPrefs";
 import { itemKey, keyCharacter } from "./channels";
-import { visibleGroups } from "./chatList";
+import { visibleGroups } from "./chatRows";
 
 export interface UnreadSummary {
   unread: boolean;

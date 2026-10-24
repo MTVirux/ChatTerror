@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AccountManager } from "../core/accounts";
 import { EMPTY_CHANNEL_PREFS, type ChannelPrefs } from "../core/channelPrefs";
 import type { SendResult } from "../core/session";
-import { chatRows, dmRow } from "./chatList";
+import { chatRows, dmRow } from "./chatRows";
 import { createPendingSends, pendingIn, type PendingSend } from "./pending";
 
 function fakeManager(results: SendResult[]) {

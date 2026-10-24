@@ -1,6 +1,5 @@
 :root {
   color-scheme: light;
-  --rail: #e3e5e8;
   --sidebar: #f2f3f5;
   --chat: #ffffff;
   --hover: #e8e9eb;
@@ -50,7 +49,6 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --rail: #1e1f22;
     --sidebar: #2b2d31;
     --chat: #313338;
     --hover: #35373c;
@@ -95,7 +93,6 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --rail: #1e1f22;
   --sidebar: #2b2d31;
   --chat: #313338;
   --hover: #35373c;
@@ -357,7 +354,7 @@ p {
   text-transform: uppercase;
 }
 
-/* Pending and removed accounts, on the chat side and inside the channel list */
+/* Pending and removed accounts, in the chat pane and inside the chat list */
 
 .status-panel {
   display: flex;
@@ -524,230 +521,53 @@ p {
   }
 }
 
-/* App shell and drawer */
+/* App layout */
 
-.shell {
-  position: relative;
+.app {
   height: 100%;
+  display: flex;
   overflow: hidden;
   background: var(--chat);
 }
 
-.shell-main {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.shell-main > .chat,
-.shell-main > .status-panel {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
-.shell-main > .status-panel {
-  overflow-y: auto;
-}
-
-.menu-btn.floating {
-  position: absolute;
-  top: calc(6px + var(--safe-top));
-  left: 4px;
-  z-index: 5;
-  color: var(--text);
-}
-
-.drawer-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  background: rgb(0 0 0 / 0.5);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease-out;
-}
-
-.drawer-backdrop.open {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.drawer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 21;
-  width: min(calc(100% - 48px), 420px);
-  display: flex;
-  transform: translateX(-100%);
-  visibility: hidden;
-  transition: transform 0.22s ease-out, visibility 0s linear 0.22s;
-  box-shadow: var(--shadow);
-}
-
-.drawer.open {
-  transform: none;
-  visibility: visible;
-  transition: transform 0.22s ease-out;
-}
-
-.drawer:focus {
-  outline: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drawer,
-  .drawer.open,
-  .drawer-backdrop {
-    transition: none;
-  }
-}
-
-.drawer-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.drawer-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-.shell.docked {
-  display: flex;
-}
-
-.shell.docked .shell-main {
+.app-list,
+.app-chat {
   flex: 1;
   min-width: 0;
 }
 
-.shell.docked .drawer {
-  position: static;
-  order: -1;
-  flex: none;
-  width: 340px;
-  transform: none;
-  visibility: visible;
-  transition: none;
-  box-shadow: none;
-}
-
-.shell.docked .drawer-backdrop,
-.shell.docked .menu-btn {
-  display: none;
-}
-
-.shell.docked .chat-head {
-  min-height: calc(53px + var(--safe-top));
-  padding-left: 16px;
-}
-
-.drawer.narrow,
-.shell.docked .drawer.narrow {
-  width: 72px;
-}
-
-/* Channel rail */
-
-.rail {
-  flex: none;
-  width: 72px;
+.app-chat {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: calc(12px + var(--safe-top)) 0 12px;
+}
+
+.app-chat > .chat,
+.app-chat > .status-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-chat > .status-panel {
   overflow-y: auto;
-  scrollbar-width: none;
-  background: var(--rail);
 }
 
-.rail::-webkit-scrollbar {
-  display: none;
+.app-empty {
+  margin: auto;
 }
 
-.rail-item {
-  position: relative;
+.app.wide .app-list {
   flex: none;
-  width: 72px;
-  display: flex;
-  justify-content: center;
+  width: 380px;
+  border-right: 1px solid var(--line);
 }
 
-.rail-mark {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 4px;
-  height: 8px;
-  border-radius: 0 4px 4px 0;
-  background: var(--header-text);
-  transform: translateY(-50%);
-  transition: height 0.15s ease-out;
+/* .chat-list paints --bar itself, which also rings the avatar's dot and badge. */
+.app.wide .chat-list {
+  --bar: var(--sidebar);
 }
 
-.rail-mark.selected {
-  height: 40px;
-}
+/* Avatars, badges and channel marks */
 
-.rail-icon {
-  --c: var(--chat);
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--c);
-  color: #ffffff;
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: border-radius 0.15s ease-out, background 0.15s ease-out;
-}
-
-.rail-icon.selected {
-  border-radius: 16px;
-}
-
-.rail-icon.add {
-  color: var(--online);
-}
-
-.rail-icon.channel-icon {
-  background: color-mix(in srgb, var(--c) 22%, var(--chat));
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 45%, transparent);
-  color: var(--header-text);
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-
-.rail-icon.channel-icon svg {
-  color: var(--c);
-}
-
-.rail-icon.channel-icon.selected {
-  background: var(--c);
-  box-shadow: none;
-  color: var(--chat);
-}
-
-.rail-icon.channel-icon.selected svg {
-  color: var(--chat);
-}
-
-.rail-icon.muted:not(.selected) {
-  opacity: 0.45;
-}
-
-.rail-icon,
 .dm-avatar,
 .avatar,
 .me-avatar {
@@ -764,154 +584,6 @@ p {
   border-radius: inherit;
 }
 
-.rail-icon.revoked,
-.dm-avatar.revoked {
-  filter: grayscale(1);
-  opacity: 0.45;
-}
-
-.rail-sep {
-  flex: none;
-  width: 32px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--line);
-}
-
-.rail-badge {
-  position: absolute;
-  right: 8px;
-  bottom: -2px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border-radius: 10px;
-  background: var(--badge);
-  color: #ffffff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 20px;
-  text-align: center;
-  box-shadow: 0 0 0 3px var(--rail);
-}
-
-/* Channel list */
-
-.sidebar {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--sidebar);
-}
-
-.sidebar-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-head {
-  flex: none;
-  display: grid;
-  gap: 2px;
-  width: 100%;
-  padding: calc(12px + var(--safe-top)) 16px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: none;
-  color: var(--header-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.sidebar-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 700;
-}
-
-.sidebar-status {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.channels {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px 8px 16px;
-}
-
-.channels-empty {
-  padding: 16px 8px;
-}
-
-.channel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 40px;
-  margin-top: 2px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--muted);
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-
-.channel:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.channel.unread {
-  color: var(--header-text);
-  font-weight: 700;
-}
-
-.channel.selected {
-  background: var(--selected);
-  color: var(--header-text);
-}
-
-.channel.muted:not(.selected) {
-  opacity: 0.45;
-}
-
-.hash {
-  flex: none;
-  width: 20px;
-  color: var(--c);
-  font-size: 1.3rem;
-  font-weight: 500;
-  line-height: 1;
-  text-align: center;
-}
-
-.channel-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.channel .world {
-  font-size: 0.75rem;
-  font-weight: 400;
-}
-
 .dm-avatar {
   flex: none;
   display: grid;
@@ -923,6 +595,11 @@ p {
   color: #ffffff;
   font-size: 0.7rem;
   font-weight: 700;
+}
+
+.dm-avatar.revoked {
+  filter: grayscale(1);
+  opacity: 0.45;
 }
 
 .count-badge {
@@ -939,58 +616,14 @@ p {
   text-align: center;
 }
 
-.hash svg {
-  display: block;
-  margin: 0 auto;
-}
-
-/* Character bar */
-
-.me-bar {
-  --bar: color-mix(in srgb, var(--rail) 55%, var(--sidebar));
+.hash {
   flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px calc(6px + var(--safe-bottom));
-  background: var(--bar);
-}
-
-.me-bar .icon-btn {
-  flex: none;
-}
-
-.me {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--muted);
-  text-align: left;
-  cursor: pointer;
-}
-
-.me:hover {
-  background: var(--hover);
-}
-
-.drawer.narrow .me-bar {
-  flex-direction: column;
-}
-
-.drawer.narrow .me {
-  flex: none;
-  padding: 6px;
-}
-
-.drawer.narrow .me-text,
-.drawer.narrow .me > svg {
-  display: none;
+  width: 20px;
+  color: var(--c);
+  font-size: 1.3rem;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
 }
 
 .me-avatar-wrap {
@@ -1036,28 +669,6 @@ p {
   line-height: 18px;
   text-align: center;
   box-shadow: 0 0 0 2px var(--bar);
-}
-
-.me-text {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-}
-
-.me-name {
-  overflow: hidden;
-  color: var(--header-text);
-  font-size: 0.9rem;
-  font-weight: 700;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.me-text small {
-  overflow: hidden;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 /* Chat list */
@@ -2194,26 +1805,6 @@ a.settings-row {
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.custom-name {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
-}
-
-.custom-name:focus {
-  outline: none;
-}
-
-.custom-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
 }
 
 .channel-menu-label {

@@ -2,7 +2,7 @@ import { useMemo } from "preact/hooks";
 import type { AccountView, FeedItem } from "../core/accounts";
 import { channelIncludes, type ChannelPrefs } from "../core/channelPrefs";
 import { customColor, itemKey, showsChatTags } from "./channels";
-import type { ChatRow } from "./chatList";
+import type { ChatRow } from "./chatRows";
 import { Composer, composerTab } from "./Composer";
 import { channelLabel, STATUS_LABELS } from "./format";
 import { BackIcon, MoreIcon } from "./icons";

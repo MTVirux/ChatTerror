@@ -8,7 +8,7 @@ export type HistoryLike = {
 
 const DEPTH_KEY = "chatterrorLayers";
 
-// Each open layer (drawer, sheet, menu) owns one history entry, so the back button closes the top one instead of leaving the app.
+// Each open layer (chat, sheet, menu) owns one history entry, so the back button closes the top one instead of leaving the app.
 export function createBackStack(history: HistoryLike, defer: (fn: () => void) => void) {
   const layers: (() => void)[] = [];
   let traversing = false;
