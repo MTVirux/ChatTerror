@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { FeedItem } from "../core/accounts";
 import type { ChatItem } from "../core/protocol";
 import { feedKey } from "./feed";
-import { bubbleSide, buildRows, incomingAfter } from "./messages";
+import { bubbleSide, buildRows, incomingAfter, pendingHeads } from "./messages";
+import type { PendingSend } from "./pending";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -66,5 +67,24 @@ describe("bubbleSide", () => {
     expect(bubbleSide(item({ outgoing: true }))).toBe("out");
     expect(bubbleSide(item({}))).toBe("in");
     expect(bubbleSide(item({ sender: "" }))).toBe("system");
+  });
+});
+
+describe("pendingHeads", () => {
+  const now = new Date(2026, 0, 1, 12, 0).getTime();
+  const send = (over: Partial<PendingSend> = {}): PendingSend => ({ localId: 1, deviceId: "a", channel: "party", text: "x", ...over });
+
+  it("continues a run of own messages in the same channel within five minutes", () => {
+    expect(pendingHeads([m("1", now - 4 * MIN, { outgoing: true })], [send(), send()], now)).toEqual([false, false]);
+  });
+  it("starts a run after an incoming message, another channel, a gap or nothing", () => {
+    expect(pendingHeads([m("1", now - MIN)], [send()], now)).toEqual([true]);
+    expect(pendingHeads([m("1", now - MIN, { outgoing: true, channel: "say" })], [send()], now)).toEqual([true]);
+    expect(pendingHeads([m("1", now - 6 * MIN, { outgoing: true })], [send()], now)).toEqual([true]);
+    expect(pendingHeads([], [send(), send({ channel: "say" })], now)).toEqual([true, true]);
+  });
+  it("starts a run on a new day", () => {
+    const midnight = new Date(2026, 0, 2).getTime();
+    expect(pendingHeads([m("1", midnight - 2 * MIN, { outgoing: true })], [send()], midnight + MIN)).toEqual([true]);
   });
 });

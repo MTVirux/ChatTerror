@@ -1,10 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { AccountView, FeedItem } from "../core/accounts";
+import type { FeedItem } from "../core/accounts";
 import { feedKey } from "./feed";
 import type { ChatChannel } from "../core/protocol";
 import { channelColor, channelLabel, timeOfDay } from "./format";
 import { initials, senderColor } from "./identity";
-import { bubbleSide, buildRows, incomingAfter, type Row } from "./messages";
+import { bubbleSide, buildRows, incomingAfter, pendingHeads, type Row } from "./messages";
 import type { PendingSend } from "./pending";
 import { Portrait } from "./Portrait";
 
@@ -15,7 +15,6 @@ export function MessageList({ viewId, items, unreadCount, chatTags, showNames, p
   chatTags: boolean;
   showNames: boolean;
   pending: PendingSend[];
-  accountOf: (deviceId: string) => AccountView | undefined;
   onRetry: (p: PendingSend) => void;
   onDismiss: (localId: number) => void;
 }) {
@@ -30,6 +29,7 @@ export function MessageList({ viewId, items, unreadCount, chatTags, showNames, p
   }, [viewId, unreadCount]);
   const marked = unreadCount > 0 ? unreadCount + incomingAfter(items, anchor) : 0;
   const rows = useMemo(() => buildRows(items, marked), [items, marked]);
+  const pendingHead = pendingHeads(items, pending, Date.now());
 
   function onScroll() {
     const el = ref.current!;
@@ -75,7 +75,7 @@ export function MessageList({ viewId, items, unreadCount, chatTags, showNames, p
           <PendingRow
             key={`p-${p.localId}`}
             send={p}
-            head={i === 0 && !items.at(-1)?.outgoing}
+            head={pendingHead[i]}
             chatTag={chatTags}
             onRetry={onRetry}
             onDismiss={onDismiss}
@@ -114,18 +114,20 @@ function MessageRow({ row, chatTag, showName }: { row: Row; chatTag: boolean; sh
       {side === "system" && <div class="system-line">{tag}{item.text}{time}</div>}
       {side === "out" && (
         <div class={`bubble-row out${row.head ? " head" : ""}`}>
-          <div class="bubble">{tag}{item.text}{time}</div>
+          <div class="bubble"><span class="sr-only">You: </span>{tag}{item.text}{time}</div>
         </div>
       )}
       {side === "in" && (
         <div class={`bubble-row in${row.head ? " head" : ""}`}>
           {row.head ? <Avatar name={name} world={world} /> : <span class="avatar-gap" />}
           <div class="bubble">
-            {row.head && showName && (
-              <span class="bubble-name" style={{ color: senderColor(name) }}>
+            {row.head && showName ? (
+              <span class="bubble-name" style={{ "--c": senderColor(name) }}>
                 {name}
                 {world && <span class="world">{world}</span>}
               </span>
+            ) : (
+              <span class="sr-only">{name}: </span>
             )}
             {tag}{item.text}{time}
           </div>
@@ -146,6 +148,7 @@ function PendingRow({ send, head, chatTag, onRetry, onDismiss }: {
     <>
       <div class={`bubble-row out pending${head ? " head" : ""}${send.error ? " failed" : ""}`}>
         <div class="bubble">
+          <span class="sr-only">You: </span>
           {chatTag && <ChatTag channel={send.channel} />}
           {send.text}
           <span class="time">{send.error ? "Not sent" : "Sending..."}</span>

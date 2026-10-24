@@ -1178,45 +1178,27 @@ p {
 .day,
 .new-divider {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 16px 16px 4px;
+  justify-content: center;
+  margin: 12px 16px 4px;
+}
+
+.day span,
+.new-divider span {
+  padding: 2px 10px;
+  border-radius: 8px;
   font-size: 0.72rem;
   font-weight: 600;
 }
 
-.day {
+.day span {
+  background: var(--bubble-in);
   color: var(--muted);
 }
 
-.day::before,
-.day::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-
-.new-divider {
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
-.new-divider::before {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--badge);
-}
-
 .new-divider span {
-  padding: 0 5px;
-  border-radius: 4px;
   background: var(--badge);
   color: #ffffff;
-  font-size: 0.65rem;
   font-weight: 700;
-  line-height: 1.5;
 }
 
 .bubble-row {
@@ -1253,6 +1235,7 @@ p {
 }
 
 .bubble {
+  position: relative;
   min-width: 0;
   max-width: 78%;
   padding: 6px 10px 5px;
@@ -1277,9 +1260,11 @@ p {
   border-top-right-radius: 2px;
 }
 
+/* The sender palette is made for avatar backgrounds, so names are toned toward the text colour. */
 .bubble-name {
   display: block;
   overflow: hidden;
+  color: color-mix(in srgb, var(--c) 50%, var(--text));
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
@@ -1304,10 +1289,10 @@ p {
   line-height: 1.5;
 }
 
-/* Channel colours don't read on the accent. */
+/* Channel colours are dark in the light theme and light in the dark one, the opposite of --chat. */
 .bubble-row.out .chat-tag {
-  background: color-mix(in srgb, var(--accent-ink) 22%, transparent);
-  color: inherit;
+  background: var(--c);
+  color: var(--chat);
 }
 
 .time {
@@ -1365,6 +1350,16 @@ p {
   padding: 4px 12px;
   color: var(--danger);
   font-size: 0.85rem;
+}
+
+/* Needs a positioned parent inside the log, like .bubble, or it escapes the scroll container. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .jump {
