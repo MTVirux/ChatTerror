@@ -202,24 +202,19 @@ export function openAccountStore(dbName: string): AccountStore {
         request.onerror = () => reject(request.error);
       });
     }),
-    loadRecent: (perKey, keyOf) => run("messages", "readonly", (tx) => {
-      const request = tx.objectStore("messages").index("ts").openCursor(null, "prev");
+    loadRecent: (perKey, keyOf) => run("messages", "readonly", async (tx) => {
+      const all: unknown[] = await result(tx.objectStore("messages").index("ts").getAll());
       const counts = new Map<string, number>();
       const items: ChatItem[] = [];
-      return new Promise((resolve, reject) => {
-        request.onsuccess = () => {
-          const cursor = request.result;
-          if (!cursor) return resolve(items.reverse());
-          if (isChatItem(cursor.value)) {
-            const key = keyOf(cursor.value);
-            const count = (counts.get(key) ?? 0) + 1;
-            counts.set(key, count);
-            if (count <= perKey) items.push(cursor.value);
-          }
-          cursor.continue();
-        };
-        request.onerror = () => reject(request.error);
-      });
+      for (let i = all.length - 1; i >= 0; i--) {
+        const item = all[i];
+        if (!isChatItem(item)) continue;
+        const key = keyOf(item);
+        const count = (counts.get(key) ?? 0) + 1;
+        counts.set(key, count);
+        if (count <= perKey) items.push(item);
+      }
+      return items.reverse();
     }),
     clearMessages: () => run("messages", "readwrite", async (tx) => {
       await result(tx.objectStore("messages").clear());

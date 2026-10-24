@@ -56,6 +56,11 @@ describe("storage", () => {
     expect((await store.loadRecent(1, (m) => m.channel)).map((m) => m.id)).toEqual(["a"]);
   });
 
+  it("orders messages sharing a timestamp the same way when loading per key", async () => {
+    await store.addMessages([item("b", 1), item("a", 1), item("c", 2)], 10);
+    expect((await store.loadRecent(5, (m) => m.channel)).map((m) => m.id)).toEqual((await store.loadMessages(10)).map((m) => m.id));
+  });
+
   it("clears messages", async () => {
     await store.addMessages([item("a", 1)], 10);
     await store.clearMessages();
