@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using ChatTerror.Protocol;
 using ChatTerror.Server.Data;
 using ChatTerror.Server.Tests.Support;
@@ -26,6 +27,45 @@ public class TellRelayTests
     }
 
     private static TellSendFrame Send(string id, Side to, params TellCopy[] copies) => new(id, to.Install.InstallId, copies);
+
+    private static async Task TellAsync(TestSocket from, string id, Side to, params TellCopy[] copies)
+    {
+        await from.SendAsync(Send(id, to, copies));
+        Assert.True((await from.ReceiveAsync<TellResultFrame>()).Ok);
+    }
+
+    // The phone stays offline, with a push subscription and a bundle entry that asks for pushes unless push is false.
+    private static async Task<ClaimResponse> PushablePhoneAsync(RelayApp app, Side side, TestSocket plugin, bool push = true)
+    {
+        var phone = await app.PairDeviceAsync(side.Install, plugin);
+        var response = await app.Client(phone.DeviceToken).PutAsJsonAsync("/api/devices/me/push", new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p256", auth = "secret" } });
+        response.EnsureSuccessStatusCode();
+        await app.PutTellBundleAsync(side.Install.InstallToken, side.Key, new TellBundleEntry(phone.DeviceId, RelayApp.NewPublicKey(), push));
+        return phone;
+    }
+
+    private sealed record TellPushSetup(Side A, Side B, TestSocket PluginA, TestSocket PluginB, ClaimResponse PhoneB) : IAsyncDisposable
+    {
+        public TellCopy[] Copies => [new TellCopy(false, TellTargets.Plugin, "toB"), new TellCopy(false, PhoneB.DeviceId, "toPhoneB")];
+
+        public async ValueTask DisposeAsync()
+        {
+            await PluginA.DisposeAsync();
+            await PluginB.DisposeAsync();
+        }
+    }
+
+    // Plugin B times its own tell pushes, and phone B is offline with pushes on unless push is false.
+    private static async Task<TellPushSetup> TellPushSetupAsync(RelayApp app, bool push = true)
+    {
+        var (a, b) = await FriendsAsync(app);
+        var pluginB = await app.ConnectAsync(b.Install.InstallToken, [RelayFeatures.TellPush]);
+        var phoneB = await PushablePhoneAsync(app, b, pluginB, push);
+        var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+        return new TellPushSetup(a, b, pluginA, pluginB, phoneB);
+    }
+
+    private static string? PushedTellId(string body) => JsonDocument.Parse(body).RootElement.GetProperty("i").GetString();
 
     [Fact]
     public async Task Tell_ReachesOnlineRecipientPlugin()
@@ -193,7 +233,7 @@ public class TellRelayTests
         Assert.Equal("toA", (await pluginA.ReceiveAsync<TellFrame>()).Envelope);
         Assert.Equal("toB", (await pluginB.ReceiveAsync<TellFrame>()).Envelope);
         await app.Push.WaitForCallAsync();
-        var (_, body) = Assert.Single(app.Push.Calls);
+        var (_, body, _) = Assert.Single(app.Push.Calls);
         Assert.Contains("\"t\":\"tell\"", body);
         Assert.Contains("toPhoneB", body);
         Assert.Contains($"\"f\":\"{a.Install.InstallId}\"", body);
@@ -277,5 +317,139 @@ public class TellRelayTests
 
         var store = app.Services.GetRequiredService<RelayStore>();
         Assert.Equal(["t1", "t2", "t3"], store.PendingTells(b.Install.InstallId, phoneB.DeviceId).Select(tell => tell.Id));
+    }
+
+    [Fact]
+    public async Task Tell_PluginWithTellPushDefersThePush()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app);
+
+        await TellAsync(s.PluginA, "t1", s.B, s.Copies);
+        Assert.Equal("toB", (await s.PluginB.ReceiveAsync<TellFrame>()).Envelope);
+        await s.PluginA.BarrierAsync();
+        Assert.Empty(app.Push.Calls);
+
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await app.Push.WaitForCallAsync();
+        var call = Assert.Single(app.Push.Calls);
+        var key = Base64Url.Encode(P256.PublicRaw(s.A.Key));
+        Assert.Equal($"{{\"t\":\"tell\",\"i\":\"t1\",\"f\":\"{s.A.Install.InstallId}\",\"e\":\"toPhoneB\",\"k\":\"{key}\",\"d\":\"{s.PhoneB.DeviceId}\"}}", call.Body);
+        Assert.Equal(86400, call.Ttl);
+    }
+
+    [Fact]
+    public async Task TellPush_IgnoredForOnlineDevice()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app);
+        await TellAsync(s.PluginA, "t1", s.B, s.Copies);
+
+        await using (var phone = await app.ConnectAsync(s.PhoneB.DeviceToken))
+        {
+            await phone.ReceiveAsync<TellFrame>();
+            await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+            await s.PluginB.BarrierAsync();
+            Assert.Empty(app.Push.Calls);
+        }
+
+        await s.PluginB.ReceiveAsync<DeviceOfflineFrame>();
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+        Assert.Single(app.Push.Calls);
+    }
+
+    [Fact]
+    public async Task TellPush_IgnoredForAckedTell()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app);
+        await TellAsync(s.PluginA, "t1", s.B, s.Copies);
+        await TellAsync(s.PluginA, "t2", s.B, s.Copies);
+        await using (var phone = await app.ConnectAsync(s.PhoneB.DeviceToken))
+        {
+            await phone.SendAsync(new TellAckFrame(["t1"]));
+            await phone.BarrierAsync();
+        }
+        await s.PluginB.ReceiveAsync<DeviceOfflineFrame>();
+
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await s.PluginB.SendAsync(new TellPushFrame("t2", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+
+        Assert.Equal("t2", PushedTellId(Assert.Single(app.Push.Calls).Body));
+    }
+
+    [Fact]
+    public async Task TellPush_IgnoredForSelfCopy()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken, [RelayFeatures.TellPush]);
+        var phoneA = await PushablePhoneAsync(app, a, pluginA);
+        await using var pluginB = await app.ConnectAsync(b.Install.InstallToken);
+        await TellAsync(pluginA, "t1", b, new TellCopy(false, TellTargets.Plugin, "toB"), new TellCopy(true, phoneA.DeviceId, "toPhoneA"));
+        await TellAsync(pluginB, "t2", a, new TellCopy(false, TellTargets.Plugin, "toA"), new TellCopy(false, phoneA.DeviceId, "fromB"));
+        Assert.Empty(app.Push.Calls);
+
+        await pluginA.SendAsync(new TellPushFrame("t1", phoneA.DeviceId));
+        await pluginA.SendAsync(new TellPushFrame("t2", phoneA.DeviceId));
+        await pluginA.BarrierAsync();
+
+        Assert.Equal("t2", PushedTellId(Assert.Single(app.Push.Calls).Body));
+    }
+
+    [Fact]
+    public async Task TellPush_IgnoredWhenTheEntryHasNoPush()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app, push: false);
+        await TellAsync(s.PluginA, "t1", s.B, s.Copies);
+
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+        Assert.Empty(app.Push.Calls);
+
+        await app.PutTellBundleAsync(s.B.Install.InstallToken, s.B.Key, new TellBundleEntry(s.PhoneB.DeviceId, RelayApp.NewPublicKey(), true));
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+        Assert.Single(app.Push.Calls);
+    }
+
+    [Fact]
+    public async Task TellPush_IgnoredForAnotherInstallsDevice()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app);
+        var other = await app.RegisterInstallAsync();
+        await using var pluginC = await app.ConnectAsync(other.InstallToken, [RelayFeatures.TellPush]);
+        await TellAsync(s.PluginA, "t1", s.B, s.Copies);
+
+        await pluginC.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        Assert.DoesNotContain(await pluginC.BarrierAsync(), f => f is ErrorFrame);
+        Assert.Empty(app.Push.Calls);
+
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+        Assert.Single(app.Push.Calls);
+    }
+
+    [Fact]
+    public async Task TellPush_RespectsThePushCooldown()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app);
+        await TellAsync(s.PluginA, "t1", s.B, s.Copies);
+        await TellAsync(s.PluginA, "t2", s.B, s.Copies);
+
+        await s.PluginB.SendAsync(new TellPushFrame("t1", s.PhoneB.DeviceId));
+        await s.PluginB.SendAsync(new TellPushFrame("t2", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+        Assert.Single(app.Push.Calls);
+
+        app.Time.Advance(TimeSpan.FromSeconds(10));
+        await s.PluginB.SendAsync(new TellPushFrame("t2", s.PhoneB.DeviceId));
+        await s.PluginB.BarrierAsync();
+        Assert.Equal(["t1", "t2"], app.Push.Calls.Select(call => PushedTellId(call.Body)));
     }
 }

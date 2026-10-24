@@ -11,5 +11,5 @@ public sealed record PushSubscriptionRecord(string Endpoint, string P256dh, stri
 
 public interface IPushSender
 {
-    Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, CancellationToken ct);
+    Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, int ttlSeconds, CancellationToken ct);
 }

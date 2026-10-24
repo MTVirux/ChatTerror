@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
@@ -29,6 +30,9 @@ public sealed class Conn
     public string Id { get; set; } = "";
 
     public string InstallId { get; set; } = "";
+
+    // Features a plugin listed in its auth frame. Always empty for devices.
+    public IReadOnlySet<string> Features { get; set; } = FrozenSet<string>.Empty;
 
     public bool IsAuthenticated => Role != "";
 
