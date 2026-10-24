@@ -139,7 +139,7 @@ public sealed class RelayClient : IDisposable
             {
                 using var socket = new ClientWebSocket();
                 await socket.ConnectAsync(uri, ct);
-                await SendText(socket, ProtocolJson.Serialize<RelayFrame>(new AuthFrame(token)), ct);
+                await SendText(socket, ProtocolJson.Serialize<RelayFrame>(new AuthFrame(token, [RelayFeatures.TellPush])), ct);
 
                 var first = await Receive(socket, ct);
                 if (first is AuthOkFrame)
