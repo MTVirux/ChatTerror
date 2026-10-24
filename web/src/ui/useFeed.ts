@@ -1,9 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
 import type { AccountManager, FeedItem } from "../core/accounts";
+import { itemKey } from "./channels";
 import { mergeFeed } from "./feed";
 
-const HISTORY = 300;
-const MAX_IN_MEMORY = 3000;
+const HISTORY_PER_CHAT = 300;
+const MAX_PER_CHAT = 600;
 
 interface Feed {
   key: string;
@@ -22,14 +23,14 @@ export function useFeed(manager: AccountManager, deviceId: string, epoch: number
       if (!alive) return;
       setFeed((prev) => {
         const same = prev.key === key;
-        return { key, items: mergeFeed(same ? prev.items : [], list, MAX_IN_MEMORY), loaded: loaded || (same && prev.loaded) };
+        return { key, items: mergeFeed(same ? prev.items : [], list, MAX_PER_CHAT, itemKey), loaded: loaded || (same && prev.loaded) };
       });
     };
     const off = manager.onMessages((incoming) => {
       const mine = incoming.filter((i) => i.deviceId === deviceId);
       if (mine.length > 0) add(mine, false);
     });
-    const history = (manager.session(deviceId)?.loadHistory(HISTORY) ?? Promise.resolve([])).then((list) => list.map((i) => ({ ...i, deviceId })));
+    const history = (manager.session(deviceId)?.loadHistory(HISTORY_PER_CHAT, itemKey) ?? Promise.resolve([])).then((list) => list.map((i) => ({ ...i, deviceId })));
     history.then((list) => add(list, true), () => add([], true));
     return () => {
       alive = false;

@@ -142,6 +142,7 @@ export interface AccountStore {
   addMessages(items: ChatItem[], limit: number): Promise<ChatItem[]>;
   trimMessages(limit: number): Promise<void>;
   loadMessages(limit: number): Promise<ChatItem[]>;
+  loadRecent(perKey: number, keyOf: (item: ChatItem) => string): Promise<ChatItem[]>;
   clearMessages(): Promise<void>;
   wipe(): Promise<void>;
   destroy(): Promise<void>;
@@ -196,6 +197,25 @@ export function openAccountStore(dbName: string): AccountStore {
           if (!cursor || items.length >= limit) return resolve(items.reverse());
           // Items stored before validation existed may be malformed.
           if (isChatItem(cursor.value)) items.push(cursor.value);
+          cursor.continue();
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }),
+    loadRecent: (perKey, keyOf) => run("messages", "readonly", (tx) => {
+      const request = tx.objectStore("messages").index("ts").openCursor(null, "prev");
+      const counts = new Map<string, number>();
+      const items: ChatItem[] = [];
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor) return resolve(items.reverse());
+          if (isChatItem(cursor.value)) {
+            const key = keyOf(cursor.value);
+            const count = (counts.get(key) ?? 0) + 1;
+            counts.set(key, count);
+            if (count <= perKey) items.push(cursor.value);
+          }
           cursor.continue();
         };
         request.onerror = () => reject(request.error);

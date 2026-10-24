@@ -7,10 +7,15 @@ const it_ = (deviceId: string, id: string, ts: number, extra: Partial<FeedItem> 
 
 describe("mergeFeed", () => {
   it("keeps the same message id from two accounts apart and orders by time", () => {
-    const out = mergeFeed([it_("a", "1", 1)], [it_("b", "1", 0), it_("a", "1", 1)], 10);
+    const out = mergeFeed([it_("a", "1", 1)], [it_("b", "1", 0), it_("a", "1", 1)], 10, () => "all");
     expect(out.map((i) => `${i.deviceId}:${i.id}`)).toEqual(["b:1", "a:1"]);
   });
   it("caps to the newest", () => {
-    expect(mergeFeed([], [it_("a", "1", 1), it_("a", "2", 2), it_("a", "3", 3)], 2).map((i) => i.id)).toEqual(["2", "3"]);
+    expect(mergeFeed([], [it_("a", "1", 1), it_("a", "2", 2), it_("a", "3", 3)], 2, () => "all").map((i) => i.id)).toEqual(["2", "3"]);
+  });
+  it("caps each chat on its own", () => {
+    const quiet = it_("a", "q1", 0, { channel: "party" });
+    const busy = [it_("a", "b1", 1), it_("a", "b2", 2), it_("a", "b3", 3)];
+    expect(mergeFeed([quiet], busy, 2, (i) => i.channel).map((i) => i.id)).toEqual(["q1", "b2", "b3"]);
   });
 });
