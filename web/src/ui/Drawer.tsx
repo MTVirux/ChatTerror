@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { useBackClose } from "./backStack";
 import { ignoresSwipe, swipeResult } from "./swipe";
 
 const DOCKED_QUERY = "(min-width: 900px)";
@@ -61,19 +62,7 @@ export function Drawer({ open: requested, onOpenChange, swipe = true, narrow = f
     return () => removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
-  // An open drawer owns one history entry so the back gesture closes it.
-  useEffect(() => {
-    if (!open) return;
-    // Per-open token, so an entry left over from a reload or a forward step is never mistaken for ours.
-    const token = Math.random();
-    history.pushState({ drawer: token }, "");
-    const onPop = () => onOpenChange(false);
-    addEventListener("popstate", onPop);
-    return () => {
-      removeEventListener("popstate", onPop);
-      if (history.state?.drawer === token) history.back();
-    };
-  }, [open]);
+  useBackClose(() => onOpenChange(false), open);
 
   function onTouchStart(e: TouchEvent) {
     const t = e.touches[0];
