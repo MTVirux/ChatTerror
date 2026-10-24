@@ -66,8 +66,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         keys = new KeyStore(pluginInterface.ConfigDirectory.FullName, log);
         api = new RelayApi(() => config.RelayUrl);
         relay = new RelayClient(log);
-        var idleClock = new IdleClock();
-        hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName, idleClock.IdleSeconds,
+        hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName, new IdleClock(playerState),
             Path.Combine(pluginInterface.ConfigDirectory.FullName, HistoryFile.Name));
         connection = new ConnectionManager(config, SaveConfig, keys, api, relay, hub, framework, log);
         capture = new ChatCapture(chatGui, playerState, config, hub);

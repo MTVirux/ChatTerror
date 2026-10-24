@@ -16,7 +16,7 @@ public static class Limits
     public const long TellEchoTimeoutMs = 3000;
     public const int DefaultWaitSeconds = 10;
     public const int MaxWaitSeconds = 60;
-    public const int DutyPopTtlSeconds = 60;
+    public const int DutyPopTtlSeconds = 45;
     public const int PartyFullTtlSeconds = 900;
     public static readonly TimeSpan TellTtl = TimeSpan.FromDays(7);
     public static readonly TimeSpan FriendInviteTtl = TimeSpan.FromHours(24);
