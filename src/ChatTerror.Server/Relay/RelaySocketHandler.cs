@@ -26,6 +26,7 @@ public sealed partial class RelaySocketHandler(
     private readonly PushLimiter pushLimiter = new(options.Value.MaxConcurrentPushes, options.Value.MaxPushesPerInstall);
     private readonly SocketLimiter socketLimiter = new(options.Value.MaxSocketsPerClient);
     private readonly TellLimiter tellLimiter = new(options.Value.TellsPerRecipientPerMinute, options.Value.TellPushCooldown, time);
+    private readonly DeferredTellPushes deferredTellPushes = new(options.Value.MaxDeferredTellPushes, time);
     private readonly string[] pushServiceHosts = options.Value.GetPushServiceHosts();
 
     private enum Kind

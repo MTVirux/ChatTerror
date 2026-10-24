@@ -279,6 +279,27 @@ public class HardeningTests
     }
 
     [Fact]
+    public void DeferredTellPushes_AreTakenOnceCappedAndExpired()
+    {
+        var time = new MutableTimeProvider();
+        var deferred = new DeferredTellPushes(maxEntries: 2, time);
+
+        Assert.True(deferred.TryAdd("a", "d1", "t1"));
+        Assert.True(deferred.TryAdd("a", "d1", "t2"));
+        Assert.False(deferred.TryAdd("a", "d1", "t3"));
+
+        Assert.False(deferred.TryTake("b", "d1", "t1"));
+        Assert.True(deferred.TryTake("a", "d1", "t1"));
+        Assert.False(deferred.TryTake("a", "d1", "t1"));
+        Assert.True(deferred.TryAdd("a", "d1", "t3"));
+
+        time.Advance(DeferredTellPushes.Lifetime);
+        Assert.False(deferred.TryTake("a", "d1", "t2"));
+        Assert.True(deferred.TryAdd("a", "d1", "t4"));
+        Assert.True(deferred.TryAdd("a", "d1", "t5"));
+    }
+
+    [Fact]
     public async Task SaturatedInstall_DoesNotBlockOtherInstallsPush()
     {
         using var app = new RelayApp();

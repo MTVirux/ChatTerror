@@ -31,7 +31,8 @@ public sealed partial class RelaySocketHandler
 
         var senderKey = store.InstallPublicKey(conn.InstallId)!;
         // Recipient copies go first, so an unfriend since CheckTell refuses the tell before any self copy is queued.
-        foreach (var copy in frame.Copies.OrderBy(copy => copy.Self))
+        // Plugin copies go last, so a deferred device push is recorded before the plugin can ask for it.
+        foreach (var copy in frame.Copies.OrderBy(copy => copy.Self).ThenBy(copy => copy.Target == TellTargets.Plugin))
         {
             var install = copy.Self ? conn.InstallId : recipientInstall!;
             if (copy.Self && copy.Target == TellTarget(conn))
@@ -47,9 +48,10 @@ public sealed partial class RelaySocketHandler
             {
                 online.Send(tell);
             }
-            else if (!copy.Self && !PluginPushesTells(install) && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
+            else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
                 && device.InstallId == install
+                && !DeferTellPush(install, device.Id, frame.Id)
                 && tellLimiter.TryPush(conn.InstallId, device.Id))
             {
                 PushTell(device, subscription, tell);
@@ -60,13 +62,15 @@ public sealed partial class RelaySocketHandler
     }
 
     // A plugin listing tellPush runs its away check on its own copy of the tell, then asks for each push with a tellPush frame.
-    private bool PluginPushesTells(string installId) =>
-        registry.Plugin(installId)?.Features.Contains(RelayFeatures.TellPush) == true;
+    private bool DeferTellPush(string installId, string deviceId, string tellId) =>
+        registry.Plugin(installId)?.Features.Contains(RelayFeatures.TellPush) == true
+        && deferredTellPushes.TryAdd(installId, deviceId, tellId);
 
     // Only pushes what a direct push would have, so a replayed or stray request can't add notifications.
     private void PushQueuedTell(Conn plugin, TellPushFrame frame)
     {
-        if (OwnDevice(plugin, frame.DeviceId) is not { Status: DeviceStatus.Active, Push: { } subscription } device
+        if (!deferredTellPushes.TryTake(plugin.InstallId, frame.DeviceId, frame.Id)
+            || OwnDevice(plugin, frame.DeviceId) is not { Status: DeviceStatus.Active, Push: { } subscription } device
             || Online(plugin.InstallId, device.Id) != null)
             return;
 
