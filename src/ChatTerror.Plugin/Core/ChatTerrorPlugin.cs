@@ -24,6 +24,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
     private readonly DeviceHub hub;
     private readonly ConnectionManager connection;
     private readonly ChatCapture capture;
+    private readonly GameAlerts gameAlerts;
     private readonly ChatSender sender;
     private readonly TellDirectory tellDirectory;
     private readonly FriendDirectory friendDirectory;
@@ -65,10 +66,11 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         keys = new KeyStore(pluginInterface.ConfigDirectory.FullName, log);
         api = new RelayApi(() => config.RelayUrl);
         relay = new RelayClient(log);
-        hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName,
+        hub = new DeviceHub(config, SaveConfig, keys, relay, framework, log, CharacterName, new IdleClock(playerState),
             Path.Combine(pluginInterface.ConfigDirectory.FullName, HistoryFile.Name));
         connection = new ConnectionManager(config, SaveConfig, keys, api, relay, hub, framework, log);
         capture = new ChatCapture(chatGui, playerState, config, hub);
+        gameAlerts = new GameAlerts(clientState, chatGui, framework, hub);
         sender = new ChatSender(framework, clientState, condition, hub, () => config.Settings, log);
         tellDirectory = new TellDirectory(config, SaveConfig, keys, api, hub, framework, playerState, dataManager, log);
         friendDirectory = new FriendDirectory(config, SaveConfig, keys, api, hub, framework, log);
@@ -134,6 +136,7 @@ public sealed class ChatTerrorPlugin : IDalamudPlugin
         tellDirectory.Dispose();
         sender.Dispose();
         capture.Dispose();
+        gameAlerts.Dispose();
         relay.Dispose();
         hub.Dispose();
         api.Dispose();

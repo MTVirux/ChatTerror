@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { AccountManager, AccountView } from "../core/accounts";
-import type { ChatChannel } from "../core/protocol";
+import { WAIT_CHOICES } from "../core/alerts";
+import type { ChatChannel, NotifyPrefs } from "../core/protocol";
 import { findAccount } from "../core/registry";
 import type { Session } from "../core/session";
 import { channelColor, channelLabel, needsHomeScreen } from "./format";
@@ -24,6 +25,7 @@ export function AccountSettings({ manager, account, session, onClose, onCacheCle
   const [unpairing, setUnpairing] = useState(false);
   const [unpairError, setUnpairError] = useState("");
   const [muteError, setMuteError] = useState("");
+  const [notifyError, setNotifyError] = useState("");
   const [cacheError, setCacheError] = useState("");
   const iosBlocked = needsHomeScreen();
 
@@ -78,6 +80,11 @@ export function AccountSettings({ manager, account, session, onClose, onCacheCle
     session.setMuted(muted).catch(() => setMuteError("Couldn't save mute settings. Try again."));
   }
 
+  function changeNotify(change: Partial<NotifyPrefs>) {
+    setNotifyError("");
+    session.setNotifyPrefs({ ...state.notifyPrefs, ...change }).catch(() => setNotifyError("Couldn't save notification settings. Try again."));
+  }
+
   async function clearCache() {
     setConfirm(null);
     setCacheError("");
@@ -126,6 +133,7 @@ export function AccountSettings({ manager, account, session, onClose, onCacheCle
           <>
             {iosBlocked && <p class="settings-note">On iPhone and iPad, add this page to your Home Screen first: tap Share, then Add to Home Screen, and open it from there.</p>}
             {pushError && <p class="settings-note error">{pushError}</p>}
+            {notifyError && <p class="settings-note error">{notifyError}</p>}
           </>
         }
       >
@@ -136,6 +144,43 @@ export function AccountSettings({ manager, account, session, onClose, onCacheCle
           </span>
           <input type="checkbox" class="switch" checked={state.pushEnabled} disabled={pushBusy || iosBlocked} onChange={togglePush} />
         </label>
+        {state.supportsAlerts && (
+          <>
+            <label class="settings-row">
+              <span class="settings-text">Party is full</span>
+              <input
+                type="checkbox"
+                class="switch"
+                checked={state.notifyPrefs.partyFull}
+                disabled={!state.pushEnabled}
+                onChange={(e) => changeNotify({ partyFull: e.currentTarget.checked })}
+              />
+            </label>
+            <label class="settings-row">
+              <span class="settings-text">Duty pops</span>
+              <input
+                type="checkbox"
+                class="switch"
+                checked={state.notifyPrefs.dutyPop}
+                disabled={!state.pushEnabled}
+                onChange={(e) => changeNotify({ dutyPop: e.currentTarget.checked })}
+              />
+            </label>
+            <label class="settings-row">
+              <span class="settings-text">
+                Wait for me at the PC
+                <small>Uses the game's own idle time. Off notifies right away.</small>
+              </span>
+              <select
+                value={String(state.notifyPrefs.waitSeconds)}
+                disabled={!state.pushEnabled}
+                onChange={(e) => changeNotify({ waitSeconds: Number(e.currentTarget.value) })}
+              >
+                {WAIT_CHOICES.map((n) => <option value={String(n)}>{n === 0 ? "Off" : `${n} seconds`}</option>)}
+              </select>
+            </label>
+          </>
+        )}
       </SettingsGroup>
 
       {state.relayChannels.length > 0 && (

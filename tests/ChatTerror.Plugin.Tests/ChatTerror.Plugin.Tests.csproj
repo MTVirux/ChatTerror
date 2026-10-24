@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -21,6 +22,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\ChatTerror.Plugin\Logic\**\*.cs" Link="Logic\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\ChatTerror.Plugin\PairedDevice.cs" Link="PairedDevice.cs" />
     <Compile Include="..\..\src\ChatTerror.Plugin\Services\Secrets.cs" Link="Services\Secrets.cs" />
     <Compile Include="..\..\src\ChatTerror.Plugin\Services\IdentityKeyFile.cs" Link="Services\IdentityKeyFile.cs" />
     <Compile Include="..\..\src\ChatTerror.Plugin\Services\HistoryFile.cs" Link="Services\HistoryFile.cs" />

@@ -80,26 +80,6 @@ public sealed class Configuration : IPluginConfiguration
     }
 }
 
-public sealed class PairedDevice
-{
-    public string DeviceId { get; set; } = "";
-
-    public string Name { get; set; } = "";
-
-    public string PublicKey { get; set; } = "";
-
-    public List<ChatChannel> MutedChannels { get; set; } = new();
-
-    public List<ChannelPref> ChannelOverrides { get; set; } = new();
-
-    public long PairedAt { get; set; }
-
-    public long LastSeenSeq { get; set; }
-
-    // The phone's key for relayed tells, separate from the pairing key.
-    public string? TellKey { get; set; }
-}
-
 // A friend code we created. The secret never goes to the relay.
 public sealed class OwnFriendInvite
 {

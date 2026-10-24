@@ -23,6 +23,7 @@ public sealed class DeviceHub : IDisposable
     private const int MaxPendingPairs = 10;
     private const long SeqSaveIntervalMs = 5_000;
     private const long HistorySaveIntervalMs = 60_000;
+    private const int AwayQueueCapacity = 200;
 
     private readonly Configuration config;
     private readonly Action saveConfig;
@@ -31,6 +32,7 @@ public sealed class DeviceHub : IDisposable
     private readonly IFramework framework;
     private readonly IPluginLog log;
     private readonly Func<string?> characterName;
+    private readonly IdleClock idleClock;
     private readonly string historyPath;
     private readonly Dictionary<string, DeviceSession> sessions = new();
     private readonly List<PendingPair> pendingPairs = new();
@@ -40,13 +42,23 @@ public sealed class DeviceHub : IDisposable
     // RunOnFrameworkThread does not keep order, and a device's messages must be opened in seq order.
     private readonly ConcurrentQueue<Action> relayEvents = new();
     private readonly SaveDebounce seqSave = new(SeqSaveIntervalMs);
+    private readonly AwayQueue awayQueue = new(AwayQueueCapacity);
     private long savedHistoryVersion;
     private long lastHistorySaveAt;
     private Task historySave = Task.CompletedTask;
     private bool warnedHistoryUnsaved;
     private bool disposed;
 
-    public DeviceHub(Configuration config, Action saveConfig, KeyStore keys, RelayClient relay, IFramework framework, IPluginLog log, Func<string?> characterName, string historyPath)
+    public DeviceHub(
+        Configuration config,
+        Action saveConfig,
+        KeyStore keys,
+        RelayClient relay,
+        IFramework framework,
+        IPluginLog log,
+        Func<string?> characterName,
+        IdleClock idleClock,
+        string historyPath)
     {
         this.config = config;
         this.saveConfig = saveConfig;
@@ -55,6 +67,7 @@ public sealed class DeviceHub : IDisposable
         this.framework = framework;
         this.log = log;
         this.characterName = characterName;
+        this.idleClock = idleClock;
         this.historyPath = historyPath;
         History = new MessageHistory(config.Settings.HistorySize, LoadHistory());
         savedHistoryVersion = History.Version;
@@ -92,7 +105,29 @@ public sealed class DeviceHub : IDisposable
         item = DeviceSession.Fit(item);
         History.Add(item);
         foreach (var session in sessions.Values)
-            SendTo(session, new ChatPayload(item), session.ShouldNotify(item, filter));
+        {
+            // A delayed push is a second send of the line, since holding this sealed payload back would break seq order.
+            var notify = session.ShouldNotify(item, filter);
+            if (notify && !onlineDevices.Contains(session.DeviceId) && TryQueueAwayCheck(session.Alerts.WaitSeconds, () => PushChat(session, item)))
+                notify = false;
+            SendTo(session, new ChatPayload(item), notify);
+        }
+    }
+
+    public void Alert(AlertKind kind, string? duty)
+    {
+        if (!config.Enabled || sessions.Count == 0 || IsQuietHours())
+            return;
+
+        log.Verbose($"{kind} alert, the game has been idle for {IdleText(idleClock.IdleSeconds())} ({idleClock.TimersText()}).");
+        var alert = new AlertPayload(kind, characterName() ?? "", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), duty);
+        var raisedAt = Environment.TickCount64;
+        foreach (var session in sessions.Values)
+        {
+            var wanted = kind == AlertKind.DutyPop ? session.Alerts.DutyPop : session.Alerts.PartyFull;
+            if (wanted)
+                NotifyWhenAway(AwayCheck.AlertWaitSetting(kind, session.Alerts.WaitSeconds), () => SendAlert(session, alert, raisedAt));
+        }
     }
 
     // Phones got their own sealed copy and push, so relayed tells only go into history and the backlog.
@@ -159,6 +194,7 @@ public sealed class DeviceHub : IDisposable
     public void ClearDevices()
     {
         sessions.Clear();
+        awayQueue.Clear();
         helloThrottle.Clear();
         pendingPairs.Clear();
         pairingGate.Clear();
@@ -179,6 +215,7 @@ public sealed class DeviceHub : IDisposable
         relay.FrameReceived -= OnFrameReceived;
         relay.StateChanged -= OnStateChanged;
         framework.Update -= OnUpdate;
+        awayQueue.Clear();
         if (seqSave.Dirty)
             saveConfig();
         try
@@ -230,11 +267,38 @@ public sealed class DeviceHub : IDisposable
                 ServeHello(session, sinceTs);
         }
 
+        RunDueAwayChecks(now);
+
         if (now - lastHistorySaveAt < HistorySaveIntervalMs || !historySave.IsCompleted)
             return;
         lastHistorySaveAt = now;
         historySave = Task.Run(SaveHistory);
     }
+
+    private void RunDueAwayChecks(long now)
+    {
+        var due = awayQueue.TakeDue(now);
+        if (due.Count == 0 || !config.Enabled)
+            return;
+
+        var idle = idleClock.IdleSeconds();
+        log.Verbose($"{due.Count} waiting notifications are due, the game has been idle for {IdleText(idle)} ({idleClock.TimersText()}).");
+        foreach (var (startedAt, notify) in due)
+        {
+            if (!AwayCheck.StillAway(idle, now - startedAt))
+                continue;
+            try
+            {
+                notify();
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, "Failed to send a waiting notification.");
+            }
+        }
+    }
+
+    private static string IdleText(float? idle) => idle is { } seconds ? $"{seconds:0.0} s" : "an unknown time";
 
     private List<ChatItem> LoadHistory()
     {
@@ -309,7 +373,11 @@ public sealed class DeviceHub : IDisposable
             case DeviceOfflineFrame offline:
                 onlineDevices.Remove(offline.DeviceId);
                 break;
-            case TellFrame or TellResultFrame:
+            case TellFrame tell:
+                PushTellWhenAway(tell);
+                TellFrameReceived?.Invoke(frame);
+                break;
+            case TellResultFrame:
                 TellFrameReceived?.Invoke(frame);
                 break;
             case FriendsChangedFrame:
@@ -349,7 +417,7 @@ public sealed class DeviceHub : IDisposable
                 break;
             case PrefsPayload prefs:
                 RememberSeq(session);
-                UpdatePrefs(session, prefs.MutedChannels, prefs.Channels ?? []);
+                UpdatePrefs(session, prefs.MutedChannels, prefs.Channels ?? [], prefs.Alerts?.Clamped() ?? session.Alerts);
                 break;
             case TellKeyPayload tellKey:
                 RememberSeq(session);
@@ -418,22 +486,76 @@ public sealed class DeviceHub : IDisposable
         saveConfig();
     }
 
-    private void UpdatePrefs(DeviceSession session, IReadOnlyList<ChatChannel> muted, IReadOnlyList<ChannelPref> overrides)
+    private void UpdatePrefs(DeviceSession session, IReadOnlyList<ChatChannel> muted, IReadOnlyList<ChannelPref> overrides, AlertPrefs alerts)
     {
         session.Muted.Clear();
         session.Muted.UnionWith(muted);
         session.Overrides.Clear();
         session.Overrides.AddRange(overrides);
+        session.Alerts = alerts;
 
         // Phones resend their prefs on every connect, usually unchanged.
         var device = config.Devices.FirstOrDefault(d => d.DeviceId == session.DeviceId);
         var distinctMuted = muted.Distinct().ToList();
-        if (device == null || (device.MutedChannels.SequenceEqual(distinctMuted) && device.ChannelOverrides.SequenceEqual(overrides)))
+        if (device == null
+            || (device.MutedChannels.SequenceEqual(distinctMuted) && device.ChannelOverrides.SequenceEqual(overrides) && device.Alerts == alerts))
             return;
         device.MutedChannels = distinctMuted;
         device.ChannelOverrides = overrides.ToList();
+        device.Alerts = alerts;
         saveConfig();
     }
+
+    // The relay lists the friend-tell pushes it left to this plugin, and still applies its push rules to each request.
+    private void PushTellWhenAway(TellFrame tell)
+    {
+        foreach (var deviceId in tell.DeferredPush ?? [])
+        {
+            if (sessions.TryGetValue(deviceId, out var session))
+                NotifyWhenAway(session.Alerts.WaitSeconds, () => PushTell(session, tell.Id));
+        }
+    }
+
+    // True when notify waits in the queue, false when it should run now.
+    private bool TryQueueAwayCheck(int waitSetting, Action notify)
+    {
+        var wait = AwayCheck.WaitSeconds(waitSetting, idleClock.IdleSeconds());
+        var now = Environment.TickCount64;
+        return wait > 0 && awayQueue.TryAdd(now, now + wait * 1000L, notify);
+    }
+
+    private void NotifyWhenAway(int waitSetting, Action notify)
+    {
+        if (!TryQueueAwayCheck(waitSetting, notify))
+            notify();
+    }
+
+    // Quiet hours may have started during the wait.
+    private void PushChat(DeviceSession session, ChatItem item)
+    {
+        if (StillOffline(session) && !IsQuietHours())
+            SendTo(session, new ChatPayload(item), true);
+    }
+
+    private void PushTell(DeviceSession session, string tellId)
+    {
+        if (StillOffline(session))
+            relay.Send(new TellPushFrame(tellId, session.DeviceId));
+    }
+
+    // Alerts go out even to a connected phone, which shows the notification itself.
+    private void SendAlert(DeviceSession session, AlertPayload alert, long raisedAt)
+    {
+        if (IsCurrent(session) && !IsQuietHours())
+            SendTo(session, alert, true, AwayCheck.AlertTtlSeconds(alert.Kind, Environment.TickCount64 - raisedAt));
+    }
+
+    private bool IsQuietHours() => QuietHours.IsQuiet(config.Settings, TimeOnly.FromDateTime(DateTime.Now));
+
+    private bool StillOffline(DeviceSession session) => IsCurrent(session) && !onlineDevices.Contains(session.DeviceId);
+
+    // A queued notification can outlive its device being removed or paired again.
+    private bool IsCurrent(DeviceSession session) => sessions.TryGetValue(session.DeviceId, out var current) && current == session;
 
     private void AddSession(PairedDevice device)
     {
@@ -441,7 +563,7 @@ public sealed class DeviceHub : IDisposable
         {
             var devicePublic = Base64Url.Decode(device.PublicKey);
             var key = E2eCrypto.DeriveKey(keys.Key, devicePublic, keys.PublicRaw, devicePublic);
-            sessions[device.DeviceId] = new DeviceSession(device.DeviceId, key, device.MutedChannels, device.LastSeenSeq, device.ChannelOverrides);
+            sessions[device.DeviceId] = new DeviceSession(device.DeviceId, key, device.MutedChannels, device.LastSeenSeq, device.ChannelOverrides, device.Alerts);
         }
         catch (Exception ex) when (ex is FormatException or System.Security.Cryptography.CryptographicException)
         {
@@ -459,13 +581,14 @@ public sealed class DeviceHub : IDisposable
             SendChannels: order.Where(c => SendValidator.CanSend(c) && settings.Channels.TryGetValue(c, out var s) && s.Send).ToList(),
             MaxLength: Math.Min(config.Settings.MaxLengthBytes, Limits.MaxTextBytes),
             Contacts: Contacts(),
-            CharacterWorld: CharacterWorld());
+            CharacterWorld: CharacterWorld(),
+            SupportsAlerts: true);
     }
 
     // Devices drop anything that arrives out of seq order, so sealing and queueing can't interleave with a backlog.
-    private void SendTo(DeviceSession session, Payload payload, bool notify)
+    private void SendTo(DeviceSession session, Payload payload, bool notify, int? ttl = null)
     {
         lock (session)
-            relay.Send(new SendFrame(To: session.DeviceId, Payload: session.Seal(payload), Notify: notify));
+            relay.Send(new SendFrame(To: session.DeviceId, Payload: session.Seal(payload), Notify: notify, Ttl: ttl));
     }
 }

@@ -114,14 +114,18 @@ export interface SettingsPayload {
   sendChannels: ChatChannel[];
   maxLength: number;
   contacts?: TellContact[];
+  supportsAlerts?: boolean;
 }
+export type AlertKind = "partyFull" | "dutyPop";
+export interface AlertPayload { type: "alert"; seq: number; kind: AlertKind; character: string; ts: number; duty?: string | null }
 
 export interface HelloPayload { type: "hello"; seq: number; sinceTs: number }
 export interface SendChatPayload { type: "sendChat"; seq: number; requestId: string; channel: ChatChannel; target?: string; text: string }
 export interface ChannelNotifyPref { character: string; channel: ChatChannel; partner?: string; notify: "all" | "none" }
-export interface PrefsPayload { type: "prefs"; seq: number; mutedChannels: ChatChannel[]; channels: ChannelNotifyPref[] }
+export interface NotifyPrefs { partyFull: boolean; dutyPop: boolean; waitSeconds: number }
+export interface PrefsPayload { type: "prefs"; seq: number; mutedChannels: ChatChannel[]; channels: ChannelNotifyPref[]; alerts?: NotifyPrefs }
 
-export type PluginPayload = ChatPayload | BacklogPayload | SendResultPayload | SettingsPayload;
+export type PluginPayload = ChatPayload | BacklogPayload | SendResultPayload | SettingsPayload | AlertPayload;
 export interface TellBody {
   id: string;
   fromHash: string;
@@ -164,7 +168,7 @@ export interface ErrorFrame { t: "error"; code: "rateLimited" | "tooLarge" | "un
 export interface TellSendFrame { t: "tellSend"; id: string; to: string; copies: TellCopy[] }
 export interface TellAckFrame { t: "tellAck"; ids: string[] }
 // from is the sending install id.
-export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string }
+export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string; deferredPush?: string[] }
 export interface TellResultFrame { t: "tellResult"; id: string; ok: boolean; error?: string }
 
 export type ClientFrame = AuthFrame | SendFrame | TellSendFrame | TellAckFrame;
@@ -190,6 +194,8 @@ const MAX_HASH_LENGTH = 43;
 const MAX_KEY_LENGTH = 87;
 // Matches Limits.MaxTextBytes in the plugin.
 const MAX_SEND_LENGTH = 500;
+const MAX_DUTY_LENGTH = 128;
+const ALERT_KINDS: AlertKind[] = ["partyFull", "dutyPop"];
 
 function isBoundedString(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length <= max;
@@ -306,6 +312,13 @@ export function parsePluginPayload(value: unknown): PluginPayload | null {
         : null;
     case "settings":
       return parseSettings(value) as SettingsPayload | null;
+    case "alert":
+      return ALERT_KINDS.includes(value.kind as AlertKind) &&
+        isName(value.character) &&
+        isValidTs(value.ts) &&
+        (value.duty === undefined || value.duty === null || isBoundedString(value.duty, MAX_DUTY_LENGTH))
+        ? (value as unknown as AlertPayload)
+        : null;
     default:
       return null;
   }

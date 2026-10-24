@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "./api";
 import { encode } from "./b64url";
 import { exportPublicRaw, generateDeviceKey, sealPayload } from "./crypto";
-import type { ChatItem, PluginPayload, ServerFrame } from "./protocol";
+import type { AlertKind, ChatItem, PluginPayload, ServerFrame } from "./protocol";
 import type { RelayHandlers } from "./relay";
 import { createAccountManager, type ManagerDeps } from "./accounts";
 import { addAccount, listAccounts, resetRegistryForTests } from "./registry";
@@ -25,6 +25,7 @@ async function seed(deviceId: string, opts: { push?: boolean } = {}) {
 function fakeDeps(api: Partial<Api> = {}) {
   const handlers = new Map<string, RelayHandlers>();
   const push = { enable: vi.fn(async () => true), disable: vi.fn(async () => {}) };
+  const showNotification = vi.fn<ManagerDeps["showNotification"]>(async () => {});
   const fail = () => Promise.reject(new Error("not expected"));
   const deps: ManagerDeps = {
     api: {
@@ -42,6 +43,7 @@ function fakeDeps(api: Partial<Api> = {}) {
       return { send: () => true, close: () => {} };
     },
     push,
+    showNotification,
   };
   const deliver = (deviceId: string, frame: ServerFrame) => handlers.get(`tok-${deviceId}`)!.onFrame(frame);
   const fromPlugin = async (deviceId: string, payload: PluginPayload) =>
@@ -51,7 +53,9 @@ function fakeDeps(api: Partial<Api> = {}) {
     deliver(deviceId, { t: "authOk", role: "device", id: deviceId });
     deliver(deviceId, { t: "pluginStatus", online: true });
   };
-  return { deps, push, deliver, fromPlugin, chat, online };
+  const alert = (deviceId: string, kind: AlertKind, seq: number, duty?: string) =>
+    fromPlugin(deviceId, { type: "alert", seq, kind, character: "", ts: 1, ...(duty ? { duty } : {}) });
+  return { deps, push, showNotification, deliver, fromPlugin, chat, alert, online };
 }
 
 function item(id: string, ts: number, character = "Alpha Beta"): ChatItem {
@@ -255,6 +259,53 @@ describe("account manager", () => {
     const manager = await createAccountManager(fakeDeps().deps);
     expect(manager.list().map((a) => a.deviceId)).toEqual(["a", "b"]);
     expect((await listAccounts()).map((r) => r.deviceId)).toContain("broken");
+  });
+
+  it("shows an alert that arrives while the app is open", async () => {
+    await seed("a", { push: true });
+    const { deps, online, alert, showNotification } = fakeDeps();
+    await createAccountManager(deps);
+    online("a");
+    await alert("a", "partyFull", Date.now());
+
+    await vi.waitFor(() => expect(showNotification).toHaveBeenCalledWith("Party is full", {
+      body: "Your Party Finder party has filled up",
+      tag: "a:alert:partyFull",
+      renotify: true,
+      icon: "/icon-192.png",
+      data: { deviceId: "a" },
+    }));
+  });
+
+  it("names the account in alerts when more than one is active", async () => {
+    await seed("a", { push: true });
+    await seed("b", { push: true });
+    const { deps, online, alert, showNotification } = fakeDeps();
+    await createAccountManager(deps);
+    online("a");
+    online("b");
+    await alert("b", "dutyPop", Date.now(), "The Aurum Vale");
+
+    await vi.waitFor(() => expect(showNotification).toHaveBeenCalledWith("Account 2 - Duty ready", expect.objectContaining({
+      body: "The Aurum Vale",
+      tag: "b:alert:dutyPop",
+      data: { deviceId: "b" },
+    })));
+  });
+
+  it("shows no alerts for a removed account", async () => {
+    await seed("a", { push: true });
+    await seed("b", { push: true });
+    const { deps, online, alert, showNotification } = fakeDeps();
+    const manager = await createAccountManager(deps);
+    online("a");
+    online("b");
+    await manager.remove("a");
+    await alert("a", "partyFull", Date.now());
+    await alert("b", "partyFull", Date.now());
+
+    await vi.waitFor(() => expect(showNotification).toHaveBeenCalledWith("Party is full", expect.objectContaining({ tag: "b:alert:partyFull" })));
+    expect(showNotification).toHaveBeenCalledTimes(1);
   });
 
   it("persists the cache limit and applies it to every session", async () => {

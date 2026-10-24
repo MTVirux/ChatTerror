@@ -121,7 +121,7 @@ public class RelayTests
         await plugin.SendAsync(new SendFrame(device.DeviceId, "cipher", Notify: true));
 
         await app.Push.WaitForCallAsync();
-        var (subscription, body) = Assert.Single(app.Push.Calls);
+        var (subscription, body, _) = Assert.Single(app.Push.Calls);
         Assert.Equal("https://1.1.1.1/sub", subscription.Endpoint);
         Assert.Equal("p256", subscription.P256dh);
         Assert.Equal("secret", subscription.Auth);
@@ -161,6 +161,102 @@ public class RelayTests
         while (store.FindDevice(device.DeviceId)!.Push != null && DateTime.UtcNow < deadline)
             await Task.Delay(20);
         Assert.Null(store.FindDevice(device.DeviceId)!.Push);
+    }
+
+    [Fact]
+    public async Task SendFrame_TtlIsPassedToThePushService()
+    {
+        using var app = new RelayApp();
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        await SubscribePushAsync(app, device);
+
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "pop", Notify: true, Ttl: 60));
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "chat", Notify: true));
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "long", Notify: true, Ttl: 999999));
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "zero", Notify: true, Ttl: 0));
+        await plugin.BarrierAsync();
+
+        Assert.Equal([60, 86400, 86400, 1], app.Push.Calls.Select(call => call.Ttl));
+    }
+
+    [Fact]
+    public async Task UrgentPush_GoesOutWhileTheNormalCapIsFull()
+    {
+        using var app = new RelayApp();
+        var stuck = new TaskCompletionSource();
+        app.Push.Hold = _ => stuck.Task;
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        await SubscribePushAsync(app, device);
+
+        for (var i = 0; i < 4; i++)
+            await plugin.SendAsync(new SendFrame(device.DeviceId, "chat", Notify: true));
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "pop", Notify: true, Ttl: 60));
+        await plugin.SendAsync(new SendFrame(device.DeviceId, "late", Notify: true));
+        await plugin.BarrierAsync();
+        stuck.SetResult();
+
+        Assert.Equal(5, app.Push.Calls.Count);
+        Assert.Contains(app.Push.Calls, call => call.Body.Contains("pop"));
+        Assert.DoesNotContain(app.Push.Calls, call => call.Body.Contains("late"));
+    }
+
+    [Fact]
+    public async Task UrgentPushes_BeyondTheirOwnAllowanceAreSkipped()
+    {
+        using var app = new RelayApp();
+        var stuck = new TaskCompletionSource();
+        app.Push.Hold = _ => stuck.Task;
+        var install = await app.RegisterInstallAsync();
+        await using var plugin = await app.ConnectAsync(install.InstallToken);
+        var device = await app.PairDeviceAsync(install, plugin);
+        await SubscribePushAsync(app, device);
+
+        for (var i = 0; i < 4; i++)
+            await plugin.SendAsync(new SendFrame(device.DeviceId, "chat", Notify: true));
+        for (var i = 0; i < 5; i++)
+            await plugin.SendAsync(new SendFrame(device.DeviceId, $"pop{i}", Notify: true, Ttl: 60));
+        await plugin.BarrierAsync();
+        stuck.SetResult();
+
+        Assert.Equal(8, app.Push.Calls.Count);
+        Assert.Equal(4, app.Push.Calls.Count(call => call.Body.Contains("pop")));
+        Assert.DoesNotContain(app.Push.Calls, call => call.Body.Contains("pop4"));
+    }
+
+    [Fact]
+    public async Task UrgentPushes_FromOneInstallDoNotBlockAnother()
+    {
+        using var app = new RelayApp(new() { ["Relay:MaxConcurrentPushes"] = "6" });
+        var stuck = new TaskCompletionSource();
+        app.Push.Hold = sub => sub.Endpoint.EndsWith("/a") ? stuck.Task : Task.CompletedTask;
+
+        async Task<(TestSocket Plugin, ClaimResponse Device)> Setup(string endpoint)
+        {
+            var install = await app.RegisterInstallAsync();
+            var plugin = await app.ConnectAsync(install.InstallToken);
+            var device = await app.PairDeviceAsync(install, plugin);
+            await SubscribePushAsync(app, device, endpoint);
+            return (plugin, device);
+        }
+
+        var (pluginA, deviceA) = await Setup("https://1.1.1.1/a");
+        var (pluginB, deviceB) = await Setup("https://1.1.1.1/b");
+        await using var _a = pluginA;
+        await using var _b = pluginB;
+
+        for (var i = 0; i < 8; i++)
+            await pluginA.SendAsync(new SendFrame(deviceA.DeviceId, "pop", Notify: true, Ttl: 60));
+        await pluginA.BarrierAsync();
+        await pluginB.SendAsync(new SendFrame(deviceB.DeviceId, "chat", Notify: true));
+        await pluginB.BarrierAsync();
+        stuck.SetResult();
+
+        Assert.Equal(4, app.Push.Calls.Count(call => call.Subscription.Endpoint.EndsWith("/a")));
+        Assert.Contains(app.Push.Calls, call => call.Subscription.Endpoint.EndsWith("/b"));
     }
 
     [Fact]

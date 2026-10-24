@@ -8,7 +8,7 @@ namespace ChatTerror.Server.Push;
 
 public sealed class WebPushSender : IPushSender, IDisposable
 {
-    private const int TimeToLiveSeconds = 86400;
+    public const int DefaultTtlSeconds = 86400;
 
     private readonly PushServiceClient client;
     private readonly VapidAuthentication authentication;
@@ -57,7 +57,7 @@ public sealed class WebPushSender : IPushSender, IDisposable
         client = new PushServiceClient(http) { DefaultAuthentication = authentication };
     }
 
-    public async Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, CancellationToken ct)
+    public async Task<PushResult> SendAsync(PushSubscriptionRecord sub, string body, int ttlSeconds, CancellationToken ct)
     {
         if (!Uri.TryCreate(sub.Endpoint, UriKind.Absolute, out var endpoint) || !await IsAllowedAsync(endpoint, ct))
         {
@@ -68,7 +68,7 @@ public sealed class WebPushSender : IPushSender, IDisposable
         var subscription = new PushSubscription { Endpoint = sub.Endpoint };
         subscription.SetKey(PushEncryptionKeyName.P256DH, sub.P256dh);
         subscription.SetKey(PushEncryptionKeyName.Auth, sub.Auth);
-        var message = new PushMessage(body) { TimeToLive = TimeToLiveSeconds, Urgency = PushMessageUrgency.High };
+        var message = new PushMessage(body) { TimeToLive = ttlSeconds, Urgency = PushMessageUrgency.High };
 
         try
         {

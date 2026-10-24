@@ -125,7 +125,24 @@ public class PushSenderTests
         Assert.Equal(PushResult.Ok, result);
     }
 
-    private static async Task<PushResult> SendWithHandlerAsync(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond, string endpoint = "https://1.1.1.1/sub")
+    [Fact]
+    public async Task TtlSeconds_IsSentToThePushService()
+    {
+        string[] ttl = [];
+        var result = await SendWithHandlerAsync((request, _) =>
+        {
+            ttl = request.Headers.GetValues("TTL").ToArray();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
+        }, ttlSeconds: 60);
+
+        Assert.Equal(PushResult.Ok, result);
+        Assert.Equal(["60"], ttl);
+    }
+
+    private static async Task<PushResult> SendWithHandlerAsync(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond,
+        string endpoint = "https://1.1.1.1/sub",
+        int ttlSeconds = WebPushSender.DefaultTtlSeconds)
     {
         var directory = Path.Combine(Path.GetTempPath(), "chatterror-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -147,7 +164,7 @@ public class PushSenderTests
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
             var watch = Stopwatch.StartNew();
-            var result = await sender.SendAsync(subscription, "{\"p\":\"x\"}", timeout.Token);
+            var result = await sender.SendAsync(subscription, "{\"p\":\"x\"}", ttlSeconds, timeout.Token);
             Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"Push took {watch.Elapsed}.");
             return result;
         }

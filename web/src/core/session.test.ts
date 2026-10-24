@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type Api } from "./api";
 import { decode, encode } from "./b64url";
 import { exportPublicRaw, generateTellKey, openPayload, sealPayload, sealTell } from "./crypto";
-import type { ChatItem, ClientFrame, DevicePayload, PluginPayload, ServerFrame, SignedBundle, TellContact, TellSendFrame } from "./protocol";
+import type { AlertPayload, ChatItem, ClientFrame, DevicePayload, PluginPayload, ServerFrame, SignedBundle, TellContact, TellSendFrame } from "./protocol";
 import type { RelayHandlers } from "./relay";
 import { createSession, SEND_TIMEOUT_MS, type SessionDeps } from "./session";
 import { DEFAULT_CACHE_LIMIT, openAccountStore, resetStorageForTests, type AccountStore } from "./storage";
@@ -370,6 +370,93 @@ describe("session", () => {
     expect(sent[sent.length - 1]).toMatchObject({
       channels: [{ character: "Alpha Beta", channel: "tell", partner: "Foo Bar@World", notify: "all" }],
     });
+  });
+
+  it("sends the default alert prefs with hello", async () => {
+    const { session, relay } = await setup();
+    expect(session.getState().notifyPrefs).toEqual({ partyFull: true, dutyPop: true, waitSeconds: 10 });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () =>
+      expect((await relay.payloads()).find((p) => p.type === "prefs")).toMatchObject({ alerts: { partyFull: true, dutyPop: true, waitSeconds: 10 } }),
+    );
+  });
+
+  it("starts with the stored alert prefs", async () => {
+    await store.setMeta("notifyPrefs", { partyFull: true, dutyPop: false, waitSeconds: 0 });
+    const { session } = await setup();
+    expect(session.getState().notifyPrefs).toEqual({ partyFull: true, dutyPop: false, waitSeconds: 0 });
+  });
+
+  it("repairs malformed stored alert prefs before sending them", async () => {
+    await store.setMeta("notifyPrefs", { partyFull: "yes", waitSeconds: 90 } as never);
+    const { session, relay } = await setup();
+    expect(session.getState().notifyPrefs).toEqual({ partyFull: true, dutyPop: true, waitSeconds: 60 });
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    relay.deliver({ t: "pluginStatus", online: true });
+    await vi.waitFor(async () =>
+      expect((await relay.payloads()).find((p) => p.type === "prefs")).toMatchObject({ alerts: { partyFull: true, dutyPop: true, waitSeconds: 60 } }),
+    );
+  });
+
+  it("clamps alert prefs it is given", async () => {
+    const { session, relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    await session.setNotifyPrefs({ partyFull: false, dutyPop: true, waitSeconds: 75 });
+    const clamped = { partyFull: false, dutyPop: true, waitSeconds: 60 };
+    expect(session.getState().notifyPrefs).toEqual(clamped);
+    expect(await store.getMeta("notifyPrefs")).toEqual(clamped);
+    const sent = (await relay.payloads()).filter((p) => p.type === "prefs");
+    expect(sent[sent.length - 1]).toMatchObject({ alerts: clamped });
+  });
+
+  it("stores alert prefs and sends them when they change", async () => {
+    const { session, relay } = await setup();
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    const prefs = { partyFull: false, dutyPop: true, waitSeconds: 30 };
+    await session.setNotifyPrefs(prefs);
+    expect(session.getState().notifyPrefs).toEqual(prefs);
+    expect(await store.getMeta("notifyPrefs")).toEqual(prefs);
+    const sent = (await relay.payloads()).filter((p) => p.type === "prefs");
+    expect(sent[sent.length - 1]).toMatchObject({ alerts: prefs });
+  });
+
+  it("hands live alerts to listeners only while notifications are on, without storing them", async () => {
+    await store.setMeta("pushEnabled", true);
+    const { session, relay } = await setup();
+    const alerts: AlertPayload[] = [];
+    session.onAlert((alert) => alerts.push(alert));
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+
+    const seq = Date.now();
+    const alert: AlertPayload = { type: "alert", seq, kind: "dutyPop", character: "Alpha Beta", ts: 100, duty: "The Aurum Vale" };
+    await relay.fromPlugin(alert);
+    await vi.waitFor(() => expect(alerts).toEqual([alert]));
+    expect(await store.loadMessages(10)).toEqual([]);
+
+    await session.disablePush();
+    await relay.fromPlugin({ ...alert, seq: seq + 1, kind: "partyFull" });
+    await relay.fromPlugin({ type: "chat", seq: seq + 2, item: item("after", 200) });
+    await vi.waitFor(async () => expect(await store.loadMessages(10)).toHaveLength(1));
+    expect(alerts).toEqual([alert]);
+  });
+
+  it("follows the plugin's alert support from settings", async () => {
+    const { session, relay } = await setup();
+    expect(session.getState().supportsAlerts).toBe(false);
+    relay.deliver({ t: "authOk", role: "device", id: "dev" });
+    const settings = { type: "settings" as const, relayChannels: ["say" as const], sendChannels: ["say" as const], maxLength: 300 };
+    const seq = Date.now();
+    await relay.fromPlugin({ ...settings, seq, supportsAlerts: true });
+    await vi.waitFor(() => expect(session.getState().supportsAlerts).toBe(true));
+    await relay.fromPlugin({ ...settings, seq: seq + 1 });
+    await vi.waitFor(() => expect(session.getState().supportsAlerts).toBe(false));
+  });
+
+  it("starts with the alert support of the stored settings", async () => {
+    await store.setMeta("lastSettings", { type: "settings", seq: 1, relayChannels: [], sendChannels: [], maxLength: 300, supportsAlerts: true });
+    const { session } = await setup();
+    expect(session.getState().supportsAlerts).toBe(true);
   });
 
   it("revoked frame wipes storage", async () => {

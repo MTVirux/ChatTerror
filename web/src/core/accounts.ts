@@ -1,6 +1,7 @@
 import { accountColors, uniqueLabels } from "./accountIdentity";
+import { alertNotificationOptions } from "./alerts";
 import { createApi, type Api } from "./api";
-import type { ChatItem } from "./protocol";
+import type { AlertPayload, ChatItem } from "./protocol";
 import { createPushControl, registerServiceWorker, type PushControl } from "./push";
 import { connectRelay } from "./relay";
 import * as registry from "./registry";
@@ -29,6 +30,7 @@ export interface ManagerDeps {
   api: Api;
   connect: SessionDeps["connect"];
   push: PushControl;
+  showNotification(title: string, options: NotificationOptions): Promise<void>;
 }
 
 export interface AccountManager {
@@ -52,6 +54,7 @@ interface Entry {
   unread: number;
   offState: () => void;
   offMessages: () => void;
+  offAlert: () => void;
 }
 
 export async function createAccountManager(deps: ManagerDeps): Promise<AccountManager> {
@@ -126,12 +129,22 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
     for (const listener of messageListeners) listener(tagged);
   }
 
+  // The relay delivers live instead of pushing while the app is connected, so the app shows the alert itself.
+  function onAlert(entry: Entry, alert: AlertPayload) {
+    const deviceId = entry.record.deviceId;
+    const label = views.find((v) => v.deviceId === deviceId)?.label ?? "";
+    const multiple = views.filter((v) => v.status === "active").length > 1;
+    const { title, options } = alertNotificationOptions(deviceId, alert, label, multiple);
+    void deps.showNotification(title, options);
+  }
+
   async function open(record: AccountRecord): Promise<Entry> {
     const store = openAccountStore(record.dbName);
     const session = await createSession({ api: deps.api, connect: deps.connect, push: pushFor(record.deviceId), store, cacheLimit });
     const entry = { record, store, session, unread: 0 } as Entry;
     entry.offState = session.subscribe((s) => onState(entry, s));
     entry.offMessages = session.onMessages((items) => onItems(entry, items));
+    entry.offAlert = session.onAlert((alert) => onAlert(entry, alert));
     entries.set(record.deviceId, entry);
     return entry;
   }
@@ -139,6 +152,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
   async function drop(entry: Entry) {
     entry.offState();
     entry.offMessages();
+    entry.offAlert();
     entry.session.close();
     entries.delete(entry.record.deviceId);
     await registry.removeAccount(entry.record.deviceId);
@@ -236,6 +250,7 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
       for (const e of entries.values()) {
         e.offState();
         e.offMessages();
+        e.offAlert();
         e.session.close();
       }
       entries.clear();
@@ -245,8 +260,16 @@ export async function createAccountManager(deps: ManagerDeps): Promise<AccountMa
   };
 }
 
+async function showNotification(title: string, options: NotificationOptions) {
+  try {
+    await (await navigator.serviceWorker.ready).showNotification(title, options);
+  } catch {
+    // Nothing to fall back to without a service worker or notification permission.
+  }
+}
+
 export async function openAccounts(): Promise<AccountManager> {
   void registerServiceWorker();
   const api = createApi();
-  return createAccountManager({ api, connect: connectRelay, push: createPushControl(api) });
+  return createAccountManager({ api, connect: connectRelay, push: createPushControl(api), showNotification });
 }

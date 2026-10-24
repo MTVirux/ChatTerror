@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ChatTerror.Protocol;
 using ChatTerror.Server.Data;
+using ChatTerror.Server.Push;
 
 namespace ChatTerror.Server.Relay;
 
@@ -29,8 +30,11 @@ public sealed partial class RelaySocketHandler
         }
 
         var senderKey = store.InstallPublicKey(conn.InstallId)!;
+        var hasPluginCopy = frame.Copies.Any(IsRecipientPluginCopy);
+        List<string>? deferred = null;
         // Recipient copies go first, so an unfriend since CheckTell refuses the tell before any self copy is queued.
-        foreach (var copy in frame.Copies.OrderBy(copy => copy.Self))
+        // Plugin copies go last, so the plugin's copy can list every device push left to it.
+        foreach (var copy in frame.Copies.OrderBy(copy => copy.Self).ThenBy(copy => copy.Target == TellTargets.Plugin))
         {
             var install = copy.Self ? conn.InstallId : recipientInstall!;
             if (copy.Self && copy.Target == TellTarget(conn))
@@ -41,22 +45,57 @@ public sealed partial class RelaySocketHandler
                 conn.Send(new TellResultFrame(frame.Id, false, TellErrors.NotPaired));
                 return;
             }
+            var tell = new TellFrame(frame.Id, conn.InstallId, copy.Envelope, senderKey);
             if (Online(install, copy.Target) is { } online)
             {
-                online.Send(new TellFrame(frame.Id, conn.InstallId, copy.Envelope, senderKey));
+                online.Send(IsRecipientPluginCopy(copy) ? tell with { DeferredPush = deferred } : tell);
             }
             else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
-                && device.InstallId == install
-                && tellLimiter.TryPush(conn.InstallId, device.Id))
+                && device.InstallId == install)
             {
-                var body = JsonSerializer.Serialize(new { t = "tell", i = frame.Id, f = conn.InstallId, e = copy.Envelope, k = senderKey, d = device.Id });
-                _ = PushAsync(device, subscription, body);
+                if (hasPluginCopy && TryDeferTellPush(install, device.Id, frame.Id))
+                    (deferred ??= []).Add(device.Id);
+                else if (tellLimiter.TryPush(conn.InstallId, device.Id))
+                    PushTell(device, subscription, tell);
             }
         }
 
         conn.Send(new TellResultFrame(frame.Id, true));
     }
+
+    private static bool IsRecipientPluginCopy(TellCopy copy) => !copy.Self && copy.Target == TellTargets.Plugin;
+
+    // A plugin listing tellPush runs its away check on its own copy of the tell, then asks for each push with a tellPush frame.
+    private bool TryDeferTellPush(string installId, string deviceId, string tellId) =>
+        registry.Plugin(installId)?.Features.Contains(RelayFeatures.TellPush) == true
+        && deferredTellPushes.TryAdd(installId, deviceId, tellId);
+
+    // Only pushes what a direct push would have, so a replayed or stray request can't add notifications.
+    private void PushQueuedTell(Conn plugin, TellPushFrame frame)
+    {
+        if (!deferredTellPushes.TryTake(plugin.InstallId, frame.DeviceId, frame.Id)
+            || OwnDevice(plugin, frame.DeviceId) is not { Status: DeviceStatus.Active, Push: { } subscription } device
+            || Online(plugin.InstallId, device.Id) != null)
+            return;
+
+        var tell = store.PendingTells(plugin.InstallId, device.Id).FirstOrDefault(queued => queued.Id == frame.Id);
+        if (tell == null || tell.From == plugin.InstallId
+            || TellBundleOf(plugin.InstallId)?.Entries.Any(e => e.Target == device.Id && e.Push) != true)
+            return;
+
+        if (tellLimiter.TryPush(tell.From, device.Id))
+            PushTell(device, subscription, tell);
+    }
+
+    private void PushTell(DeviceRecord device, PushSubscriptionRecord subscription, TellFrame tell)
+    {
+        var body = JsonSerializer.Serialize(new { t = "tell", i = tell.Id, f = tell.From, e = tell.Envelope, k = tell.FromKey, d = device.Id });
+        _ = PushAsync(device, subscription, body);
+    }
+
+    private TellBundle? TellBundleOf(string installId) =>
+        store.FindTellBundle(installId) is { } signed ? TellBundles.Read(signed) : null;
 
     private string? CheckTell(Conn conn, TellSendFrame frame, out string? recipientInstall, out TellBundle? recipient)
     {
@@ -68,11 +107,11 @@ public sealed partial class RelaySocketHandler
             return TellErrors.NotPaired;
 
         recipientInstall = frame.To;
-        recipient = store.FindTellBundle(recipientInstall) is { } signed ? TellBundles.Read(signed) : null;
+        recipient = TellBundleOf(recipientInstall);
         if (recipient == null)
             return TellErrors.NotChatTerror;
 
-        var own = store.FindTellBundle(conn.InstallId) is { } ownSigned ? TellBundles.Read(ownSigned) : null;
+        var own = TellBundleOf(conn.InstallId);
         if (frame.Copies.Count is 0 || frame.Copies.Count > 2 * (Limits.MaxDevices + 1)
             || frame.Copies.DistinctBy(copy => (copy.Self, copy.Target)).Count() != frame.Copies.Count)
             return TellErrors.BadCopies;

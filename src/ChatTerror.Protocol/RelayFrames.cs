@@ -23,12 +23,13 @@ namespace ChatTerror.Protocol;
 [JsonDerivedType(typeof(TellFrame), "tell")]
 [JsonDerivedType(typeof(TellAckFrame), "tellAck")]
 [JsonDerivedType(typeof(FriendsChangedFrame), "friendsChanged")]
+[JsonDerivedType(typeof(TellPushFrame), "tellPush")]
 public abstract record RelayFrame;
 
-public sealed record AuthFrame(string Token) : RelayFrame;
+public sealed record AuthFrame(string Token, IReadOnlyList<string>? Features = null) : RelayFrame;
 
-// Plugin sends set To and Notify; device sends leave them out.
-public sealed record SendFrame([Optional, DefaultParameterValue(null)] string? To, string Payload, bool Notify = false) : RelayFrame;
+// Plugin sends set To and Notify; device sends leave them out. Ttl is the push TTL in seconds.
+public sealed record SendFrame([Optional, DefaultParameterValue(null)] string? To, string Payload, bool Notify = false, int? Ttl = null) : RelayFrame;
 
 public sealed record PairDecisionFrame(string DeviceId, bool Approved) : RelayFrame;
 
@@ -63,16 +64,25 @@ public sealed record TellSendFrame(string Id, string To, IReadOnlyList<TellCopy>
 public sealed record TellResultFrame(string Id, bool Ok, string? Error = null) : RelayFrame;
 
 // From is the sending install id, FromKey its install key as the relay knows it.
-public sealed record TellFrame(string Id, string From, string Envelope, string FromKey) : RelayFrame;
+// DeferredPush lists the devices whose push the relay left to this plugin. Only the live copy to the recipient plugin has it.
+public sealed record TellFrame(string Id, string From, string Envelope, string FromKey, IReadOnlyList<string>? DeferredPush = null) : RelayFrame;
 
 public sealed record TellAckFrame(IReadOnlyList<string> Ids) : RelayFrame;
 
 public sealed record FriendsChangedFrame : RelayFrame;
 
+// The plugin asks the relay to push the friend tell Id it received to its own device DeviceId.
+public sealed record TellPushFrame(string Id, string DeviceId) : RelayFrame;
+
 public static class RelayRoles
 {
     public const string Plugin = "plugin";
     public const string Device = "device";
+}
+
+public static class RelayFeatures
+{
+    public const string TellPush = "tellPush";
 }
 
 public static class RelayErrors
