@@ -30,8 +30,10 @@ public sealed partial class RelaySocketHandler
         }
 
         var senderKey = store.InstallPublicKey(conn.InstallId)!;
+        var hasPluginCopy = frame.Copies.Any(IsRecipientPluginCopy);
+        List<string>? deferred = null;
         // Recipient copies go first, so an unfriend since CheckTell refuses the tell before any self copy is queued.
-        // Plugin copies go last, so a deferred device push is recorded before the plugin can ask for it.
+        // Plugin copies go last, so the plugin's copy can list every device push left to it.
         foreach (var copy in frame.Copies.OrderBy(copy => copy.Self).ThenBy(copy => copy.Target == TellTargets.Plugin))
         {
             var install = copy.Self ? conn.InstallId : recipientInstall!;
@@ -46,23 +48,26 @@ public sealed partial class RelaySocketHandler
             var tell = new TellFrame(frame.Id, conn.InstallId, copy.Envelope, senderKey);
             if (Online(install, copy.Target) is { } online)
             {
-                online.Send(tell);
+                online.Send(IsRecipientPluginCopy(copy) ? tell with { DeferredPush = deferred } : tell);
             }
             else if (!copy.Self && recipient!.Entries.Any(e => e.Target == copy.Target && e.Push)
                 && store.FindDevice(copy.Target) is { Status: DeviceStatus.Active, Push: { } subscription } device
-                && device.InstallId == install
-                && !DeferTellPush(install, device.Id, frame.Id)
-                && tellLimiter.TryPush(conn.InstallId, device.Id))
+                && device.InstallId == install)
             {
-                PushTell(device, subscription, tell);
+                if (hasPluginCopy && TryDeferTellPush(install, device.Id, frame.Id))
+                    (deferred ??= []).Add(device.Id);
+                else if (tellLimiter.TryPush(conn.InstallId, device.Id))
+                    PushTell(device, subscription, tell);
             }
         }
 
         conn.Send(new TellResultFrame(frame.Id, true));
     }
 
+    private static bool IsRecipientPluginCopy(TellCopy copy) => !copy.Self && copy.Target == TellTargets.Plugin;
+
     // A plugin listing tellPush runs its away check on its own copy of the tell, then asks for each push with a tellPush frame.
-    private bool DeferTellPush(string installId, string deviceId, string tellId) =>
+    private bool TryDeferTellPush(string installId, string deviceId, string tellId) =>
         registry.Plugin(installId)?.Features.Contains(RelayFeatures.TellPush) == true
         && deferredTellPushes.TryAdd(installId, deviceId, tellId);
 

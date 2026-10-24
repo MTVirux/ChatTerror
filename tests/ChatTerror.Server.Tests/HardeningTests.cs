@@ -263,18 +263,25 @@ public class HardeningTests
     }
 
     [Fact]
-    public void PushLimiter_UrgentSkipsThePerInstallCapButNotTheTotal()
+    public void PushLimiter_UrgentHasItsOwnPerInstallAllowance()
     {
-        var limiter = new PushLimiter(maxTotal: 3, maxPerInstall: 1);
+        var limiter = new PushLimiter(maxTotal: 5, maxPerInstall: 2);
 
+        Assert.True(limiter.TryAcquire("a"));
         Assert.True(limiter.TryAcquire("a"));
         Assert.False(limiter.TryAcquire("a"));
         Assert.True(limiter.TryAcquire("a", urgent: true));
+        Assert.True(limiter.TryAcquire("a", urgent: true));
+        Assert.False(limiter.TryAcquire("a", urgent: true));
         Assert.True(limiter.TryAcquire("b", urgent: true));
-        Assert.False(limiter.TryAcquire("c", urgent: true));
+        Assert.False(limiter.TryAcquire("c"));
+
+        limiter.Release("a", urgent: true);
+        Assert.False(limiter.TryAcquire("a"));
+        Assert.True(limiter.TryAcquire("a", urgent: true));
 
         limiter.Release("a");
-        limiter.Release("a");
+        Assert.False(limiter.TryAcquire("a", urgent: true));
         Assert.True(limiter.TryAcquire("a"));
     }
 
@@ -297,6 +304,21 @@ public class HardeningTests
         Assert.False(deferred.TryTake("a", "d1", "t2"));
         Assert.True(deferred.TryAdd("a", "d1", "t4"));
         Assert.True(deferred.TryAdd("a", "d1", "t5"));
+    }
+
+    [Fact]
+    public void DeferredTellPushes_FullStoreStillRefreshesAnExistingKey()
+    {
+        var time = new MutableTimeProvider();
+        var deferred = new DeferredTellPushes(maxEntries: 1, time);
+
+        Assert.True(deferred.TryAdd("a", "d1", "t1"));
+        time.Advance(TimeSpan.FromMinutes(4));
+        Assert.True(deferred.TryAdd("a", "d1", "t1"));
+        Assert.False(deferred.TryAdd("a", "d1", "t2"));
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.True(deferred.TryTake("a", "d1", "t1"));
     }
 
     [Fact]

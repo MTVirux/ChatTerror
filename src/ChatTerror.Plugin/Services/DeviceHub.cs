@@ -32,7 +32,7 @@ public sealed class DeviceHub : IDisposable
     private readonly IFramework framework;
     private readonly IPluginLog log;
     private readonly Func<string?> characterName;
-    private readonly Func<float?> idleSeconds;
+    private readonly IdleClock idleClock;
     private readonly string historyPath;
     private readonly Dictionary<string, DeviceSession> sessions = new();
     private readonly List<PendingPair> pendingPairs = new();
@@ -57,7 +57,7 @@ public sealed class DeviceHub : IDisposable
         IFramework framework,
         IPluginLog log,
         Func<string?> characterName,
-        Func<float?> idleSeconds,
+        IdleClock idleClock,
         string historyPath)
     {
         this.config = config;
@@ -67,7 +67,7 @@ public sealed class DeviceHub : IDisposable
         this.framework = framework;
         this.log = log;
         this.characterName = characterName;
-        this.idleSeconds = idleSeconds;
+        this.idleClock = idleClock;
         this.historyPath = historyPath;
         History = new MessageHistory(config.Settings.HistorySize, LoadHistory());
         savedHistoryVersion = History.Version;
@@ -108,7 +108,7 @@ public sealed class DeviceHub : IDisposable
         {
             // A delayed push is a second send of the line, since holding this sealed payload back would break seq order.
             var notify = session.ShouldNotify(item, filter);
-            if (notify && !onlineDevices.Contains(session.DeviceId) && TryQueueAwayCheck(session, () => PushChat(session, item)))
+            if (notify && !onlineDevices.Contains(session.DeviceId) && TryQueueAwayCheck(session.Alerts.WaitSeconds, () => PushChat(session, item)))
                 notify = false;
             SendTo(session, new ChatPayload(item), notify);
         }
@@ -116,17 +116,17 @@ public sealed class DeviceHub : IDisposable
 
     public void Alert(AlertKind kind, string? duty)
     {
-        if (!config.Enabled || sessions.Count == 0 || QuietHours.IsQuiet(config.Settings, TimeOnly.FromDateTime(DateTime.Now)))
+        if (!config.Enabled || sessions.Count == 0 || IsQuietHours())
             return;
 
-        log.Verbose($"{kind} alert, the game has been idle for {IdleText(idleSeconds())}.");
+        log.Verbose($"{kind} alert, the game has been idle for {IdleText(idleClock.IdleSeconds())} ({idleClock.TimersText()}).");
         var alert = new AlertPayload(kind, characterName() ?? "", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), duty);
-        var ttl = kind == AlertKind.DutyPop ? Limits.DutyPopTtlSeconds : Limits.PartyFullTtlSeconds;
+        var raisedAt = Environment.TickCount64;
         foreach (var session in sessions.Values)
         {
             var wanted = kind == AlertKind.DutyPop ? session.Alerts.DutyPop : session.Alerts.PartyFull;
             if (wanted)
-                NotifyWhenAway(session, () => SendAlert(session, alert, ttl));
+                NotifyWhenAway(AwayCheck.AlertWaitSetting(kind, session.Alerts.WaitSeconds), () => SendAlert(session, alert, raisedAt));
         }
     }
 
@@ -278,15 +278,23 @@ public sealed class DeviceHub : IDisposable
     private void RunDueAwayChecks(long now)
     {
         var due = awayQueue.TakeDue(now);
-        if (due.Count == 0)
+        if (due.Count == 0 || !config.Enabled)
             return;
 
-        var idle = idleSeconds();
-        log.Verbose($"{due.Count} waiting notifications are due, the game has been idle for {IdleText(idle)}.");
+        var idle = idleClock.IdleSeconds();
+        log.Verbose($"{due.Count} waiting notifications are due, the game has been idle for {IdleText(idle)} ({idleClock.TimersText()}).");
         foreach (var (startedAt, notify) in due)
         {
-            if (AwayCheck.StillAway(idle, now - startedAt))
+            if (!AwayCheck.StillAway(idle, now - startedAt))
+                continue;
+            try
+            {
                 notify();
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, "Failed to send a waiting notification.");
+            }
         }
     }
 
@@ -498,36 +506,34 @@ public sealed class DeviceHub : IDisposable
         saveConfig();
     }
 
-    // The relay leaves friend-tell pushes to a plugin that listed tellPush, and still applies its push rules to each request.
+    // The relay lists the friend-tell pushes it left to this plugin, and still applies its push rules to each request.
     private void PushTellWhenAway(TellFrame tell)
     {
-        if (!config.TellsEnabled)
-            return;
-
-        foreach (var session in sessions.Values)
+        foreach (var deviceId in tell.DeferredPush ?? [])
         {
-            if (!onlineDevices.Contains(session.DeviceId))
-                NotifyWhenAway(session, () => PushTell(session, tell.Id));
+            if (sessions.TryGetValue(deviceId, out var session))
+                NotifyWhenAway(session.Alerts.WaitSeconds, () => PushTell(session, tell.Id));
         }
     }
 
     // True when notify waits in the queue, false when it should run now.
-    private bool TryQueueAwayCheck(DeviceSession session, Action notify)
+    private bool TryQueueAwayCheck(int waitSetting, Action notify)
     {
-        var wait = AwayCheck.WaitSeconds(session.Alerts.WaitSeconds, idleSeconds());
+        var wait = AwayCheck.WaitSeconds(waitSetting, idleClock.IdleSeconds());
         var now = Environment.TickCount64;
         return wait > 0 && awayQueue.TryAdd(now, now + wait * 1000L, notify);
     }
 
-    private void NotifyWhenAway(DeviceSession session, Action notify)
+    private void NotifyWhenAway(int waitSetting, Action notify)
     {
-        if (!TryQueueAwayCheck(session, notify))
+        if (!TryQueueAwayCheck(waitSetting, notify))
             notify();
     }
 
+    // Quiet hours may have started during the wait.
     private void PushChat(DeviceSession session, ChatItem item)
     {
-        if (StillOffline(session))
+        if (StillOffline(session) && !IsQuietHours())
             SendTo(session, new ChatPayload(item), true);
     }
 
@@ -538,11 +544,13 @@ public sealed class DeviceHub : IDisposable
     }
 
     // Alerts go out even to a connected phone, which shows the notification itself.
-    private void SendAlert(DeviceSession session, AlertPayload alert, int ttl)
+    private void SendAlert(DeviceSession session, AlertPayload alert, long raisedAt)
     {
-        if (IsCurrent(session))
-            SendTo(session, alert, true, ttl);
+        if (IsCurrent(session) && !IsQuietHours())
+            SendTo(session, alert, true, AwayCheck.AlertTtlSeconds(alert.Kind, Environment.TickCount64 - raisedAt));
     }
+
+    private bool IsQuietHours() => QuietHours.IsQuiet(config.Settings, TimeOnly.FromDateTime(DateTime.Now));
 
     private bool StillOffline(DeviceSession session) => IsCurrent(session) && !onlineDevices.Contains(session.DeviceId);
 

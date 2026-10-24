@@ -492,7 +492,9 @@ public class TellRelayTests
 
         app.Time.Advance(TimeSpan.FromSeconds(10));
         await using var pluginB = await app.ConnectAsync(b.Install.InstallToken, [RelayFeatures.TellPush]);
-        Assert.Equal("t1", (await pluginB.ReceiveAsync<TellFrame>()).Id);
+        var queued = await pluginB.ReceiveAsync<TellFrame>();
+        Assert.Equal("t1", queued.Id);
+        Assert.Null(queued.DeferredPush);
         await pluginB.SendAsync(new TellPushFrame("t1", phoneB.DeviceId));
         await pluginB.BarrierAsync();
 
@@ -550,5 +552,61 @@ public class TellRelayTests
         await s.PluginB.BarrierAsync();
 
         Assert.Equal("t2", PushedTellId(Assert.Single(app.Push.Calls).Body));
+    }
+
+    [Fact]
+    public async Task Tell_ListsTheDeferredPushesForTheRecipientPlugin()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using var pluginB = await app.ConnectAsync(b.Install.InstallToken, [RelayFeatures.TellPush]);
+        var offline = await app.PairDeviceAsync(b.Install, pluginB);
+        var online = await app.PairDeviceAsync(b.Install, pluginB);
+        foreach (var phone in new[] { offline, online })
+        {
+            var response = await app.Client(phone.DeviceToken).PutAsJsonAsync("/api/devices/me/push", new { endpoint = "https://1.1.1.1/sub", keys = new { p256dh = "p256", auth = "secret" } });
+            response.EnsureSuccessStatusCode();
+        }
+        await app.PutTellBundleAsync(b.Install.InstallToken, b.Key,
+            new TellBundleEntry(offline.DeviceId, RelayApp.NewPublicKey(), true),
+            new TellBundleEntry(online.DeviceId, RelayApp.NewPublicKey(), true));
+        await using var onlineSocket = await app.ConnectAsync(online.DeviceToken);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken, [RelayFeatures.TellPush]);
+
+        await TellAsync(pluginA, "t1", b,
+            new TellCopy(false, TellTargets.Plugin, "toB"),
+            new TellCopy(false, offline.DeviceId, "toOffline"),
+            new TellCopy(false, online.DeviceId, "toOnline"));
+
+        Assert.Equal([offline.DeviceId], (await pluginB.ReceiveAsync<TellFrame>()).DeferredPush!);
+        Assert.Null((await onlineSocket.ReceiveAsync<TellFrame>()).DeferredPush);
+        Assert.Empty(app.Push.Calls);
+    }
+
+    [Fact]
+    public async Task Tell_OldPluginGetsNoDeferredPush()
+    {
+        using var app = new RelayApp();
+        var (a, b) = await FriendsAsync(app);
+        await using var pluginB = await app.ConnectAsync(b.Install.InstallToken);
+        var phoneB = await PushablePhoneAsync(app, b, pluginB);
+        await using var pluginA = await app.ConnectAsync(a.Install.InstallToken);
+
+        await TellAsync(pluginA, "t1", b, CopiesTo(phoneB));
+
+        Assert.Null((await pluginB.ReceiveAsync<TellFrame>()).DeferredPush);
+        Assert.Equal("t1", PushedTellId(Assert.Single(app.Push.Calls).Body));
+    }
+
+    [Fact]
+    public async Task Tell_NotDeferredWithoutAPluginCopy()
+    {
+        using var app = new RelayApp();
+        await using var s = await TellPushSetupAsync(app);
+
+        await TellAsync(s.PluginA, "t1", s.B, new TellCopy(false, s.PhoneB.DeviceId, "toPhoneB"));
+
+        Assert.Equal("t1", PushedTellId(Assert.Single(app.Push.Calls).Body));
+        Assert.DoesNotContain(await s.PluginB.BarrierAsync(), f => f is TellFrame);
     }
 }

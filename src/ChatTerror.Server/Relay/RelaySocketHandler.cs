@@ -395,7 +395,8 @@ public sealed partial class RelaySocketHandler(
             log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: endpoint is not a known push service", device.Id, device.InstallId);
             return;
         }
-        if (!pushLimiter.TryAcquire(device.InstallId, urgent: ttl != null))
+        var urgent = ttl != null;
+        if (!pushLimiter.TryAcquire(device.InstallId, urgent))
         {
             log.LogWarning("Skipped push to device {DeviceId} of install {InstallId}: too many pushes in flight", device.Id, device.InstallId);
             return;
@@ -414,7 +415,7 @@ public sealed partial class RelaySocketHandler(
         }
         finally
         {
-            pushLimiter.Release(device.InstallId);
+            pushLimiter.Release(device.InstallId, urgent);
         }
     }
 }
