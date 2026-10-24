@@ -40,6 +40,22 @@ describe("storage", () => {
     expect((await store.loadMessages(10)).map((m) => m.id)).toEqual(["a"]);
   });
 
+  it("loads the newest messages per key, oldest first", async () => {
+    const fc = (id: string, ts: number): ChatItem => ({ ...item(id, ts), channel: "freeCompany" });
+    await store.addMessages([item("s1", 1), fc("f1", 2), fc("f2", 3), item("s2", 4), fc("f3", 5)], 10);
+    expect((await store.loadRecent(2, (m) => m.channel)).map((m) => m.id)).toEqual(["s1", "f2", "s2", "f3"]);
+  });
+
+  it("skips malformed messages when loading per key", async () => {
+    await store.addMessages([item("a", 1), { ...item("odd", 2), character: 5 as unknown as string }], 10);
+    expect((await store.loadRecent(5, (m) => m.channel)).map((m) => m.id)).toEqual(["a"]);
+  });
+
+  it("does not let a malformed message take a slot per key", async () => {
+    await store.addMessages([item("a", 1), { ...item("odd", 2), character: 5 as unknown as string }], 10);
+    expect((await store.loadRecent(1, (m) => m.channel)).map((m) => m.id)).toEqual(["a"]);
+  });
+
   it("clears messages", async () => {
     await store.addMessages([item("a", 1)], 10);
     await store.clearMessages();
