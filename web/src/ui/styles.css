@@ -1101,8 +1101,35 @@ p {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
 }
 
-.chat-head .menu-btn {
+.chat-head .icon-btn {
+  flex: none;
   color: var(--text);
+}
+
+.head-avatar {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.head-avatar:first-child {
+  margin-left: 8px;
+}
+
+/* Channel colours flip with the theme, so --chat reads on them. */
+.head-avatar.group {
+  border-radius: 10px;
+  color: var(--chat);
 }
 
 .chat-title {
@@ -1112,10 +1139,6 @@ p {
 }
 
 .chat-title h1 {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
   overflow: hidden;
   color: var(--header-text);
   font-size: 1.05rem;
@@ -1125,20 +1148,19 @@ p {
   text-overflow: ellipsis;
 }
 
-.chat-title h1 .hash {
-  width: auto;
-  font-size: 1.25rem;
-}
-
 .chat-title small {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  overflow: hidden;
   color: var(--muted);
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+.chat-sub {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
@@ -1397,42 +1419,42 @@ p {
   text-align: center;
 }
 
-.composer-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+/* Channel colours flip with the theme, so --chat reads on them. */
+.channel-chip {
+  position: relative;
+  flex: none;
+  margin-left: 6px;
+  color: var(--chat);
 }
 
-.channel-select {
+.channel-chip select {
+  appearance: none;
   min-height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--c);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--c) 12%, var(--surface));
-  color: var(--c);
-  font-weight: 700;
+  padding: 0 24px 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--c);
   font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
-.channel-select option {
+.channel-chip::after {
+  content: "\25BE";
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.channel-chip option {
   color: var(--text);
   background: var(--surface);
 }
 
-.target-input {
-  flex: 1;
-  min-width: 0;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--raised);
-  font-size: 0.9rem;
-}
-
 .counter {
-  margin-left: auto;
   flex: none;
   color: var(--muted);
   font-size: 0.72rem;
@@ -1453,10 +1475,6 @@ p {
   background: var(--raised);
 }
 
-.composer-row .counter {
-  margin-left: 0;
-}
-
 .composer textarea {
   flex: 1;
   min-width: 0;
@@ -1467,6 +1485,10 @@ p {
   background: none;
   resize: none;
   line-height: 1.4;
+}
+
+.composer .channel-chip + textarea {
+  padding-left: 4px;
 }
 
 .composer textarea:focus {

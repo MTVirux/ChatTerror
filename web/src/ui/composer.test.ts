@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CustomChannel } from "../core/channelPrefs";
+import type { ChatRow } from "./chatList";
 import { blockedReason, composerTab, pickable, preferredChannel, type Tab } from "./Composer";
 
 describe("composer channel", () => {
@@ -40,17 +40,14 @@ describe("composer blocking", () => {
 });
 
 describe("composerTab", () => {
-  const social: CustomChannel = { id: "s", character: "Alpha Beta", name: "Social", channels: ["freeCompany", "tell"] };
+  const group = { key: "x|Alpha Beta|s", kind: "group", character: "Alpha Beta", name: "Social", custom: { id: "s", character: "Alpha Beta", name: "Social", channels: ["freeCompany", "linkshell1"] }, pinned: false, muted: false } as ChatRow;
+  const dm = { key: "t|Alpha Beta|A B@W", kind: "dm", character: "Alpha Beta", name: "A B", partner: "A B@W", world: "W", pinned: false, muted: false } as ChatRow;
 
-  it("tells the partner from a partner row", () => {
-    expect(composerTab(social, { key: "t|Alpha Beta|A B@W", kind: "partner", label: "A B", hash: false, partner: "A B@W" })).toEqual({ kind: "tell", character: "Alpha Beta", partner: "A B@W" });
+  it("tells the partner in a DM", () => {
+    expect(composerTab(dm)).toEqual({ kind: "tell", character: "Alpha Beta", partner: "A B@W" });
   });
 
-  it("sends only to a type row's chat type", () => {
-    expect(composerTab(social, { key: "c|Alpha Beta|freeCompany", kind: "type", label: "fc", hash: true, channel: "freeCompany" })).toEqual({ kind: "custom", channels: ["freeCompany"], latest: "freeCompany" });
-  });
-
-  it("offers every type of the channel from the all row", () => {
-    expect(composerTab(social, { key: "x|Alpha Beta|s", kind: "all", label: "all", hash: true }, "tell")).toEqual({ kind: "custom", channels: ["freeCompany", "tell"], latest: "tell" });
+  it("offers the group's channels, defaulting to the newest message's", () => {
+    expect(composerTab(group, "linkshell1")).toEqual({ kind: "custom", channels: ["freeCompany", "linkshell1"], latest: "linkshell1" });
   });
 });

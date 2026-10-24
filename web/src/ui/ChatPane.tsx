@@ -1,83 +1,98 @@
 import { useMemo } from "preact/hooks";
 import type { AccountView, FeedItem } from "../core/accounts";
-import { channelIncludes, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
-import { customColor, itemKey, showsChatTags, type SubRow } from "./channels";
+import { channelIncludes, type ChannelPrefs } from "../core/channelPrefs";
+import { customColor, itemKey, showsChatTags } from "./channels";
+import type { ChatRow } from "./chatList";
 import { Composer, composerTab } from "./Composer";
-import { channelColor, STATUS_LABELS } from "./format";
-import { ChatBubbleIcon, MenuIcon } from "./icons";
+import { channelLabel, STATUS_LABELS } from "./format";
+import { BackIcon, MoreIcon } from "./icons";
+import { initials, senderColor } from "./identity";
 import { MessageList } from "./MessageList";
 import { pendingIn, type PendingSend, type PendingSends } from "./pending";
 import { viewKey } from "./place";
+import { Portrait } from "./Portrait";
 
-export function ChatPane({ account, prefs, custom, row, items, unreadCount, sends, pending, onMenu }: {
+export function ChatPane({ account, prefs, chat, items, unreadCount, sends, pending, wide, onBack, onMenu }: {
   account: AccountView;
   prefs: ChannelPrefs;
-  custom: CustomChannel | null;
-  row: SubRow | null;
+  chat: ChatRow;
   items: FeedItem[];
   unreadCount: number;
   sends: PendingSends;
   pending: PendingSend[];
+  wide: boolean;
+  onBack: () => void;
   onMenu: () => void;
 }) {
-  const viewId = row ? viewKey(account.deviceId, row.key) : account.deviceId;
-  const visible = useMemo(() => (row ? items.filter((i) => channelIncludes(prefs, row.key, itemKey(i))) : []), [items, row?.key, prefs]);
-  const visiblePending = pending.filter((p) => pendingIn(p, account.deviceId, custom, row));
+  const viewId = viewKey(account.deviceId, chat.key);
+  const visible = useMemo(() => items.filter((i) => channelIncludes(prefs, chat.key, itemKey(i))), [items, chat.key, prefs]);
+  const visiblePending = pending.filter((p) => pendingIn(p, account.deviceId, chat));
   const latest = visible.at(-1)?.channel;
-  const tab = useMemo(() => (custom && row ? composerTab(custom, row, latest) : null), [custom, row?.key, latest]);
-  const character = custom?.character;
-  const blocked = character && character !== account.character ? `${character} isn't logged in` : undefined;
+  const tab = useMemo(() => composerTab(chat, latest), [chat.key, chat.custom?.channels.join(), latest]);
+  const blocked = chat.character !== account.character ? `${chat.character} isn't logged in` : undefined;
   const status = STATUS_LABELS[account.state.status];
-
-  function title() {
-    if (!custom || !row) return account.label;
-    if (row.kind === "partner") return row.label;
-    const color = row.channel ? channelColor(row.channel) : customColor(custom);
-    return (
-      <>
-        <span class="hash" style={{ "--c": color }} aria-hidden="true">{row.hash ? "#" : <ChatBubbleIcon size={20} />}</span>
-        {row.kind === "type" ? row.label : custom.name}
-      </>
-    );
-  }
-
-  const subtitle = !custom || !row ? status : row.kind === "all" ? custom.character : `${custom.name} · ${custom.character}`;
 
   return (
     <div class="chat">
       <header class="chat-head">
-        <button class="icon-btn menu-btn" aria-label="Open navigation" onClick={onMenu}>
-          <MenuIcon />
-        </button>
+        {!wide && (
+          <button class="icon-btn" aria-label="Back" onClick={onBack}>
+            <BackIcon />
+          </button>
+        )}
+        <ChatAvatar chat={chat} />
         <div class="chat-title">
-          <h1>{title()}</h1>
+          <h1>{chat.name}</h1>
           <small>
             <span class={`status-dot ${account.state.status}`} role="img" title={status} aria-label={status} />
-            {subtitle}
+            <span class="chat-sub">{subtitle(chat)}</span>
           </small>
         </div>
+        <button class="icon-btn" aria-label="Chat options" onClick={onMenu}>
+          <MoreIcon />
+        </button>
       </header>
 
       <MessageList
         viewId={viewId}
         items={visible}
         unreadCount={unreadCount}
-        chatTags={showsChatTags(custom, row)}
+        chatTags={showsChatTags(chat.custom)}
+        showNames={chat.kind === "group"}
         pending={visiblePending}
-        accountOf={(id) => (id === account.deviceId ? account : undefined)}
         onRetry={(p) => void sends.retry(p)}
         onDismiss={sends.dismiss}
       />
 
-      {tab && (
-        <Composer
-          key={viewId}
-          state={account.state}
-          tab={tab}
-          blocked={blocked}
-          onSend={(channel, text, target, from) => void sends.send(account.deviceId, channel, text, target, from)}
-        />
-      )}
+      <Composer
+        key={viewId}
+        state={account.state}
+        tab={tab}
+        blocked={blocked}
+        onSend={(channel, text, target, from) => void sends.send(account.deviceId, channel, text, target, from)}
+      />
     </div>
+  );
+}
+
+function subtitle(chat: ChatRow): string {
+  if (chat.kind === "dm") return chat.world ? `${chat.world} · ${chat.character}` : chat.character;
+  const channels = chat.custom?.channels ?? [];
+  return `${channels.map(channelLabel).join(", ")} · ${chat.character}`;
+}
+
+function ChatAvatar({ chat }: { chat: ChatRow }) {
+  if (chat.kind === "group") {
+    return (
+      <span class="head-avatar group" style={{ "--c": customColor(chat.custom) }} aria-hidden="true">
+        {initials(chat.name)}
+      </span>
+    );
+  }
+  return (
+    <span class="head-avatar" style={{ "--c": senderColor(chat.name) }} aria-hidden="true">
+      {initials(chat.name)}
+      <Portrait name={chat.name} world={chat.world} />
+    </span>
   );
 }
