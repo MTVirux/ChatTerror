@@ -15,6 +15,7 @@ namespace ChatTerror.Protocol;
 [JsonDerivedType(typeof(SendChatPayload), "sendChat")]
 [JsonDerivedType(typeof(PrefsPayload), "prefs")]
 [JsonDerivedType(typeof(TellKeyPayload), "tellKey")]
+[JsonDerivedType(typeof(AlertPayload), "alert")]
 public abstract record Payload
 {
     public long Seq { get; init; }
@@ -32,7 +33,8 @@ public sealed record SettingsPayload(
     IReadOnlyList<ChatChannel> SendChannels,
     int MaxLength,
     IReadOnlyList<TellContact>? Contacts = null,
-    string? CharacterWorld = null) : Payload;
+    string? CharacterWorld = null,
+    bool SupportsAlerts = false) : Payload;
 
 public sealed record TellKeyPayload(string PublicKey) : Payload;
 
@@ -43,7 +45,25 @@ public sealed record HelloPayload(long SinceTs) : Payload;
 
 public sealed record SendChatPayload(string RequestId, ChatChannel Channel, [Optional, DefaultParameterValue(null)] string? Target, string Text) : Payload;
 
-public sealed record PrefsPayload(IReadOnlyList<ChatChannel> MutedChannels, IReadOnlyList<ChannelPref>? Channels = null) : Payload;
+public sealed record PrefsPayload(
+    IReadOnlyList<ChatChannel> MutedChannels,
+    IReadOnlyList<ChannelPref>? Channels = null,
+    AlertPrefs? Alerts = null) : Payload;
+
+public enum AlertKind
+{
+    PartyFull,
+    DutyPop,
+}
+
+public sealed record AlertPayload(AlertKind Kind, string Character, long Ts, string? Duty = null) : Payload;
+
+public sealed record AlertPrefs(bool PartyFull, bool DutyPop, int WaitSeconds)
+{
+    public static AlertPrefs Default { get; } = new(true, true, Limits.DefaultWaitSeconds);
+
+    public AlertPrefs Clamped() => this with { WaitSeconds = Math.Clamp(WaitSeconds, 0, Limits.MaxWaitSeconds) };
+}
 
 public enum NotifyMode
 {
