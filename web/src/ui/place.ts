@@ -1,10 +1,8 @@
 import type { AccountView } from "../core/accounts";
-import { customKey, withTells, type ChannelPrefs, type CustomChannel } from "../core/channelPrefs";
-import { channelFor, keyCharacter, type SubRow } from "./channels";
+import { keyCharacter } from "./channels";
 
 export const PLACE_KEY = "chatterror.place";
-export const SERVER_KEY = "chatterror.lastServer";
-export const SUB_KEY = "chatterror.lastSub";
+export const LAST_CHAT_KEY = "chatterror.lastChat";
 
 // character is null while the client has none yet, or is pending or removed.
 export interface Place {
@@ -12,13 +10,8 @@ export interface Place {
   character: string | null;
 }
 
-// Remembered picks: channel id per "deviceId|character", row key per "deviceId|custom key".
+// The last open chat key per "deviceId|character".
 export type Views = Record<string, string>;
-
-export interface Picks {
-  server: Views;
-  sub: Views;
-}
 
 export function viewKey(deviceId: string, key: string): string {
   return `${deviceId}|${key}`;
@@ -81,26 +74,10 @@ export function accountLink(deviceId: string, chat?: string): string {
   return `/#account=${encodeURIComponent(deviceId)}${chat ? `&chat=${encodeURIComponent(chat)}` : ""}`;
 }
 
-export interface ChatTarget {
-  character: string;
-  // Unset when no channel shows this chat type; the character still opens.
-  channelId?: string;
-  rowKey: string;
-}
-
-export function chatTarget(prefs: ChannelPrefs, chat: string): ChatTarget | null {
+// Notifications carry message keys, never custom ones.
+export function chatTarget(chat: string): { character: string; chat: string } | null {
   const character = keyCharacter(chat);
-  if (!character || chat.startsWith("x|")) return null;
-  return { character, channelId: channelFor(withTells(prefs, character), character, chat)?.id, rowKey: chat };
-}
-
-export function pickTarget(picks: Picks, deviceId: string, target: ChatTarget): Picks {
-  if (!target.channelId) return picks;
-  const custom = customKey({ character: target.character, id: target.channelId });
-  return {
-    server: remember(picks.server, viewKey(deviceId, target.character), target.channelId),
-    sub: remember(picks.sub, viewKey(deviceId, custom), target.rowKey),
-  };
+  return character && !chat.startsWith("x|") ? { character, chat } : null;
 }
 
 export function initialPlace(accounts: AccountView[], hash: string, stored: string | null, charactersOf: (account: AccountView) => string[]): Place | null {
@@ -110,12 +87,4 @@ export function initialPlace(accounts: AccountView[], hash: string, stored: stri
     return validPlace({ deviceId: link.deviceId, character }, accounts, charactersOf);
   }
   return validPlace(parsePlace(stored), accounts, charactersOf);
-}
-
-export function resolveChannel(rail: CustomChannel[], id: string | undefined): CustomChannel | null {
-  return rail.find((c) => c.id === id) ?? rail[0] ?? null;
-}
-
-export function resolveRow(rows: SubRow[], key: string | undefined): SubRow {
-  return rows.find((r) => r.key === key) ?? rows[0];
 }
