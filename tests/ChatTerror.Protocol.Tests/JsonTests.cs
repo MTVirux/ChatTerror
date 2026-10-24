@@ -224,6 +224,19 @@ public class JsonTests
     }
 
     [Fact]
+    public void TellFrame_DeferredPush_IsOptional()
+    {
+        var plain = new TellFrame("t1", "inst1", "env", "key");
+        var plainJson = ProtocolJson.Serialize<RelayFrame>(plain);
+        var deferredJson = ProtocolJson.Serialize<RelayFrame>(plain with { DeferredPush = ["dev1", "dev2"] });
+
+        Assert.Equal("{\"t\":\"tell\",\"id\":\"t1\",\"from\":\"inst1\",\"envelope\":\"env\",\"fromKey\":\"key\"}", plainJson);
+        Assert.Equal(plain, ProtocolJson.Deserialize<RelayFrame>(plainJson));
+        Assert.Equal("{\"t\":\"tell\",\"id\":\"t1\",\"from\":\"inst1\",\"envelope\":\"env\",\"fromKey\":\"key\",\"deferredPush\":[\"dev1\",\"dev2\"]}", deferredJson);
+        Assert.Equal(["dev1", "dev2"], Assert.IsType<TellFrame>(ProtocolJson.Deserialize<RelayFrame>(deferredJson)).DeferredPush!);
+    }
+
+    [Fact]
     public void TellPushFrame_RoundTrips()
     {
         var frame = new TellPushFrame("tell1", "dev1");

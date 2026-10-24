@@ -64,7 +64,8 @@ public sealed record TellSendFrame(string Id, string To, IReadOnlyList<TellCopy>
 public sealed record TellResultFrame(string Id, bool Ok, string? Error = null) : RelayFrame;
 
 // From is the sending install id, FromKey its install key as the relay knows it.
-public sealed record TellFrame(string Id, string From, string Envelope, string FromKey) : RelayFrame;
+// DeferredPush lists the devices whose push the relay left to this plugin. Only the live copy to the recipient plugin has it.
+public sealed record TellFrame(string Id, string From, string Envelope, string FromKey, IReadOnlyList<string>? DeferredPush = null) : RelayFrame;
 
 public sealed record TellAckFrame(IReadOnlyList<string> Ids) : RelayFrame;
 

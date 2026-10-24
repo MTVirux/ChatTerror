@@ -498,15 +498,12 @@ public sealed class DeviceHub : IDisposable
         saveConfig();
     }
 
-    // The relay leaves friend-tell pushes to a plugin that listed tellPush, and still applies its push rules to each request.
+    // The relay lists the friend-tell pushes it left to this plugin, and still applies its push rules to each request.
     private void PushTellWhenAway(TellFrame tell)
     {
-        if (!config.TellsEnabled)
-            return;
-
-        foreach (var session in sessions.Values)
+        foreach (var deviceId in tell.DeferredPush ?? [])
         {
-            if (!onlineDevices.Contains(session.DeviceId))
+            if (sessions.TryGetValue(deviceId, out var session))
                 NotifyWhenAway(session, () => PushTell(session, tell.Id));
         }
     }

@@ -168,7 +168,7 @@ export interface ErrorFrame { t: "error"; code: "rateLimited" | "tooLarge" | "un
 export interface TellSendFrame { t: "tellSend"; id: string; to: string; copies: TellCopy[] }
 export interface TellAckFrame { t: "tellAck"; ids: string[] }
 // from is the sending install id.
-export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string }
+export interface TellFrame { t: "tell"; id: string; from: string; envelope: string; fromKey: string; deferredPush?: string[] }
 export interface TellResultFrame { t: "tellResult"; id: string; ok: boolean; error?: string }
 
 export type ClientFrame = AuthFrame | SendFrame | TellSendFrame | TellAckFrame;
